@@ -1,0 +1,6 @@
+{
+  "name": "神狗勾耗材商城",
+  "description": "台灣頂尖 3D 列印耗材電商與智能管理系統，整合庫存管理、自動化訂單處理、綠界/LINE Pay多金流、即時物流追蹤、Google廣告成效分析與AI耗材推薦顧問。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

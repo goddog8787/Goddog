@@ -1,0 +1,2 @@
+# Google AdSense ads.txt for Goddog 3D Store
+google.com, pub-7053299616784703, DIRECT, f08c47fec0942fa0

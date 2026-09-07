@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "Registered 3D filament customer profile and loyalty tier",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 64 },
+        "tier": { "type": "string", "enum": ["Bronze", "Silver", "Gold", "Diamond"], "maxLength": 32 },
+        "points": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "email", "name", "tier", "points"]
+    },
+    "order": {
+      "title": "Order",
+      "description": "3D printing filament purchase and shipping order",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 64 },
+        "customerEmail": { "type": "string", "maxLength": 128 },
+        "customerPhone": { "type": "string", "maxLength": 32 },
+        "shippingAddress": { "type": "string", "maxLength": 256 },
+        "shippingMethod": { "type": "string", "maxLength": 64 },
+        "paymentMethod": { "type": "string", "maxLength": 64 },
+        "totalAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"], "maxLength": 32 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "customerName", "customerEmail", "shippingAddress", "totalAmount", "status"]
+    },
+    "review": {
+      "title": "Product Review",
+      "description": "Verified customer feedback and rating for 3D filaments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 64 },
+        "rating": { "type": "number" },
+        "comment": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "productId", "userId", "userName", "rating", "comment"]
+    },
+    "testConnection": {
+      "title": "Test Connection",
+      "description": "Heartbeat probe for testing Firestore connection",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "maxLength": 32 },
+        "timestamp": { "type": "string", "maxLength": 64 }
+      }
+    },
+    "settings": {
+      "title": "Store Settings",
+      "description": "Monetization and Google AdSense configurations stored in Firebase",
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "publisherId": { "type": "string", "maxLength": 128 },
+        "enableAutoAds": { "type": "boolean" },
+        "testMode": { "type": "boolean" },
+        "lastSyncedAt": { "type": "string", "maxLength": 64 }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "User account profiles and points"
+    },
+    "/orders/{orderId}": {
+      "schema": "order",
+      "description": "Customer purchase orders"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "review",
+      "description": "Verified customer product reviews"
+    },
+    "/settings/{settingId}": {
+      "schema": "settings",
+      "description": "Store monetization and AdSense settings"
+    },
+    "/test/{testId}": {
+      "schema": "testConnection",
+      "description": "Connection test probe document"
+    }
+  }
+}
