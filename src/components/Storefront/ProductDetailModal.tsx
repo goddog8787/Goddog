@@ -245,17 +245,113 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Description & Features summary */}
-              <div className="mt-5 text-xs text-slate-600 border-t border-slate-100 pt-3">
-                <p className="line-clamp-2 leading-relaxed mb-2">{product.description}</p>
-                <div className="space-y-1">
-                  {product.features.slice(0, 3).map((f, i) => (
-                    <div key={i} className="flex items-center gap-1.5 text-slate-700">
-                      <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      <span>{f}</span>
-                    </div>
-                  ))}
+              {/* Detail Tabs */}
+              <div className="mt-5 border-t border-slate-100 pt-3">
+                <div className="flex border-b border-slate-200 gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('specs')}
+                    className={`pb-2 text-xs font-bold transition-colors cursor-pointer ${
+                      activeTab === 'specs'
+                        ? 'border-b-2 border-indigo-600 text-indigo-600'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    耗材特點與物性
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('slicer')}
+                    className={`pb-2 text-xs font-bold transition-colors cursor-pointer ${
+                      activeTab === 'slicer'
+                        ? 'border-b-2 border-indigo-600 text-indigo-600'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    切片參數推薦
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('reviews')}
+                    className={`pb-2 text-xs font-bold transition-colors cursor-pointer ${
+                      activeTab === 'reviews'
+                        ? 'border-b-2 border-indigo-600 text-indigo-600'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    創客實測評價 ({product.reviewsCount})
+                  </button>
                 </div>
+
+                {activeTab === 'specs' && (
+                  <div className="space-y-2.5 text-xs text-slate-600">
+                    <p className="leading-relaxed">{product.description}</p>
+                    <div className="space-y-1.5 pt-1">
+                      {product.features.map((f, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-slate-700">
+                          <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'slicer' && (
+                  <div className="space-y-2 text-xs">
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <span className="text-slate-400 block">第一層熱床溫度：</span>
+                        <span className="font-mono font-bold text-slate-800">{product.bedTemp}</span>
+                      </div>
+                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <span className="text-slate-400 block">回抽距離 (近端)：</span>
+                        <span className="font-mono font-bold text-slate-800">0.8 mm (速度 35mm/s)</span>
+                      </div>
+                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <span className="text-slate-400 block">風扇冷卻轉速：</span>
+                        <span className="font-mono font-bold text-slate-800">100% (前 3 層關閉)</span>
+                      </div>
+                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <span className="text-slate-400 block">最大流速 (Volumetric)：</span>
+                        <span className="font-mono font-bold text-indigo-600">22 - 26 mm³/s</span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      支援 Bambu Studio, OrcaSlicer, PrusaSlicer, Cura。直接套用 Generic {product.material} 預設即可極速列印。
+                    </p>
+                  </div>
+                )}
+
+                {activeTab === 'reviews' && (
+                  <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1 text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                          <span>林創客 (X1-Carbon)</span>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-normal">已驗證購買</span>
+                        </div>
+                        <div className="flex text-amber-400"><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /></div>
+                      </div>
+                      <p className="text-slate-600 mt-1 text-[11px]">
+                        「線徑公差非常精準！在拓竹 AMS 自動換色進退料完全不卡，300mm/s 速度下層紋依然細膩有光澤，強烈推薦！」
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                          <span>陳工程師 (Voron 2.4)</span>
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-normal">已驗證購買</span>
+                        </div>
+                        <div className="flex text-amber-400"><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /><Star className="w-3 h-3 fill-amber-400" /></div>
+                      </div>
+                      <p className="text-slate-600 mt-1 text-[11px]">
+                        「真空防潮包裝非常扎實，拆封即印無氣泡無拉絲，比原廠線材還好印，回購好幾卷了。」
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

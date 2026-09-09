@@ -82,12 +82,41 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // LINE Pay simulated state
   const [linePointsDeduct, setLinePointsDeduct] = useState(50);
 
+  // Promo Code State
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountAmount: number; freeShipping: boolean; label: string } | null>(null);
+  const [couponError, setCouponError] = useState('');
+
   // Price calculations
   const subtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-  const shippingFee = subtotal >= 999 ? 0 : 60;
-  const discount = 0;
+  const baseShippingFee = subtotal >= 999 ? 0 : 60;
+  const shippingFee = appliedCoupon?.freeShipping ? 0 : baseShippingFee;
+  const discount = appliedCoupon ? appliedCoupon.discountAmount : 0;
   const total = Math.max(0, subtotal + shippingFee - pointsToUse - discount);
   const pointsEarned = Math.floor(total / 10);
+
+  const handleApplyCoupon = (codeToApply?: string) => {
+    const code = (codeToApply || couponCode).trim().toUpperCase();
+    setCouponError('');
+    if (!code) return;
+    if (code === 'GODDOG') {
+      const disc = Math.round(subtotal * 0.1);
+      setAppliedCoupon({ code, discountAmount: disc, freeShipping: false, label: '神狗勾粉絲 9 折優惠' });
+      setCouponCode('GODDOG');
+    } else if (code === 'FREE99' || code === 'FREESHIP') {
+      setAppliedCoupon({ code, discountAmount: 0, freeShipping: true, label: '全館超商免運優惠' });
+      setCouponCode('FREE99');
+    } else if (code === 'MAKER100' || code === 'VIP100') {
+      setAppliedCoupon({ code, discountAmount: 100, freeShipping: false, label: '創客專屬折抵 NT$100' });
+      setCouponCode('MAKER100');
+    } else if (code === 'BAMBULAB') {
+      const disc = Math.min(subtotal, 120);
+      setAppliedCoupon({ code, discountAmount: disc, freeShipping: false, label: '拓竹用戶專屬折抵 NT$120' });
+      setCouponCode('BAMBULAB');
+    } else {
+      setCouponError('無效的折扣碼，請確認代碼是否輸入正確。');
+    }
+  };
 
   // Update default address preview when shipping method changes
   const handleShippingMethodChange = (m: ShippingMethod) => {
@@ -275,10 +304,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <span>本次消費獲得會員積分回饋：</span>
                 <span className="font-bold font-mono text-amber-900">+{createdOrder.pointsEarned} pt</span>
               </div>
+
+              {/* Convenience store barcode preview */}
+              <div className="p-3 bg-white rounded-xl border border-dashed border-slate-300 text-center space-y-1">
+                <div className="text-[10px] text-slate-400 font-medium">
+                  {createdOrder.shippingMethod === '7-11' ? '7-ELEVEN 門市交貨取件條碼' : '全家便利商店 門市取件條碼'}
+                </div>
+                {/* Visual Barcode bars */}
+                <div className="h-9 flex items-center justify-center gap-[2px] py-1">
+                  {[3,1,2,4,1,3,2,1,4,2,3,1,2,3,4,1,2,4,3,1,2,4,1,3,2,1,4,2,3,1].map((w, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-slate-900 h-full rounded-xs"
+                      style={{ width: `${w * 1.5}px` }}
+                    />
+                  ))}
+                </div>
+                <div className="font-mono text-[11px] font-bold text-slate-700 tracking-widest">
+                  {createdOrder.trackingNumber.replace(/\D/g, '') || '77291823091'}
+                </div>
+              </div>
             </div>
 
             {/* Action buttons */}
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-lg">
+              <button
+                id="print-order-receipt-btn"
+                type="button"
+                onClick={() => window.print()}
+                className="py-3.5 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <FileText className="w-4 h-4 text-slate-500" />
+                <span>列印 / 保存電子訂單收據</span>
+              </button>
               <button
                 id="track-order-live-btn"
                 onClick={() => {
@@ -289,12 +347,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               >
                 <Truck className="w-4 h-4" />
                 <span>立即查看即時物流追蹤進度</span>
-              </button>
-              <button
-                onClick={onClose}
-                className="py-3.5 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
-              >
-                繼續選購
               </button>
             </div>
           </div>
@@ -623,12 +675,87 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   ))}
                 </div>
 
+                {/* Coupon Code Section */}
+                <div className="border-t border-slate-200 pt-3 mb-3">
+                  <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                    優惠折扣代碼 (Promo Code)
+                  </label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      placeholder="輸入優惠碼 如: GODDOG"
+                      className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-mono uppercase focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCoupon()}
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      套用
+                    </button>
+                  </div>
+
+                  {couponError && (
+                    <p className="text-[11px] text-rose-600 mt-1">{couponError}</p>
+                  )}
+
+                  {appliedCoupon && (
+                    <div className="mt-1.5 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between font-medium">
+                      <span>✓ {appliedCoupon.label}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAppliedCoupon(null);
+                          setCouponCode('');
+                        }}
+                        className="text-emerald-700 hover:text-rose-600 underline text-[10px]"
+                      >
+                        移除
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Coupon quick click pills */}
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[10px]">
+                    <span className="text-slate-400">快速套用：</span>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCoupon('GODDOG')}
+                      className="px-2 py-0.5 rounded-md bg-slate-200/80 hover:bg-indigo-100 hover:text-indigo-700 font-mono text-slate-700 cursor-pointer"
+                    >
+                      GODDOG (9折)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCoupon('FREE99')}
+                      className="px-2 py-0.5 rounded-md bg-slate-200/80 hover:bg-indigo-100 hover:text-indigo-700 font-mono text-slate-700 cursor-pointer"
+                    >
+                      FREE99 (免運)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyCoupon('MAKER100')}
+                      className="px-2 py-0.5 rounded-md bg-slate-200/80 hover:bg-indigo-100 hover:text-indigo-700 font-mono text-slate-700 cursor-pointer"
+                    >
+                      MAKER100 (-$100)
+                    </button>
+                  </div>
+                </div>
+
                 {/* Calculations */}
                 <div className="space-y-2 text-xs border-t border-slate-200 pt-3">
                   <div className="flex justify-between text-slate-500">
                     <span>{t.subtotal}</span>
                     <span className="font-mono">{formatPrice(subtotal, currency)}</span>
                   </div>
+                  {appliedCoupon && appliedCoupon.discountAmount > 0 && (
+                    <div className="flex justify-between text-rose-600 font-bold">
+                      <span>優惠代碼折抵 ({appliedCoupon.code})</span>
+                      <span className="font-mono">-{formatPrice(appliedCoupon.discountAmount, currency)}</span>
+                    </div>
+                  )}
                   {pointsToUse > 0 && (
                     <div className="flex justify-between text-emerald-600 font-medium">
                       <span>會員積分折抵</span>
@@ -638,7 +765,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div className="flex justify-between text-slate-500">
                     <span>物流運費</span>
                     <span className="font-mono text-emerald-600 font-semibold">
-                      {shippingFee === 0 ? '超商/宅配免運 (滿額)' : 'NT$60'}
+                      {shippingFee === 0 ? '超商/宅配免運 (滿額或折扣優惠)' : 'NT$60'}
                     </span>
                   </div>
                   <div className="flex justify-between text-base font-extrabold text-slate-900 pt-2 border-t border-slate-200">

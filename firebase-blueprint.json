@@ -10,9 +10,24 @@
         "name": { "type": "string", "maxLength": 64 },
         "tier": { "type": "string", "enum": ["Bronze", "Silver", "Gold", "Diamond"], "maxLength": 32 },
         "points": { "type": "number" },
+        "totalSpent": { "type": "number" },
+        "ordersCount": { "type": "number" },
         "createdAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "email", "name", "tier", "points"]
+    },
+    "customerData": {
+      "title": "Customer Data Snapshot",
+      "description": "Persistent cart, wishlist, chat dialogue, and saved logistics tracking for customers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["cart", "wishlist", "chat", "tracking"], "maxLength": 32 },
+        "data": { "type": "string", "maxLength": 50000 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "type"]
     },
     "order": {
       "title": "Order",
@@ -74,6 +89,10 @@
     "/users/{userId}": {
       "schema": "user",
       "description": "User account profiles and points"
+    },
+    "/users/{userId}/userData/{dataId}": {
+      "schema": "customerData",
+      "description": "Persistent customer carts, wishlist favorites, logistics tracking, and AI chat histories"
     },
     "/orders/{orderId}": {
       "schema": "order",

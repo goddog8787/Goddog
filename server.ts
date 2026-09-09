@@ -1,14 +1,10 @@
 import express from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import crypto from 'crypto';
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
@@ -1249,6 +1245,11 @@ app.get('/api/logistics/track/:trackingNumber', (req, res) => {
 // -------------------------------------------------------------
 // 7. 啟動伺服器 (Vite Dev Middleware 或生產靜態託管)
 // -------------------------------------------------------------
+// 404 for unhandled API requests
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found', path: req.path });
+});
+
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
@@ -1259,15 +1260,47 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    // Robustly resolve distPath whether running from project root or inside dist
+    const possiblePaths = [
+      path.resolve(process.cwd(), 'dist'),
+      path.resolve(__dirname, '.'),
+      path.resolve(__dirname, 'dist'),
+    ];
+    let distPath = possiblePaths[0];
+    const fs = await import('fs');
+    for (const p of possiblePaths) {
+      if (fs.existsSync(path.join(p, 'index.html'))) {
+        distPath = p;
+        break;
+      }
+    }
+
+    app.use(express.static(distPath));
     app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      const indexPath = path.join(distPath, 'index.html');
+      res.sendFile(indexPath, (err) => {
+        if (err && !res.headersSent) {
+          res.status(200).send('<!doctype html><html><body><div id="root">載入中...</div></body></html>');
+        }
+      });
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[神狗勾 Server] Running on http://0.0.0.0:${PORT}`);
+    console.log(`[神狗勾 Server] Running on http://0.0.0.0:${PORT} (env: ${process.env.NODE_ENV || 'development'})`);
   });
 }
+
+// Graceful process handlers
+process.on('unhandledRejection', (reason) => {
+  console.error('[神狗勾 Server] Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[神狗勾 Server] Uncaught Exception:', err);
+});
+process.on('SIGTERM', () => {
+  console.log('[神狗勾 Server] SIGTERM received, exiting cleanly.');
+  process.exit(0);
+});
 
 startServer();

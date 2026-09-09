@@ -79,34 +79,57 @@ export const AdSenseBanner: React.FC<AdSenseBannerProps> = ({
     if (!isVisible) return;
 
     if (!config.testMode && config.publisherId && config.publisherId.startsWith('ca-pub-')) {
-      try {
-        // Dynamically inject script if not present
-        const existingScript = document.querySelector(`script[src*="pagead2.googlesyndication.com"]`);
-        if (!existingScript) {
-          const script = document.createElement('script');
-          script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${config.publisherId}`;
-          script.async = true;
-          script.crossOrigin = 'anonymous';
-          document.head.appendChild(script);
-        }
-
-        // Push ad slot
-        if (typeof window !== 'undefined') {
-          (window.adsbygoogle = window.adsbygoogle || []).push({});
-          setAdLoaded(true);
-        }
-      } catch (err) {
-        console.warn('AdSense push error (expected in sandbox/iframe):', err);
+      // Ensure Google AdSense script is loaded
+      const existingScript = document.querySelector(`script[src*="pagead2.googlesyndication.com"]`);
+      if (!existingScript) {
+        const script = document.createElement('script');
+        script.src = `https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${config.publisherId}`;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        document.head.appendChild(script);
       }
+
+      // Push ad slot with safe delay to ensure ins ref is mounted
+      const timer = setTimeout(() => {
+        try {
+          if (typeof window !== 'undefined' && adRef.current) {
+            if (!adRef.current.getAttribute('data-adsbygoogle-status')) {
+              (window.adsbygoogle = window.adsbygoogle || []).push({});
+              setAdLoaded(true);
+            }
+          }
+        } catch (err) {
+          console.warn('AdSense push notice (normal during site review/sandbox):', err);
+        }
+      }, 150);
+
+      return () => clearTimeout(timer);
     }
   }, [isVisible, config.testMode, config.publisherId, slotId]);
 
   if (!isVisible) return null;
 
   const demoAd = SPONSORED_DEMO_ADS[placement];
+  const [googleAdUnfilled, setGoogleAdUnfilled] = useState(false);
 
-  // In test/sandbox mode, render the realistic maker sponsored ad
-  if (config.testMode || !config.publisherId || !config.publisherId.startsWith('ca-pub-')) {
+  // Monitor if Google AdSense rendered an ad or returned unfilled / collapsed
+  useEffect(() => {
+    if (config.testMode) return;
+    const checkTimer = setTimeout(() => {
+      if (adRef.current) {
+        const status = adRef.current.getAttribute('data-ad-status');
+        // If Google AdSense returns 'unfilled' or iframe is empty / 0 height, fallback to sponsored ad
+        if (status === 'unfilled' || (adRef.current.clientHeight === 0 && !adLoaded)) {
+          setGoogleAdUnfilled(true);
+        }
+      }
+    }, 1200);
+
+    return () => clearTimeout(checkTimer);
+  }, [adLoaded, config.testMode]);
+
+  // If in test mode OR if Google ad is unfilled / rejected / pending review, render rich interactive maker sponsor ad
+  if (config.testMode || googleAdUnfilled || !config.publisherId || !config.publisherId.startsWith('ca-pub-')) {
     if (placement === 'header-top') {
       return (
         <div className="w-full bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-blue-500/10 border border-indigo-200/80 rounded-2xl p-3 sm:p-4 shadow-xs relative overflow-hidden my-3 animate-fade-in">
@@ -262,17 +285,27 @@ export const AdSenseBanner: React.FC<AdSenseBannerProps> = ({
 
   // Real production Google AdSense ins tag
   return (
-    <div className="w-full my-4 flex flex-col items-center justify-center overflow-hidden bg-slate-50 border border-slate-200 rounded-2xl p-2 min-h-[90px]">
-      <div className="text-[10px] text-slate-400 self-end mb-1 px-1">Ads by Google</div>
+    <div className="w-full my-4 flex flex-col items-center justify-center overflow-hidden bg-slate-50/80 border border-dashed border-indigo-200 rounded-2xl p-3 min-h-[90px] relative">
+      <div className="w-full flex items-center justify-between text-[10px] text-slate-500 mb-2 px-1">
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+          <span className="font-semibold text-slate-700">Google AdSense 官方廣告位</span>
+          <span className="text-slate-400 font-mono">({config.publisherId})</span>
+        </div>
+        <span className="font-medium bg-slate-200/80 px-1.5 py-0.5 rounded text-[9px] text-slate-600">Ads by Google</span>
+      </div>
       <ins
         ref={adRef}
-        className="adsbygoogle w-full block text-center"
+        className="adsbygoogle w-full block text-center min-h-[60px]"
         style={{ display: 'block' }}
         data-ad-client={config.publisherId}
         data-ad-slot={slotId}
         data-ad-format="auto"
         data-full-width-responsive="true"
       />
+      <div className="mt-2 text-[10px] text-slate-400 text-center">
+        （若廣告為空白：代表 Google 正對此預覽網域進行審核，或瀏覽器安裝了 AdBlock 廣告攔截器）
+      </div>
     </div>
   );
 };

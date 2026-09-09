@@ -16,7 +16,11 @@ import {
   ChevronDown,
   Code2,
   UserCheck,
-  LogIn
+  LogIn,
+  Scale,
+  Heart,
+  Recycle,
+  Wrench
 } from 'lucide-react';
 import { LanguageCode, CurrencyCode, MemberProfile, FilamentProduct } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
@@ -39,6 +43,12 @@ interface NavbarProps {
   onOpenLoyalty?: () => void;
   onOpenSubscription?: () => void;
   onOpenAuth?: () => void;
+  onOpenFilamentLab?: () => void;
+  onOpenCompare?: () => void;
+  compareCount?: number;
+  onOpenWishlist?: () => void;
+  wishlistCount?: number;
+  onOpenRecycle?: () => void;
   isLoggedIn?: boolean;
   member: MemberProfile;
   openMemberModal?: () => void;
@@ -64,6 +74,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenLoyalty,
   onOpenSubscription,
   onOpenAuth,
+  onOpenFilamentLab,
+  onOpenCompare,
+  compareCount = 0,
+  onOpenWishlist,
+  wishlistCount = 0,
+  onOpenRecycle,
   isLoggedIn = false,
   member,
   openMemberModal,
@@ -104,26 +120,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   interface NavItem {
-    id: 'store' | 'subscription' | 'ai-advisor' | 'logistics' | 'member' | 'admin' | 'tech-guide';
+    id: 'store' | 'subscription' | 'ai-advisor' | 'logistics' | 'filament-lab';
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     badge?: string;
-    isAccent?: boolean;
   }
 
   const navItems: NavItem[] = [
     { id: 'store', label: t.navCatalog, icon: Layers },
-    { id: 'subscription', label: t.navSubscription, icon: Package, badge: '優惠 85折' },
+    { id: 'filament-lab', label: '創客工具', icon: Wrench },
     { id: 'ai-advisor', label: t.navAiAdvisor, icon: Sparkles, badge: 'AI' },
+    { id: 'subscription', label: '訂閱 85折', icon: Package },
     { id: 'logistics', label: t.navLogistics, icon: Truck },
-    { id: 'member', label: t.navMemberClub, icon: Award },
-    { 
-      id: 'tech-guide', 
-      label: lang === 'zh-TW' ? '金流與多語實施指南' : lang === 'ja' ? '決済仕様書' : 'Payment & i18n Tech', 
-      icon: Code2, 
-      badge: '實施規範' 
-    },
-    { id: 'admin', label: t.navAdmin, icon: Settings, isAccent: true },
   ];
 
   return (
@@ -131,76 +139,96 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Top Announcement Bar */}
       <div className="bg-slate-900 text-white text-xs py-1.5 px-4 font-medium flex items-center justify-between">
         <div className="flex items-center space-x-2 mx-auto sm:mx-0">
-          <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase">
+          <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase whitespace-nowrap shrink-0">
             Promo
           </span>
-          <span className="truncate">
+          <span className="truncate text-slate-200">
             {lang === 'zh-TW' && '⚡ 慶祝高速耗材登陸！全館滿 NT$999 享超商免運 ＋ 結帳支援 綠界 ECPay、LINE Pay 一鍵秒付！'}
             {lang === 'en' && '⚡ Free shipping on orders over NT$999 (7-11 / FamilyMart) | ECPay & LINE Pay Supported!'}
             {lang === 'ja' && '⚡ NT$999以上で送料無料！ECPay・LINE Pay対応・AIフィラメント相談窓口開設中！'}
           </span>
         </div>
 
-        <div className="hidden sm:flex items-center space-x-4 text-slate-300 text-xs">
-          <span className="flex items-center gap-1">
+        <div className="hidden sm:flex items-center space-x-3 text-slate-300 text-xs shrink-0 whitespace-nowrap">
+          {onOpenRecycle && (
+            <button
+              onClick={onOpenRecycle}
+              className="text-emerald-300 hover:text-emerald-200 transition-colors flex items-center gap-1 cursor-pointer font-bold whitespace-nowrap"
+              title="空盤回收領取創客積分"
+            >
+              <Recycle className="w-3.5 h-3.5" />
+              <span>空盤換幣</span>
+            </button>
+          )}
+          <span>|</span>
+          <span className="flex items-center gap-1 whitespace-nowrap">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-            綠界科技 256-bit SSL 安全加密
+            綠界 SSL 安全加密
           </span>
           <span>|</span>
           <button 
             id="nav-quick-member-link"
             onClick={effectiveMemberOpen}
-            className="hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+            className="hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
           >
             <Coins className="w-3.5 h-3.5 text-amber-400" />
-            <span>{member.points} 創客積分</span>
+            <span>{member.points} 積分</span>
           </button>
         </div>
       </div>
 
       {/* Main Header Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-16 gap-3">
           {/* Brand Logo */}
-          <div className="flex items-center space-x-2.5 sm:space-x-3 cursor-pointer shrink-0" onClick={() => handleNavClick('store')}>
+          <div 
+            className="flex items-center space-x-2 sm:space-x-2.5 cursor-pointer shrink-0" 
+            onClick={() => handleNavClick('store')}
+          >
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg sm:text-xl shadow-md shadow-sky-500/20 shrink-0">
               3D
             </div>
             <div className="shrink-0">
               <div className="flex items-center gap-1.5 whitespace-nowrap">
-                <span className="font-extrabold text-base sm:text-lg text-slate-900 tracking-tight whitespace-nowrap">神狗勾耗材商城</span>
-                <span className="text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-sky-100 text-sky-800 rounded whitespace-nowrap shrink-0 hidden sm:inline-block">旗艦館</span>
+                <span className="font-extrabold text-base sm:text-lg text-slate-900 tracking-tight whitespace-nowrap">
+                  神狗勾耗材
+                </span>
+                <span className="text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-sky-100 text-sky-800 rounded whitespace-nowrap shrink-0 hidden sm:inline-block">
+                  旗艦館
+                </span>
               </div>
-              <p className="text-[11px] text-slate-500 hidden sm:block font-medium">
-                台灣頂級高速 3D 列印線材專營館
+              <p className="text-[11px] text-slate-500 hidden sm:block font-medium whitespace-nowrap">
+                高速 3D 列印線材專營
               </p>
             </div>
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center space-x-1">
+          <nav className="hidden lg:flex items-center space-x-1 shrink-0">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = (item.id === 'store' && effectiveActiveTab === 'store') || 
-                               (item.id === 'admin' && effectiveActiveTab === 'admin') ||
-                               (item.id === 'tech-guide' && effectiveActiveTab === 'tech-guide');
+              const isActive = item.id === 'store' && effectiveActiveTab === 'store';
               return (
                 <button
                   key={item.id}
                   id={`nav-tab-${item.id}`}
-                  onClick={() => handleNavClick(item.id)}
-                  className={`relative flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
+                  onClick={() => {
+                    if (item.id === 'filament-lab') {
+                      onOpenFilamentLab?.();
+                    } else {
+                      handleNavClick(item.id);
+                    }
+                  }}
+                  className={`relative flex items-center space-x-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
                       ? 'bg-slate-900 text-white shadow-sm'
-                      : item.isAccent 
-                        ? 'text-indigo-600 hover:bg-indigo-50 border border-indigo-200/70'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-sky-400' : item.isAccent ? 'text-indigo-600' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-500'}`} />
+                  <span className="whitespace-nowrap">{item.label}</span>
                   {item.badge && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold leading-tight ${
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold leading-tight whitespace-nowrap shrink-0 ${
                       isActive ? 'bg-sky-400 text-slate-900' : 'bg-rose-100 text-rose-700'
                     }`}>
                       {item.badge}
@@ -213,7 +241,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Desktop Header Search Autocomplete */}
           {setSearchQuery && (
-            <div className="hidden xl:block w-64 lg:w-72">
+            <div className="hidden xl:block flex-1 max-w-xs 2xl:max-w-sm mx-2 shrink">
               <SearchAutocomplete
                 id="header-nav-search"
                 searchQuery={searchQuery || ''}
@@ -225,25 +253,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
                 products={products}
                 size="sm"
-                placeholder="搜尋耗材材質、品牌..."
+                placeholder="搜尋線材 (PLA, PETG, TPU)..."
               />
             </div>
           )}
 
-          {/* Right Action Area (Language, Currency, Member, Cart) */}
-          <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Language & Currency Switchers */}
-            <div className="relative">
+          {/* Right Action Area */}
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+            {/* Language & Currency Switcher */}
+            <div className="relative shrink-0">
               <button
                 id="btn-lang-dropdown"
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-                className="flex items-center space-x-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
+                className="flex items-center space-x-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap"
               >
-                <Globe className="w-3.5 h-3.5 text-slate-500" />
-                <span>{lang === 'zh-TW' ? '繁中' : lang === 'en' ? 'EN' : '日本語'}</span>
+                <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="whitespace-nowrap">{lang === 'zh-TW' ? '繁中' : lang === 'en' ? 'EN' : '日'}</span>
                 <span className="text-slate-400 font-normal">/</span>
                 <span className="text-slate-900 font-mono">{currency}</span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
+                <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
               </button>
 
               {langDropdownOpen && (
@@ -305,15 +333,30 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
+            {/* Admin Management Quick Link (Discreet) */}
+            <button
+              id="btn-nav-admin"
+              onClick={() => handleNavClick('admin')}
+              className={`hidden sm:flex items-center space-x-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                effectiveActiveTab === 'admin'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-indigo-700 hover:bg-indigo-50 border border-indigo-200/70'
+              }`}
+              title="進入後台管理：訂單、庫存、廣告與營運報表"
+            >
+              <Settings className="w-3.5 h-3.5 shrink-0" />
+              <span>管理後台</span>
+            </button>
+
             {/* Member Points / Login Button */}
             {isLoggedIn ? (
               <button
                 id="btn-member-profile"
                 onClick={effectiveMemberOpen}
-                className="hidden sm:flex items-center space-x-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                className="hidden sm:flex items-center space-x-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 title="查看會員等級與積分明細"
               >
-                <Award className="w-3.5 h-3.5 text-amber-600" />
+                <Award className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                 <span className="bg-amber-500 text-white text-[10px] px-1 py-0.2 rounded font-bold">
                   {member.tier}
                 </span>
@@ -323,16 +366,50 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-auth-modal"
                 onClick={onOpenAuth}
-                className="hidden sm:flex items-center space-x-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
-                title="登入會員 / Google 連結 / Firebase 設定"
+                className="hidden sm:flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0"
+                title="登入會員 / Google 連結"
               >
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                   <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                   <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                 </svg>
-                <span>登入 / Google</span>
+                <span>登入</span>
+              </button>
+            )}
+
+            {/* Compare Bar Launch Button */}
+            {onOpenCompare && (
+              <button
+                id="btn-open-compare"
+                onClick={onOpenCompare}
+                className="relative hidden sm:flex items-center justify-center p-2 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 transition-colors cursor-pointer shrink-0"
+                title="耗材規格橫向對比"
+              >
+                <Scale className="w-4 h-4" />
+                {compareCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[10px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white">
+                    {compareCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {/* Wishlist Launch Button */}
+            {onOpenWishlist && (
+              <button
+                id="btn-open-wishlist"
+                onClick={onOpenWishlist}
+                className="relative flex items-center justify-center p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 transition-colors cursor-pointer shrink-0"
+                title="我的願望清單 / 收藏庫"
+              >
+                <Heart className={`w-4 h-4 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
+                {wishlistCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white">
+                    {wishlistCount}
+                  </span>
+                )}
               </button>
             )}
 
@@ -340,12 +417,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-open-cart"
               onClick={effectiveCartOpen}
-              className="relative flex items-center justify-center p-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-sm cursor-pointer"
+              className="relative flex items-center justify-center px-3 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-sm cursor-pointer shrink-0 gap-1.5"
               aria-label="購物車"
             >
-              <ShoppingCart className="w-5 h-5 text-white" />
+              <ShoppingCart className="w-4 h-4 text-white" />
+              <span className="text-xs font-bold hidden sm:inline">購物車</span>
               {cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[11px] font-bold h-5 min-w-5 px-1 rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-pulse">
+                <span className="bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1.5 rounded-full flex items-center justify-center border border-white shadow-xs">
                   {cartCount}
                 </span>
               )}
@@ -386,31 +464,107 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
+          {/* Mobile Quick Action Buttons Row */}
+          <div className="grid grid-cols-4 gap-1.5 py-1">
+            {onOpenFilamentLab && (
+              <button
+                onClick={() => {
+                  onOpenFilamentLab();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex flex-col items-center justify-center p-2 rounded-xl bg-indigo-50 text-indigo-700 text-[10px] font-bold cursor-pointer"
+              >
+                <Wrench className="w-4 h-4 mb-0.5 text-indigo-600" />
+                <span>創客工具</span>
+              </button>
+            )}
+            {onOpenCompare && (
+              <button
+                onClick={() => {
+                  onOpenCompare();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 text-slate-700 text-[10px] font-bold cursor-pointer relative"
+              >
+                <Scale className="w-4 h-4 mb-0.5 text-slate-600" />
+                <span>規格對比</span>
+                {compareCount > 0 && (
+                  <span className="absolute top-1 right-2 bg-indigo-600 text-white text-[9px] font-bold px-1 rounded-full">
+                    {compareCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {onOpenWishlist && (
+              <button
+                onClick={() => {
+                  onOpenWishlist();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex flex-col items-center justify-center p-2 rounded-xl bg-rose-50 text-rose-700 text-[10px] font-bold cursor-pointer relative"
+              >
+                <Heart className={`w-4 h-4 mb-0.5 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : 'text-rose-500'}`} />
+                <span>願望清單</span>
+                {wishlistCount > 0 && (
+                  <span className="absolute top-1 right-2 bg-rose-500 text-white text-[9px] font-bold px-1 rounded-full">
+                    {wishlistCount}
+                  </span>
+                )}
+              </button>
+            )}
+            {onOpenRecycle && (
+              <button
+                onClick={() => {
+                  onOpenRecycle();
+                  setMobileMenuOpen(false);
+                }}
+                className="flex flex-col items-center justify-center p-2 rounded-xl bg-emerald-50 text-emerald-700 text-[10px] font-bold cursor-pointer"
+              >
+                <Recycle className="w-4 h-4 mb-0.5 text-emerald-600" />
+                <span>空盤回收</span>
+              </button>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-2 pb-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = (item.id === 'store' && effectiveActiveTab === 'store') || 
-                               (item.id === 'admin' && effectiveActiveTab === 'admin') ||
-                               (item.id === 'tech-guide' && effectiveActiveTab === 'tech-guide');
+              const isActive = item.id === 'store' && effectiveActiveTab === 'store';
               return (
                 <button
                   key={item.id}
                   id={`mobile-nav-${item.id}`}
                   onClick={() => {
-                    handleNavClick(item.id);
+                    if (item.id === 'filament-lab') {
+                      onOpenFilamentLab?.();
+                    } else {
+                      handleNavClick(item.id);
+                    }
                     setMobileMenuOpen(false);
                   }}
-                  className={`flex items-center space-x-2 px-3 py-2.5 rounded-lg text-xs font-semibold text-left transition-colors cursor-pointer ${
+                  className={`flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left transition-colors cursor-pointer ${
                     isActive
                       ? 'bg-slate-900 text-white'
                       : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-sky-400' : 'text-slate-500'}`} />
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-500'}`} />
                   <span className="truncate">{item.label}</span>
                 </button>
               );
             })}
+            {/* Mobile Admin Link */}
+            <button
+              id="mobile-nav-admin"
+              onClick={() => {
+                handleNavClick('admin');
+                setMobileMenuOpen(false);
+              }}
+              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left text-indigo-700 bg-indigo-50/70 hover:bg-indigo-100 transition-colors cursor-pointer"
+            >
+              <Settings className="w-4 h-4 shrink-0 text-indigo-600" />
+              <span className="truncate">管理後台</span>
+            </button>
           </div>
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">

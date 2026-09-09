@@ -46,6 +46,13 @@ service cloud.firestore {
         data.points is number && data.points >= 0;
     }
 
+    function isValidCustomerData(data) {
+      return data.keys().hasAll(['id', 'userId', 'type']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.userId is string && data.userId.size() <= 128 &&
+        data.type is string && data.type in ['cart', 'wishlist', 'chat', 'tracking'];
+    }
+
     function isValidOrder(data) {
       return data.keys().hasAll(['id', 'userId', 'customerName', 'customerEmail', 'shippingAddress', 'totalAmount', 'status']) &&
         data.id is string && data.id.size() <= 128 &&
@@ -71,9 +78,16 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
       allow list: if isAdmin();
-      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming());
+      allow create: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
       allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
       allow delete: if isValidId(userId) && isAdmin();
+
+      // Persistent customer data subcollection (cart, wishlist, chat, tracking)
+      match /userData/{dataId} {
+        allow get, list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        allow create, update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidId(dataId) && isValidCustomerData(incoming());
+        allow delete: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidId(dataId);
+      }
     }
 
     // Orders collection

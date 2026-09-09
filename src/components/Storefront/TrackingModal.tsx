@@ -7,17 +7,24 @@ import {
   Clock, 
   MapPin, 
   Phone, 
-  RotateCw,
-  Package,
-  AlertCircle
+  RotateCw, 
+  Package, 
+  AlertCircle,
+  BookmarkPlus,
+  Trash2
 } from 'lucide-react';
 import { Order } from '../../types';
+import { 
+  loadCustomerTrackingNumbers, 
+  saveCustomerTrackingNumbers 
+} from '../../lib/customerPersistence';
 
 interface TrackingModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultTrackingNumber?: string;
   orders: Order[];
+  userId?: string;
 }
 
 export const TrackingModal: React.FC<TrackingModalProps> = ({
@@ -25,29 +32,55 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
   onClose,
   defaultTrackingNumber = '',
   orders,
+  userId,
 }) => {
   if (!isOpen) return null;
 
-  const [inputCode, setInputCode] = useState(
-    defaultTrackingNumber || orders[0]?.trackingNumber || '77391829310'
-  );
+  const initialCode = defaultTrackingNumber || orders[0]?.trackingNumber || '77391829310';
+  const [inputCode, setInputCode] = useState(initialCode);
   const [carrier, setCarrier] = useState<'7-11' | 'familymart' | 'blackcat'>('7-11');
   const [trackingData, setTrackingData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [savedNumbers, setSavedNumbers] = useState<string[]>([]);
+
+  // Load saved tracking numbers on open
+  useEffect(() => {
+    if (isOpen) {
+      loadCustomerTrackingNumbers(userId).then((nums) => {
+        if (nums && nums.length > 0) {
+          setSavedNumbers(nums);
+        }
+      });
+    }
+  }, [isOpen, userId]);
 
   const fetchTracking = async (code: string, car: string) => {
+    if (!code) return;
     setIsLoading(true);
     try {
       const res = await fetch(`/api/logistics/track/${code}?carrier=${car}`);
       const data = await res.json();
       if (data.success) {
         setTrackingData(data.tracking);
+        // Automatically save to customer's tracking numbers if valid
+        if (code && !savedNumbers.includes(code)) {
+          const updated = [code, ...savedNumbers].slice(0, 15);
+          setSavedNumbers(updated);
+          saveCustomerTrackingNumbers(userId, updated);
+        }
       }
     } catch (e) {
       console.error(e);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleRemoveSavedNumber = (codeToRemove: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = savedNumbers.filter((n) => n !== codeToRemove);
+    setSavedNumbers(updated);
+    saveCustomerTrackingNumbers(userId, updated);
   };
 
   useEffect(() => {
@@ -72,13 +105,13 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             <div>
               <h3 className="font-bold text-base text-slate-900 leading-none">即時物流動態查詢中心</h3>
               <p className="text-xs text-slate-500 mt-1">
-                支援 7-ELEVEN 交貨便、全家店到店、黑貓宅急便跨溫控速配
+                支援 7-ELEVEN 交貨便、全家店到店、黑貓宅急便跨溫控速配 • 雲端自動保存單號
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
+            className="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -116,7 +149,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
               <button
                 onClick={() => fetchTracking(inputCode, carrier)}
                 disabled={isLoading}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
               >
                 {isLoading ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
                 <span>查詢</span>
@@ -125,24 +158,57 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
             {/* Quick recent orders chips */}
             {orders.length > 0 && (
-              <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] pb-1">
-                <span className="text-slate-400 shrink-0">我的近期訂單：</span>
-                {orders.map((o) => (
-                  <button
-                    key={o.id}
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] pb-1">
+                  <span className="text-slate-400 shrink-0 font-medium">我的訂單單號：</span>
+                  {orders.map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => {
+                        setInputCode(o.trackingNumber);
+                        const car = o.shippingMethod === 'blackcat' ? 'blackcat' : o.shippingMethod === 'familymart' ? 'familymart' : '7-11';
+                        setCarrier(car);
+                        fetchTracking(o.trackingNumber, car);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg border font-mono transition-colors shrink-0 cursor-pointer ${
+                        inputCode === o.trackingNumber
+                          ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-bold'
+                          : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {o.orderNumber} ({o.trackingNumber})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Customer Saved Tracking Numbers History */}
+            {savedNumbers.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] pt-1">
+                <span className="text-slate-400 shrink-0 font-medium">已保存單號：</span>
+                {savedNumbers.map((num) => (
+                  <div
+                    key={num}
                     onClick={() => {
-                      setInputCode(o.trackingNumber);
-                      setCarrier(o.shippingMethod === 'blackcat' ? 'blackcat' : o.shippingMethod === 'familymart' ? 'familymart' : '7-11');
-                      fetchTracking(o.trackingNumber, o.shippingMethod);
+                      setInputCode(num);
+                      fetchTracking(num, carrier);
                     }}
-                    className={`px-2.5 py-1 rounded-lg border font-mono transition-colors shrink-0 cursor-pointer ${
-                      inputCode === o.trackingNumber
-                        ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-bold'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border font-mono text-xs cursor-pointer transition-colors ${
+                      inputCode === num
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
+                        : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    {o.orderNumber} ({o.trackingNumber})
-                  </button>
+                    <span>{num}</span>
+                    <button
+                      onClick={(e) => handleRemoveSavedNumber(num, e)}
+                      className="text-slate-400 hover:text-rose-500 ml-0.5"
+                      title="移除記錄"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -150,7 +216,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
           {/* Current Status Card */}
           {trackingData && (
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/70 to-slate-50 border border-indigo-100 space-y-3">
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/70 to-slate-50 border border-indigo-100 space-y-3 shadow-2xs">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-indigo-700 bg-indigo-100/70 px-2.5 py-1 rounded-md">
                   {trackingData.carrierName}

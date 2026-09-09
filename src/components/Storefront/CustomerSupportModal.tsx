@@ -14,9 +14,14 @@ import {
   ShoppingBag,
   Layers,
   ChevronRight,
-  Info
+  Info,
+  Cloud
 } from 'lucide-react';
 import { FilamentProduct, CartItem, MemberProfile } from '../../types';
+import { 
+  saveCustomerChatMessages, 
+  loadCustomerChatMessages 
+} from '../../lib/customerPersistence';
 
 interface CustomerSupportModalProps {
   isOpen: boolean;
@@ -69,14 +74,23 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
   const [chatInput, setChatInput] = useState('');
 
+  // Load customer chat on open or member change
+  useEffect(() => {
+    if (isOpen) {
+      loadCustomerChatMessages(member?.id).then((loaded) => {
+        if (loaded && loaded.length > 0) {
+          setMessages(loaded);
+        }
+      });
+    }
+  }, [isOpen, member?.id]);
+
   // Persist messages whenever they change
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-    } catch {
-      // ignore storage quota error
+    if (messages && messages.length > 0) {
+      saveCustomerChatMessages(member?.id, messages);
     }
-  }, [messages]);
+  }, [messages, member?.id]);
 
   // Handle initialPrompt if provided
   useEffect(() => {
@@ -111,11 +125,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     setMessages(freshMessages);
     setSolution(null);
     setIsResetConfirming(false);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(freshMessages));
-    } catch {
-      // ignore
-    }
+    saveCustomerChatMessages(member?.id, freshMessages);
   };
 
   // Dynamic context-aware quick prompts
@@ -254,6 +264,12 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   <span>上下文記憶啟用</span>
                 </span>
+                {member ? (
+                  <span className="text-[10px] bg-sky-500/20 text-sky-200 border border-sky-400/30 px-2 py-0.5 rounded-full flex items-center gap-1 font-medium">
+                    <Cloud className="w-2.5 h-2.5 text-sky-400" />
+                    <span>會員對話已保留</span>
+                  </span>
+                ) : null}
                 {userTurnCount > 0 && (
                   <span className="text-[10px] bg-indigo-500/30 text-indigo-200 px-1.5 py-0.5 rounded-md font-mono">
                     已記憶 {userTurnCount} 輪提問
