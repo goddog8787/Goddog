@@ -39,8 +39,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onLoginSuccess,
 }) => {
-  if (!isOpen) return null;
-
   const [activeTab, setActiveTab] = useState<'login' | 'register' | 'firebase-config'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -155,10 +153,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setTimeout(() => setSuccessMessage(null), 2500);
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden relative"
+        className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden relative cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}

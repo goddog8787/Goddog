@@ -36,7 +36,11 @@ import {
   ChevronRight,
   Lock,
   KeyRound,
-  ShieldCheck
+  ShieldCheck,
+  Upload,
+  Camera,
+  Wand2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -57,13 +61,16 @@ import {
   LanguageCode, 
   CurrencyCode,
   LogisticsSettings,
-  AdSenseConfig
+  AdSenseConfig,
+  MaterialType,
+  ALL_MATERIAL_CATEGORIES
 } from '../../types';
 import { formatPrice } from '../../utils/i18n';
 import { EditProductModal } from './EditProductModal';
 import { LogisticsManager } from './LogisticsManager';
 import { ExportGuideView } from './ExportGuideView';
 import { AdSenseAdminPanel } from '../Monetization/AdSenseAdminPanel';
+import { ProductImageStudioModal } from './ProductImageStudioModal';
 
 interface AdminDashboardProps {
   products: FilamentProduct[];
@@ -213,12 +220,53 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
   const [newProdName, setNewProdName] = useState('');
   const [newProdBrand, setNewProdBrand] = useState('神狗勾');
-  const [newProdMaterial, setNewProdMaterial] = useState<'High-Speed PLA' | 'PETG' | 'ABS' | 'TPU' | 'Carbon Fiber' | 'Resin'>('High-Speed PLA');
+  const [newProdMaterial, setNewProdMaterial] = useState<MaterialType>('High-Speed PLA');
   const [newProdPrice, setNewProdPrice] = useState(690);
   const [newProdStock, setNewProdStock] = useState(50);
   const [newProdNozzle, setNewProdNozzle] = useState('200°C - 230°C');
   const [newProdBed, setNewProdBed] = useState('45°C - 60°C');
   const [newProdSpeed, setNewProdSpeed] = useState('600 mm/s');
+  const [newProdImageUrl, setNewProdImageUrl] = useState('https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80');
+
+  // Product Photo Studio Modal States
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
+  const [studioProduct, setStudioProduct] = useState<FilamentProduct | null>(null);
+  const newProdFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const newProdCameraInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleNewProdFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const res = e.target?.result as string;
+      if (!res) return;
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1200;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          setNewProdImageUrl(canvas.toDataURL('image/jpeg', 0.88));
+        }
+      };
+      img.src = res;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Quick Stock Editor State
   const [editingStockId, setEditingStockId] = useState<string | null>(null);
@@ -423,7 +471,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       spoolType: 'Cardboard 環保紙盤',
       description: '原廠高流速 3D 列印耗材，提供極佳層間黏合力與低縮水率。',
       features: ['超高速流動係數', '真空密封防潮', '無毒低氣味'],
-      imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
+      imageUrl: newProdImageUrl || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
     };
 
     setProducts([newProd, ...products]);
@@ -432,7 +480,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const filteredProducts = products.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase());
+    const q = productSearch.toLowerCase().trim();
+    const matchesSearch = !q || 
+      p.name.toLowerCase().includes(q) || 
+      p.sku.toLowerCase().includes(q) ||
+      p.material.toLowerCase().includes(q) ||
+      p.brand.toLowerCase().includes(q);
     const matchesMat = selectedMaterialFilter === 'All' || p.material === selectedMaterialFilter;
     return matchesSearch && matchesMat;
   });
@@ -1171,13 +1224,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onChange={(e) => setSelectedMaterialFilter(e.target.value)}
                 className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 cursor-pointer"
               >
-                <option value="All">全部材質分類</option>
-                <option value="High-Speed PLA">High-Speed PLA</option>
-                <option value="PETG">PETG</option>
-                <option value="ABS">ABS</option>
-                <option value="TPU">TPU 彈性</option>
-                <option value="Carbon Fiber">Carbon Fiber 碳纖維</option>
-                <option value="Resin">光固化樹脂</option>
+                <option value="All">全部材質分類 (全部)</option>
+                {ALL_MATERIAL_CATEGORIES.map((cat) => (
+                  <optgroup key={cat.groupName} label={`${cat.icon} ${cat.groupName}`}>
+                    {cat.materials.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </div>
 
@@ -1214,11 +1270,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-3">
-                            <img
-                              src={p.imageUrl}
-                              alt={p.name}
-                              className="w-10 h-10 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0"
-                            />
+                            {p.imageUrl && p.imageUrl.trim() !== '' ? (
+                              <img
+                                src={p.imageUrl}
+                                alt={p.name}
+                                className="w-10 h-10 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center shrink-0 text-slate-400">
+                                <ImageIcon className="w-5 h-5" />
+                              </div>
+                            )}
                             <div>
                               <div className="font-bold text-slate-900 hover:text-indigo-600">
                                 {p.name}
@@ -1305,6 +1367,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
+                              id={`admin-studio-prod-btn-${p.id}`}
+                              onClick={() => {
+                                setStudioProduct(p);
+                                setIsStudioOpen(true);
+                              }}
+                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-all cursor-pointer shadow-2xs border border-purple-200/60"
+                              title="手機存取照片、調光裁切或使用 AI 生成更好圖片"
+                            >
+                              <Wand2 className="w-3.5 h-3.5 text-amber-500" />
+                              <span>修圖/AI</span>
+                            </button>
+                            <button
                               id={`admin-edit-prod-btn-${p.id}`}
                               onClick={() => {
                                 setEditingProduct(p);
@@ -1363,12 +1437,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={(e) => setNewProdMaterial(e.target.value as any)}
                         className="w-full px-3 py-2 border border-slate-200 rounded-xl"
                       >
-                        <option value="High-Speed PLA">High-Speed PLA</option>
-                        <option value="PETG">PETG</option>
-                        <option value="ABS">ABS</option>
-                        <option value="TPU">TPU</option>
-                        <option value="Carbon Fiber">Carbon Fiber</option>
-                        <option value="Resin">Resin</option>
+                        {ALL_MATERIAL_CATEGORIES.map((cat) => (
+                          <optgroup key={cat.groupName} label={`${cat.icon} ${cat.groupName}`}>
+                            {cat.materials.map((m) => (
+                              <option key={m.value} value={m.value}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
                       </select>
                     </div>
 
@@ -1432,6 +1509,74 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={(e) => setNewProdSpeed(e.target.value)}
                         className="w-full px-2 py-1.5 border border-slate-200 rounded-xl font-mono"
                       />
+                    </div>
+                  </div>
+
+                  {/* Product Image Selection & Mobile Upload */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                    <input
+                      type="file"
+                      ref={newProdFileInputRef}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleNewProdFile(f);
+                      }}
+                    />
+                    <input
+                      type="file"
+                      ref={newProdCameraInputRef}
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleNewProdFile(f);
+                      }}
+                    />
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-slate-700 flex items-center gap-1">
+                        <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>商品照片 (支援手機檔案/相機拍照/圖片網址)</span>
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="w-14 h-14 rounded-xl border border-slate-300 bg-white overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+                        {newProdImageUrl && newProdImageUrl.trim() !== '' ? (
+                          <img src={newProdImageUrl} alt="預覽" className="w-full h-full object-cover" />
+                        ) : (
+                          <ImageIcon className="w-6 h-6 text-slate-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 space-y-1.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => newProdFileInputRef.current?.click()}
+                            className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold flex items-center gap-1 border border-indigo-200/60 cursor-pointer"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span>手機相簿選圖</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => newProdCameraInputRef.current?.click()}
+                            className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold flex items-center gap-1 border border-emerald-200/60 cursor-pointer"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>手機拍照</span>
+                          </button>
+                        </div>
+                        <input
+                          type="url"
+                          value={newProdImageUrl}
+                          onChange={(e) => setNewProdImageUrl(e.target.value)}
+                          placeholder="或填寫圖片 URL..."
+                          className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-mono"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -2142,6 +2287,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <Sparkles className="w-4 h-4 text-amber-300" />
           <span>{toastMessage}</span>
         </div>
+      )}
+
+      {/* ------------------------------------------------------------- */}
+      {/* PRODUCT IMAGE STUDIO & AI GENERATION MODAL                     */}
+      {/* ------------------------------------------------------------- */}
+      {isStudioOpen && studioProduct && (
+        <ProductImageStudioModal
+          isOpen={isStudioOpen}
+          onClose={() => {
+            setIsStudioOpen(false);
+            setStudioProduct(null);
+          }}
+          product={studioProduct}
+          initialImage={studioProduct.imageUrl}
+          onApplyImage={(newImg) => {
+            setProducts((prev) =>
+              prev.map((item) =>
+                item.id === studioProduct.id ? { ...item, imageUrl: newImg } : item
+              )
+            );
+            setIsStudioOpen(false);
+            setStudioProduct(null);
+            setToastMessage(`✨ 已成功更新【${studioProduct.name}】的商品圖片！`);
+            setTimeout(() => setToastMessage(null), 4000);
+          }}
+        />
       )}
     </div>
   );

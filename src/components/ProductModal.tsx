@@ -13,7 +13,8 @@ import {
   Box, 
   Cpu, 
   Share2, 
-  Star 
+  Star,
+  Package 
 } from 'lucide-react';
 import { FilamentProduct, ColorOption, LanguageCode, CurrencyCode } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
@@ -35,11 +36,9 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   onAddToCart,
   onBuyNow
 }) => {
-  if (!product) return null;
-
   const t = TRANSLATIONS[lang];
-  const [selectedColor, setSelectedColor] = useState<ColorOption>(product.colors[0]);
-  const [selectedDiameter, setSelectedDiameter] = useState<'1.75mm' | '2.85mm'>(product.diameter);
+  const [selectedColor, setSelectedColor] = useState<ColorOption>(product?.colors?.[0] || { name: '', hex: '#000000', stock: 10 });
+  const [selectedDiameter, setSelectedDiameter] = useState<'1.75mm' | '2.85mm'>(product?.diameter || '1.75mm');
   const [quantity, setQuantity] = useState(1);
   const [copied, setCopied] = useState(false);
 
@@ -48,6 +47,8 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  if (!product) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
@@ -67,11 +68,17 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           {/* Left: Product Image & Badges */}
           <div className="p-6 sm:p-8 bg-slate-50 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200">
             <div className="relative rounded-2xl overflow-hidden bg-white shadow-sm border border-slate-200 aspect-square">
-              <img
-                src={product.imageUrl}
-                alt={product.name}
-                className="w-full h-full object-cover"
-              />
+              {product.imageUrl && product.imageUrl.trim() !== '' ? (
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                  <Package className="w-16 h-16" />
+                </div>
+              )}
               {product.badge && (
                 <span className="absolute top-3 left-3 bg-slate-900 text-white text-xs font-bold px-3 py-1 rounded-lg">
                   {product.badge}

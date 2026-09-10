@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
   Filter, 
@@ -14,9 +15,10 @@ import {
   Gauge, 
   Thermometer, 
   RotateCcw,
-  Zap
+  Zap,
+  Package
 } from 'lucide-react';
-import { FilamentProduct, MaterialType, ColorOption, LanguageCode, CurrencyCode } from '../types';
+import { FilamentProduct, MaterialType, ColorOption, LanguageCode, CurrencyCode, ALL_MATERIAL_CATEGORIES } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
 import { SearchAutocomplete } from './Storefront/SearchAutocomplete';
 
@@ -46,21 +48,49 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   // Track selected color per product for instant visual preview
   const [selectedColors, setSelectedColors] = useState<Record<string, ColorOption>>({});
 
-  const materials: { label: string; value: string }[] = [
+  const materialGroups: { label: string; value: string; icon?: string }[] = [
     { label: '全部耗材', value: 'All' },
-    { label: '🚀 高速 PLA+', value: 'High-Speed PLA' },
-    { label: 'PLA 經典線材', value: 'PLA' },
-    { label: '🛡️ PETG 耐溫耐候', value: 'PETG' },
-    { label: '⚡ 碳纖維 PLA-CF', value: 'Carbon Fiber' },
-    { label: '🤸 TPU 彈性軟膠', value: 'TPU' },
-    { label: '🔥 ABS 工業級', value: 'ABS' },
-    { label: '💎 8K 光固化樹脂', value: 'Resin' },
-    { label: '⚙️ 噴嘴與配件', value: 'Accessories' },
+    { label: '高速 / 美學 PLA', value: 'GROUP_PLA' },
+    { label: '耐候高透 PETG', value: 'GROUP_PETG' },
+    { label: '工業耐溫 ABS/ASA', value: 'GROUP_ABS_ASA' },
+    { label: '柔性彈性 TPU', value: 'GROUP_TPU' },
+    { label: '碳纖維複合料', value: 'GROUP_CF' },
+    { label: 'PA 尼龍金屬替代', value: 'GROUP_NYLON' },
+    { label: 'PC / PP / 航空特種', value: 'GROUP_SPECIAL' },
+    { label: 'Support 支撐料', value: 'GROUP_SUPPORT' },
+    { label: '8K 光固化樹脂', value: 'GROUP_RESIN' },
+    { label: '配件與工具', value: 'GROUP_ACCESSORIES' },
   ];
 
   const filteredProducts = useMemo(() => {
     return products.filter((item) => {
-      const matchMaterial = selectedMaterial === 'All' || item.material === selectedMaterial;
+      let matchMaterial = false;
+      if (selectedMaterial === 'All') {
+        matchMaterial = true;
+      } else if (selectedMaterial === 'GROUP_PLA') {
+        matchMaterial = item.material.includes('PLA') || item.name.includes('PLA');
+      } else if (selectedMaterial === 'GROUP_PETG') {
+        matchMaterial = item.material.includes('PETG') || item.name.includes('PETG');
+      } else if (selectedMaterial === 'GROUP_ABS_ASA') {
+        matchMaterial = item.material.includes('ABS') || item.material.includes('ASA') || item.name.includes('ABS') || item.name.includes('ASA');
+      } else if (selectedMaterial === 'GROUP_TPU') {
+        matchMaterial = item.material.includes('TPU') || item.material.includes('TPE') || item.name.includes('TPU');
+      } else if (selectedMaterial === 'GROUP_CF') {
+        matchMaterial = item.material.includes('CF') || item.material.includes('Carbon Fiber') || item.name.includes('CF') || item.name.includes('碳纖維');
+      } else if (selectedMaterial === 'GROUP_NYLON') {
+        matchMaterial = item.material.includes('PA') || item.material.includes('Nylon') || item.name.includes('尼龍') || item.name.includes('PA');
+      } else if (selectedMaterial === 'GROUP_SPECIAL') {
+        matchMaterial = item.material.includes('PC') || item.material.includes('PP') || item.material.includes('PEEK') || item.material.includes('PEI') || item.name.includes('PC') || item.name.includes('PP');
+      } else if (selectedMaterial === 'GROUP_SUPPORT') {
+        matchMaterial = item.material.includes('Support') || item.name.includes('支撐') || item.name.includes('PVA');
+      } else if (selectedMaterial === 'GROUP_RESIN') {
+        matchMaterial = item.material === 'Resin' || item.name.includes('樹脂');
+      } else if (selectedMaterial === 'GROUP_ACCESSORIES') {
+        matchMaterial = item.material === 'Accessories' || item.name.includes('配件') || item.name.includes('噴嘴') || item.name.includes('鋼板') || item.name.includes('乾燥');
+      } else {
+        matchMaterial = item.material === selectedMaterial || item.name.toLowerCase().includes(selectedMaterial.toLowerCase());
+      }
+
       const matchDiameter = selectedDiameter === 'All' || item.diameter === selectedDiameter;
       const matchSearch = searchQuery.trim() === '' || 
         item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -122,24 +152,65 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
       </div>
 
       {/* Material Filter Tabs (Horizontal Scrollable) */}
-      <div className="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-none">
-        {materials.map((mat) => {
-          const isActive = selectedMaterial === mat.value;
-          return (
-            <button
-              key={mat.value}
-              id={`filter-mat-${mat.value}`}
-              onClick={() => setSelectedMaterial(mat.value)}
-              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10 scale-102'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-              }`}
+      <div className="space-y-2">
+        <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-none">
+          {materialGroups.map((mat) => {
+            const isActive = selectedMaterial === mat.value;
+            return (
+              <motion.button
+                key={mat.value}
+                id={`filter-mat-${mat.value}`}
+                onClick={() => setSelectedMaterial(mat.value)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.92 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold whitespace-nowrap transition-all cursor-pointer select-none ${
+                  isActive
+                    ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                }`}
+              >
+                {mat.label}
+              </motion.button>
+            );
+          })}
+        </div>
+
+        {/* Fine-grained Material Specification Selector */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-xl">
+          <div className="flex items-center gap-2 text-slate-600 font-medium">
+            <span className="text-slate-400">🔬 市面全材質精準速查：</span>
+            <select
+              value={selectedMaterial.startsWith('GROUP_') || selectedMaterial === 'All' ? '' : selectedMaterial}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setSelectedMaterial(e.target.value);
+                }
+              }}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 cursor-pointer shadow-2xs focus:ring-1 focus:ring-slate-400"
             >
-              {mat.label}
+              <option value="">選擇特定材料 (如 LW-PLA, PETG-ESD, PA12-CF, PEEK...)</option>
+              {ALL_MATERIAL_CATEGORIES.map((cat) => (
+                <optgroup key={cat.groupName} label={`${cat.icon} ${cat.groupName}`}>
+                  {cat.materials.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
+          {selectedMaterial !== 'All' && (
+            <button
+              onClick={() => setSelectedMaterial('All')}
+              className="text-slate-500 hover:text-slate-900 text-[11px] font-bold underline cursor-pointer"
+            >
+              重設為全部耗材 ({products.length})
             </button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
       {/* Search & Sort Bar */}
@@ -193,8 +264,17 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
         </div>
       </div>
 
-      {/* Products Grid */}
-      <div id="product-grid" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+      {/* Products Grid with Fade In/Out Transition */}
+      <AnimatePresence mode="wait">
+        <motion.div 
+          key={`catalog-grid-${selectedMaterial}-${selectedDiameter}-${sortBy}-${searchQuery || 'all'}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.22, ease: 'easeInOut' }}
+          id="product-grid" 
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+        >
         {filteredProducts.map((product) => {
           const activeColor = selectedColors[product.id] || product.colors[0];
           const discountPercent = Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100);
@@ -210,12 +290,18 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                 className="relative h-48 bg-slate-100 overflow-hidden cursor-pointer"
                 onClick={() => onSelectProduct(product)}
               >
-                <img
-                  src={product.imageUrl}
-                  alt={product.name}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  loading="lazy"
-                />
+                {product.imageUrl && product.imageUrl.trim() !== '' ? (
+                  <img
+                    src={product.imageUrl}
+                    alt={product.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-400">
+                    <Package className="w-12 h-12" />
+                  </div>
+                )}
 
                 {/* Badge */}
                 {product.badge && (
@@ -348,7 +434,8 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
             </div>
           );
         })}
-      </div>
+        </motion.div>
+      </AnimatePresence>
 
       {filteredProducts.length === 0 && (
         <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">

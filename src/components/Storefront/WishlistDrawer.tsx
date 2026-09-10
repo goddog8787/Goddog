@@ -40,9 +40,13 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
   const savedProducts = products.filter((p) => wishlistIds.includes(p.id));
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between relative animate-slide-in-right"
+        className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between relative animate-slide-in-right cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
@@ -84,7 +88,11 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                 className="p-3 bg-white rounded-2xl border border-slate-200 hover:border-indigo-200 transition-all flex gap-3 group shadow-xs"
               >
                 <div className="w-16 h-16 rounded-xl bg-slate-100 p-1 flex items-center justify-center shrink-0 border border-slate-100">
-                  <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover rounded-lg" />
+                  {p.imageUrl && p.imageUrl.trim() !== '' ? (
+                    <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover rounded-lg" />
+                  ) : (
+                    <Package className="w-6 h-6 text-slate-400" />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0 flex flex-col justify-between">

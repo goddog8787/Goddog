@@ -378,10 +378,27 @@ export async function loadCustomerTrackingNumbers(userId: string | null | undefi
 // 6. 客服與 AI 技術對話 (Chat Messages)
 // -------------------------------------------------------------
 
+export interface DiagnosticSolution {
+  answer?: string;
+  probableCauses?: string[];
+  solutions?: string[];
+  recommendedAdjustment?: {
+    temperature?: string;
+    speed?: string;
+    retraction?: string;
+    cooling?: string;
+  };
+  checklist?: string[];
+}
+
 export interface ChatMessage {
+  id?: string;
   sender: 'ai' | 'user';
   text: string;
   timestamp?: number;
+  solution?: DiagnosticSolution;
+  isLoading?: boolean;
+  modelUsed?: string;
 }
 
 export async function saveCustomerChatMessages(userId: string | null | undefined, messages: ChatMessage[]): Promise<void> {

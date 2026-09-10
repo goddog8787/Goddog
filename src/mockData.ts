@@ -4,7 +4,7 @@ export const INITIAL_PRODUCTS: FilamentProduct[] = [
   {
     id: 'prod-pla-hf-01',
     name: 'Hyper-Speed 高速 PLA+ 專業線材',
-    brand: '神狗勾 Pro',
+    brand: '神狗勾',
     material: 'High-Speed PLA',
     diameter: '1.75mm',
     weight: '1.0kg',
@@ -34,7 +34,7 @@ export const INITIAL_PRODUCTS: FilamentProduct[] = [
   {
     id: 'prod-petg-hf-02',
     name: 'PETG-HF 高速耐候耐溫線材',
-    brand: '神狗勾 Pro',
+    brand: '神狗勾',
     material: 'PETG',
     diameter: '1.75mm',
     weight: '1.0kg',
@@ -118,7 +118,7 @@ export const INITIAL_PRODUCTS: FilamentProduct[] = [
   {
     id: 'prod-abs-pro-05',
     name: 'ABS+ 航模耐衝擊改性線材 (低氣味)',
-    brand: '神狗勾 Pro',
+    brand: '神狗勾',
     material: 'ABS',
     diameter: '1.75mm',
     weight: '1.0kg',
@@ -172,7 +172,7 @@ export const INITIAL_PRODUCTS: FilamentProduct[] = [
   {
     id: 'prod-acc-nozzle-07',
     name: 'Bambu / Prusa 專用硬化鋼高流量 CHT 噴嘴套組 (0.4 / 0.6mm)',
-    brand: '神狗勾 Pro',
+    brand: '神狗勾',
     material: 'Accessories',
     diameter: '1.75mm',
     weight: '0.5kg',

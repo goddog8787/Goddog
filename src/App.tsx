@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Navbar 
 } from './components/Navbar';
@@ -53,6 +54,9 @@ import {
 import { 
   SpoolRecycleModal 
 } from './components/Storefront/SpoolRecycleModal';
+import {
+  DraggableChatWidget
+} from './components/Storefront/DraggableChatWidget';
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_ORDERS, 
@@ -565,6 +569,7 @@ export default function App() {
         cartCount={cartCount}
         onOpenCart={() => setIsCartOpen(true)}
         onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
+        onOpenSupport={() => setIsCustomerSupportOpen(true)}
         onOpenTracking={() => {
           setTrackingNumberInput(orders[0]?.trackingNumber || '');
           setIsTrackingOpen(true);
@@ -586,7 +591,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 lg:pb-8">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8 pb-32 sm:pb-36 lg:pb-8 overflow-x-hidden">
         {activeTab === 'store' ? (
           /* ================================================================= */
           /* CUSTOMER STOREFRONT VIEW                                          */
@@ -875,25 +880,56 @@ export default function App() {
               {/* Bottom Row: Category Material Filter Chips + Reset Filter */}
               <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap sm:flex-nowrap">
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none w-full sm:w-auto">
-                  <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1">材質：</span>
-                  {materials.map((mat) => (
-                    <button
-                      key={mat}
-                      onClick={() => setSelectedMaterial(mat)}
-                      className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                        selectedMaterial === mat
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {mat === 'All' ? t.allCategories : mat}
-                    </button>
-                  ))}
+                  <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1 select-none">材質：</span>
+                  {materials.map((mat) => {
+                    const isSelected = selectedMaterial === mat;
+                    const count = products.filter((p) => mat === 'All' || p.material === mat).length;
+                    return (
+                      <motion.button
+                        key={mat}
+                        id={`filter-material-${mat}`}
+                        onClick={() => setSelectedMaterial(mat)}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.92 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                        className={`relative px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                        }`}
+                      >
+                        {isSelected && (
+                          <motion.span
+                            layoutId="activeMaterialIndicator"
+                            className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 -z-0"
+                            transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                          />
+                        )}
+                        <span className="relative z-10 flex items-center gap-1.5">
+                          {isSelected && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
+                          )}
+                          <span>{mat === 'All' ? t.allCategories : mat}</span>
+                          <span
+                            className={`text-[10px] font-mono px-1 rounded-md transition-colors ${
+                              isSelected ? 'bg-white/25 text-white' : 'bg-slate-200/80 text-slate-500'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </span>
+                      </motion.button>
+                    );
+                  })}
                 </div>
 
                 {/* Active Filter Clear Tag */}
                 {(searchQuery || selectedMaterial !== 'All') && (
-                  <button
+                  <motion.button
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    whileHover={{ scale: 1.04 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={() => {
                       setSearchQuery('');
                       setSelectedMaterial('All');
@@ -901,65 +937,87 @@ export default function App() {
                     className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 transition-colors cursor-pointer shrink-0 ml-auto"
                   >
                     重設所有篩選 ✕
-                  </button>
+                  </motion.button>
                 )}
               </div>
             </div>
 
-            {/* Product Grid (Responsive: 2-Column Mobile Feed & 4-Column Desktop Grid) */}
+            {/* Product Grid with Smooth Fade In/Out Gradient & Scale Transition */}
             <div id="storefront-product-grid">
-              {filteredAndSortedProducts.length === 0 ? (
-                <div className="py-20 text-center bg-white rounded-3xl border border-slate-200 p-8 space-y-3">
-                  <p className="font-bold text-slate-700 text-base">找不到符合條件的 3D 列印耗材</p>
-                  <p className="text-xs text-slate-400">建議嘗試切換不同材質標籤或清除關鍵字搜尋！</p>
-                  <button
-                    onClick={() => {
-                      setSelectedMaterial('All');
-                      setSearchQuery('');
-                    }}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+              <AnimatePresence mode="wait">
+                {filteredAndSortedProducts.length === 0 ? (
+                  <motion.div
+                    key="empty-products-state"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: 'easeOut' }}
+                    className="py-20 text-center bg-white rounded-3xl border border-slate-200 p-8 space-y-3"
                   >
-                    重設搜尋條件
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-5">
-                  {filteredAndSortedProducts.map((product, idx) => (
-                    <React.Fragment key={product.id}>
-                      <ProductCard
-                        product={product}
-                        currency={currency}
-                        lang={lang}
-                        onAddToCart={(p, color, diameter) => handleAddToCart(p, color, diameter, 1)}
-                        onViewDetail={(p) => setViewingProduct(p)}
-                        isWishlisted={wishlistIds.includes(product.id)}
-                        onToggleWishlist={handleToggleWishlist}
-                        isCompared={comparisonIds.includes(product.id)}
-                        onToggleCompare={handleToggleCompare}
-                      />
-                      {idx === 1 && adSenseConfig.enabled && adSenseConfig.showInFeedAd && (
-                        <div className="col-span-2 md:col-span-3 lg:col-span-4">
-                          <AdSenseBanner
-                            placement="in-feed"
-                            config={adSenseConfig}
-                            onSimulateClick={() => {
-                              setAdSenseConfig((prev) => ({
-                                ...prev,
-                                estimatedStats: {
-                                  dailyImpressions: (prev.estimatedStats?.dailyImpressions || 8500) + 1,
-                                  dailyClicks: (prev.estimatedStats?.dailyClicks || 187) + 1,
-                                  avgCpcTwd: prev.estimatedStats?.avgCpcTwd || 15,
-                                  monthlyEarningsTwd: (prev.estimatedStats?.monthlyEarningsTwd || 84150) + 15 * 30,
-                                },
-                              }));
-                            }}
+                    <p className="font-bold text-slate-700 text-base">找不到符合條件的 3D 列印耗材</p>
+                    <p className="text-xs text-slate-400">建議嘗試切換不同材質標籤或清除關鍵字搜尋！</p>
+                    <button
+                      onClick={() => {
+                        setSelectedMaterial('All');
+                        setSearchQuery('');
+                      }}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                    >
+                      重設搜尋條件
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key={`product-grid-${selectedMaterial}-${sortBy}-${searchQuery || 'all'}`}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.22, ease: 'easeInOut' }}
+                    className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-5"
+                  >
+                    {filteredAndSortedProducts.map((product, idx) => (
+                      <React.Fragment key={product.id}>
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.96 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ duration: 0.18, delay: Math.min(idx * 0.02, 0.14) }}
+                        >
+                          <ProductCard
+                            product={product}
+                            currency={currency}
+                            lang={lang}
+                            onAddToCart={(p, color, diameter) => handleAddToCart(p, color, diameter, 1)}
+                            onViewDetail={(p) => setViewingProduct(p)}
+                            isWishlisted={wishlistIds.includes(product.id)}
+                            onToggleWishlist={handleToggleWishlist}
+                            isCompared={comparisonIds.includes(product.id)}
+                            onToggleCompare={handleToggleCompare}
                           />
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
+                        </motion.div>
+                        {idx === 1 && adSenseConfig.enabled && adSenseConfig.showInFeedAd && (
+                          <div className="col-span-2 md:col-span-3 lg:col-span-4">
+                            <AdSenseBanner
+                              placement="in-feed"
+                              config={adSenseConfig}
+                              onSimulateClick={() => {
+                                setAdSenseConfig((prev) => ({
+                                  ...prev,
+                                  estimatedStats: {
+                                    dailyImpressions: (prev.estimatedStats?.dailyImpressions || 8500) + 1,
+                                    dailyClicks: (prev.estimatedStats?.dailyClicks || 187) + 1,
+                                    avgCpcTwd: prev.estimatedStats?.avgCpcTwd || 15,
+                                    monthlyEarningsTwd: (prev.estimatedStats?.monthlyEarningsTwd || 84150) + 15 * 30,
+                                  },
+                                }));
+                              }}
+                            />
+                          </div>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Google AdSense Footer Leaderboard Banner */}
@@ -1009,20 +1067,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Customer Support Button */}
-      <button
-        id="floating-support-btn"
-        onClick={() => setIsCustomerSupportOpen(true)}
-        className="fixed bottom-6 right-6 z-40 bg-slate-900 hover:bg-indigo-600 text-white p-3.5 rounded-full shadow-2xl border-2 border-white/20 flex items-center gap-2 cursor-pointer transition-all hover:scale-105 active:scale-95 group"
-        aria-label="3D 列印技術工程師與客服"
-      >
-        <MessageSquare className="w-5 h-5 text-indigo-400 group-hover:text-white" />
-        <span className="text-xs font-bold pr-1 hidden sm:inline">3D 技術客服</span>
-        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-      </button>
-
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-12 py-8 text-xs text-slate-500">
+      <footer className="bg-white border-t border-slate-200 mt-12 py-8 pb-24 lg:pb-8 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
@@ -1091,118 +1137,141 @@ export default function App() {
       {/* =================================================================== */}
       {/* GLOBAL MODALS                                                       */}
       {/* =================================================================== */}
-      <ProductDetailModal
-        product={viewingProduct}
-        currency={currency}
-        lang={lang}
-        onClose={() => setViewingProduct(null)}
-        onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
-        onQuickCheckout={handleQuickCheckout}
-      />
+      {viewingProduct && (
+        <ProductDetailModal
+          product={viewingProduct}
+          currency={currency}
+          lang={lang}
+          onClose={() => setViewingProduct(null)}
+          onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
+          onQuickCheckout={handleQuickCheckout}
+          onAskAI={(p) => {
+            setViewingProduct(null);
+            setSupportInitialPrompt(`我想了解【${p.name}】(${p.material}) 的最佳切片參數、噴嘴溫度與相容性建議！`);
+            setIsCustomerSupportOpen(true);
+          }}
+        />
+      )}
 
-      <CartDrawer
-        isOpen={isCartOpen}
-        onClose={() => setIsCartOpen(false)}
-        cartItems={cartItems}
-        onUpdateQuantity={handleUpdateCartQuantity}
-        onRemoveItem={handleRemoveCartItem}
-        onProceedCheckout={handleProceedCheckout}
-        currency={currency}
-        lang={lang}
-        member={member}
-      />
+      {isCartOpen && (
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={() => setIsCartOpen(false)}
+          cartItems={cartItems}
+          onUpdateQuantity={handleUpdateCartQuantity}
+          onRemoveItem={handleRemoveCartItem}
+          onProceedCheckout={handleProceedCheckout}
+          currency={currency}
+          lang={lang}
+          member={member}
+        />
+      )}
 
-      <CheckoutModal
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        cartItems={cartItems}
-        currency={currency}
-        lang={lang}
-        member={member}
-        pointsToUse={checkoutPointsToUse}
-        onOrderCompleted={handleOrderCompleted}
-        onOpenTracking={(trk) => {
-          setTrackingNumberInput(trk);
-          setIsTrackingOpen(true);
-        }}
-      />
+      {isCheckoutOpen && (
+        <CheckoutModal
+          isOpen={isCheckoutOpen}
+          onClose={() => setIsCheckoutOpen(false)}
+          cartItems={cartItems}
+          currency={currency}
+          lang={lang}
+          member={member}
+          pointsToUse={checkoutPointsToUse}
+          onOrderCompleted={handleOrderCompleted}
+          onOpenTracking={(trk) => {
+            setTrackingNumberInput(trk);
+            setIsTrackingOpen(true);
+          }}
+        />
+      )}
 
-      <AIAdvisorModal
-        isOpen={isAIAdvisorOpen}
-        onClose={() => setIsAIAdvisorOpen(false)}
-        products={products}
-        onAddToCart={(p, c, d) => handleAddToCart(p, c, d, 1)}
-        onOpenSupportWithPrompt={(prompt) => {
-          setSupportInitialPrompt(prompt);
-          setIsCustomerSupportOpen(true);
-        }}
-      />
+      {isAIAdvisorOpen && (
+        <AIAdvisorModal
+          isOpen={isAIAdvisorOpen}
+          onClose={() => setIsAIAdvisorOpen(false)}
+          products={products}
+          onAddToCart={(p, c, d) => handleAddToCart(p, c, d, 1)}
+          onOpenSupportWithPrompt={(prompt) => {
+            setSupportInitialPrompt(prompt);
+            setIsCustomerSupportOpen(true);
+          }}
+        />
+      )}
 
-      <TrackingModal
-        isOpen={isTrackingOpen}
-        onClose={() => setIsTrackingOpen(false)}
-        defaultTrackingNumber={trackingNumberInput}
-        orders={orders}
-        userId={isLoggedIn ? member?.id : undefined}
-      />
+      {isTrackingOpen && (
+        <TrackingModal
+          isOpen={isTrackingOpen}
+          onClose={() => setIsTrackingOpen(false)}
+          defaultTrackingNumber={trackingNumberInput}
+          orders={orders}
+          userId={isLoggedIn ? member?.id : undefined}
+        />
+      )}
 
-      <SubscriptionModal
-        isOpen={isSubscriptionOpen}
-        onClose={() => setIsSubscriptionOpen(false)}
-        currency={currency}
-      />
+      {isSubscriptionOpen && (
+        <SubscriptionModal
+          isOpen={isSubscriptionOpen}
+          onClose={() => setIsSubscriptionOpen(false)}
+          currency={currency}
+        />
+      )}
 
-      <LoyaltyModal
-        isOpen={isLoyaltyOpen}
-        onClose={() => setIsLoyaltyOpen(false)}
-        member={member}
-        currency={currency}
-        orders={orders}
-        onOpenTrackingWithCode={(trackingCode) => {
-          setTrackingNumberInput(trackingCode);
-          setIsTrackingOpen(true);
-        }}
-        onLogout={handleLogout}
-      />
+      {isLoyaltyOpen && (
+        <LoyaltyModal
+          isOpen={isLoyaltyOpen}
+          onClose={() => setIsLoyaltyOpen(false)}
+          member={member}
+          currency={currency}
+          orders={orders}
+          onOpenTrackingWithCode={(trackingCode) => {
+            setTrackingNumberInput(trackingCode);
+            setIsTrackingOpen(true);
+          }}
+          onLogout={handleLogout}
+        />
+      )}
 
-      <CustomerSupportModal
-        isOpen={isCustomerSupportOpen}
-        onClose={() => {
-          setIsCustomerSupportOpen(false);
-          setSupportInitialPrompt('');
-        }}
-        viewingProduct={viewingProduct}
-        cartItems={cartItems}
-        member={member}
-        initialPrompt={supportInitialPrompt}
-      />
+      {isCustomerSupportOpen && (
+        <CustomerSupportModal
+          isOpen={isCustomerSupportOpen}
+          onClose={() => {
+            setIsCustomerSupportOpen(false);
+            setSupportInitialPrompt('');
+          }}
+          viewingProduct={viewingProduct}
+          cartItems={cartItems}
+          member={member}
+          initialPrompt={supportInitialPrompt}
+        />
+      )}
 
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
-        onLoginSuccess={(user) => {
-          setIsLoggedIn(true);
-          const updated = {
-            ...member,
-            id: user.id || member.id,
-            name: user.name || (user as any).displayName || user.email?.split('@')[0] || '神狗勾 會員',
-            email: user.email || member.email,
-            points: (user.points !== undefined ? user.points : member.points) + 120, // New member reward bonus points
-          };
-          setMember(updated);
-          saveStoredCustomerSession({
-            id: updated.id,
-            name: updated.name,
-            email: updated.email,
-            tier: updated.tier,
-            points: updated.points,
-            totalSpent: updated.totalSpent,
-            isLoggedIn: true,
-          });
-          saveUserProfileToFirestore(updated);
-          syncUserData(updated.id, updated);
-        }}
-      />
+      {isAuthOpen && (
+        <AuthModal
+          isOpen={isAuthOpen}
+          onClose={() => setIsAuthOpen(false)}
+          onLoginSuccess={(user) => {
+            setIsLoggedIn(true);
+            const updated = {
+              ...member,
+              id: user.id || member.id,
+              name: user.name || (user as any).displayName || user.email?.split('@')[0] || '神狗勾 會員',
+              email: user.email || member.email,
+              points: (user.points !== undefined ? user.points : member.points) + 120, // New member reward bonus points
+            };
+            setMember(updated);
+            saveStoredCustomerSession({
+              id: updated.id,
+              name: updated.name,
+              email: updated.email,
+              tier: updated.tier,
+              points: updated.points,
+              totalSpent: updated.totalSpent,
+              isLoggedIn: true,
+            });
+            saveUserProfileToFirestore(updated);
+            syncUserData(updated.id, updated);
+          }}
+        />
+      )}
 
       {/* Persistent Sync & Status Toast Notification */}
       {toastNotification && (
@@ -1226,63 +1295,82 @@ export default function App() {
       )}
 
       {/* Maker Lab (Calculator & Slicer Profiles) Modal */}
-      <FilamentLabModal
-        isOpen={isFilamentLabOpen}
-        onClose={() => setIsFilamentLabOpen(false)}
-        products={products}
-        currency={currency}
-        onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
-      />
+      {isFilamentLabOpen && (
+        <FilamentLabModal
+          isOpen={isFilamentLabOpen}
+          onClose={() => setIsFilamentLabOpen(false)}
+          products={products}
+          currency={currency}
+          onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
+        />
+      )}
 
       {/* Side-by-Side Product Comparison Modal */}
-      <ProductComparisonModal
-        isOpen={isCompareModalOpen}
-        onClose={() => setIsCompareModalOpen(false)}
-        products={products}
-        comparisonIds={comparisonIds}
-        onRemoveComparison={(id) => handleToggleCompare(id)}
-        onClearComparison={() => {
-          setComparisonIds([]);
-          localStorage.removeItem('printcore_comparison_ids');
-        }}
-        onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
-        currency={currency}
-      />
+      {isCompareModalOpen && (
+        <ProductComparisonModal
+          isOpen={isCompareModalOpen}
+          onClose={() => setIsCompareModalOpen(false)}
+          products={products}
+          comparisonIds={comparisonIds}
+          onToggleCompare={handleToggleCompare}
+          onSetComparisonIds={(ids) => {
+            setComparisonIds(ids);
+            localStorage.setItem('printcore_comparison_ids', JSON.stringify(ids));
+          }}
+          onRemoveComparison={(id) => handleToggleCompare(id)}
+          onClearComparison={() => {
+            setComparisonIds([]);
+            localStorage.removeItem('printcore_comparison_ids');
+          }}
+          onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
+          currency={currency}
+        />
+      )}
 
       {/* Wishlist Drawer */}
-      <WishlistDrawer
-        isOpen={isWishlistOpen}
-        onClose={() => setIsWishlistOpen(false)}
-        wishlistIds={wishlistIds}
-        products={products}
-        onRemoveFromWishlist={handleToggleWishlist}
-        onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
-        onAddAllToCart={handleAddAllWishlistToCart}
-        currency={currency}
-        lang={lang}
-      />
+      {isWishlistOpen && (
+        <WishlistDrawer
+          isOpen={isWishlistOpen}
+          onClose={() => setIsWishlistOpen(false)}
+          wishlistIds={wishlistIds}
+          products={products}
+          onRemoveFromWishlist={handleToggleWishlist}
+          onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
+          onAddAllToCart={handleAddAllWishlistToCart}
+          currency={currency}
+          lang={lang}
+        />
+      )}
 
       {/* Spool Recycle Modal */}
-      <SpoolRecycleModal
-        isOpen={isRecycleOpen}
-        onClose={() => setIsRecycleOpen(false)}
-        member={member}
-        onRewardPoints={handleRewardPoints}
+      {isRecycleOpen && (
+        <SpoolRecycleModal
+          isOpen={isRecycleOpen}
+          onClose={() => setIsRecycleOpen(false)}
+          member={member}
+          onRewardPoints={handleRewardPoints}
+        />
+      )}
+
+      {/* Free Draggable AI Floating Chat & Advisor Bubble with Recycle / Hide Drop Zone */}
+      <DraggableChatWidget
+        onOpenSupport={() => setIsCustomerSupportOpen(true)}
+        onOpenAdvisor={() => setIsAIAdvisorOpen(true)}
       />
 
-      {/* Floating Sticky Comparison Indicator Bar */}
+      {/* Floating Sticky Comparison Indicator Bar (Positioned gracefully above bottom nav without blocking center button) */}
       {comparisonIds.length > 0 && !isCompareModalOpen && (
-        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 sm:gap-4 animate-bounce-short">
-          <div className="flex items-center gap-2">
+        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-3.5 py-2 sm:px-5 sm:py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2.5 sm:gap-4 animate-bounce-short max-w-[92vw]">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <Scale className="w-4 h-4 text-indigo-400 shrink-0" />
             <span className="text-xs font-bold whitespace-nowrap">
-              已選取 <span className="font-mono text-amber-400 text-sm">{comparisonIds.length}</span> / 4 款
+              已選 <span className="font-mono text-amber-400 text-sm">{comparisonIds.length}</span> / 4 款
             </span>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setIsCompareModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer whitespace-nowrap"
+              className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer whitespace-nowrap"
             >
               橫向規格對比
             </button>
@@ -1291,10 +1379,10 @@ export default function App() {
                 setComparisonIds([]);
                 localStorage.removeItem('printcore_comparison_ids');
               }}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               title="清空選取"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
@@ -1303,7 +1391,7 @@ export default function App() {
       {/* Mobile App Bottom Navigation Tab Bar (Standard Mobile Experience) */}
       <nav
         id="mobile-bottom-nav-bar"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 py-1.5 px-3 shadow-lg flex items-center justify-around"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/98 backdrop-blur-md border-t border-slate-200/90 py-1 px-1.5 shadow-2xl flex items-center justify-around pb-[max(0.5rem,env(safe-area-inset-bottom))]"
       >
         {/* Tab 1: Store Catalog */}
         <button
@@ -1311,38 +1399,38 @@ export default function App() {
             setActiveTab('store');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
-          className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-colors cursor-pointer ${
+          className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-colors cursor-pointer min-w-[48px] active:scale-95 ${
             activeTab === 'store' ? 'text-indigo-600 font-bold' : 'text-slate-500 hover:text-slate-800'
           }`}
         >
           <Home className="w-5 h-5" />
-          <span className="text-[10px] mt-0.5">商城首頁</span>
+          <span className="text-[10px] mt-0.5 whitespace-nowrap">商城</span>
         </button>
 
         {/* Tab 2: Maker Lab */}
         <button
           onClick={() => setIsFilamentLabOpen(true)}
-          className="flex flex-col items-center justify-center py-1 px-2 rounded-xl text-slate-500 hover:text-cyan-600 transition-colors cursor-pointer"
+          className="flex flex-col items-center justify-center py-1 px-1 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer min-w-[48px] active:scale-95"
         >
-          <Wrench className="w-5 h-5 text-cyan-600" />
-          <span className="text-[10px] mt-0.5 font-medium">創客工具</span>
+          <Wrench className="w-5 h-5 text-indigo-600" />
+          <span className="text-[10px] mt-0.5 font-medium whitespace-nowrap">創客工具</span>
         </button>
 
         {/* Tab 3: AI Advisor (Highlighted Center Orb) */}
         <button
           onClick={() => setIsAIAdvisorOpen(true)}
-          className="flex flex-col items-center justify-center -mt-4 cursor-pointer group"
+          className="flex flex-col items-center justify-center -mt-4 cursor-pointer group min-w-[54px] active:scale-95"
         >
-          <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-indigo-600 to-sky-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 group-active:scale-95 transition-transform border-2 border-white">
-            <Sparkles className="w-6 h-6 text-amber-300" />
+          <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-700 to-sky-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 group-active:scale-95 transition-transform border-2 border-white">
+            <Sparkles className="w-6 h-6 text-amber-300 animate-pulse" />
           </div>
-          <span className="text-[10px] mt-0.5 font-bold text-indigo-600">AI 顧問</span>
+          <span className="text-[10px] mt-0.5 font-bold text-indigo-600 whitespace-nowrap">AI 顧問</span>
         </button>
 
         {/* Tab 4: Wishlist */}
         <button
           onClick={() => setIsWishlistOpen(true)}
-          className="flex flex-col items-center justify-center py-1 px-2 rounded-xl text-slate-500 hover:text-rose-600 transition-colors cursor-pointer relative"
+          className="flex flex-col items-center justify-center py-1 px-1 rounded-xl text-slate-500 hover:text-rose-600 transition-colors cursor-pointer min-w-[48px] relative active:scale-95"
         >
           <Heart className={`w-5 h-5 ${wishlistIds.length > 0 ? 'text-rose-500 fill-rose-500' : ''}`} />
           {wishlistIds.length > 0 && (
@@ -1350,13 +1438,13 @@ export default function App() {
               {wishlistIds.length}
             </span>
           )}
-          <span className="text-[10px] mt-0.5 font-medium">收藏清單</span>
+          <span className="text-[10px] mt-0.5 font-medium whitespace-nowrap">收藏</span>
         </button>
 
         {/* Tab 5: Cart */}
         <button
           onClick={() => setIsCartOpen(true)}
-          className="flex flex-col items-center justify-center py-1 px-2 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer relative"
+          className="flex flex-col items-center justify-center py-1 px-1 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer min-w-[48px] relative active:scale-95"
         >
           <ShoppingCart className="w-5 h-5 text-slate-800" />
           {cartCount > 0 && (
@@ -1364,7 +1452,7 @@ export default function App() {
               {cartCount}
             </span>
           )}
-          <span className="text-[10px] mt-0.5 font-medium">購物車</span>
+          <span className="text-[10px] mt-0.5 font-medium whitespace-nowrap">購物車</span>
         </button>
       </nav>
     </div>

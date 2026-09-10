@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShoppingCart, Check, Eye, Flame, Gauge, Layers, Info, Heart, Scale, Star } from 'lucide-react';
+import { ShoppingCart, Check, Eye, Flame, Gauge, Layers, Info, Heart, Scale, Star, Package } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode } from '../../types';
 import { formatPrice, translations } from '../../utils/i18n';
 
@@ -96,12 +96,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
       {/* Image Area with 3D Spool Glow */}
       <div className="relative aspect-square w-full bg-gradient-to-b from-slate-100 to-slate-200/80 overflow-hidden flex items-center justify-center p-4">
-        <img
-          src={product.imageUrl}
-          alt={product.name}
-          className="w-full h-full object-cover object-center rounded-xl group-hover:scale-105 transition-transform duration-500"
-          loading="lazy"
-        />
+        {product.imageUrl && product.imageUrl.trim() !== '' ? (
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="w-full h-full object-cover object-center rounded-xl group-hover:scale-105 transition-transform duration-500"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-400">
+            <Package className="w-12 h-12" />
+          </div>
+        )}
 
         {/* Selected Color Visual Indicator Pill */}
         <div 
@@ -120,7 +126,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <div>
           {/* Brand & Material tag */}
           <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-1">
-            <span className="font-semibold text-indigo-600 tracking-wide truncate max-w-[90px] sm:max-w-none">{product.brand}</span>
+            <span className="font-semibold text-indigo-600 tracking-wide truncate max-w-[90px] sm:max-w-none">{product.brand.replace(/\s*pro/gi, '')}</span>
             <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               <span className="bg-slate-100 text-slate-700 px-1.5 sm:px-2 py-0.5 rounded font-mono text-[10px] sm:text-[11px] font-medium">
                 {product.weight}

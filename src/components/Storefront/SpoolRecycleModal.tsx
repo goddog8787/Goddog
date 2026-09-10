@@ -27,16 +27,14 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
   member,
   onRewardPoints,
 }) => {
-  if (!isOpen) return null;
-
   const [spoolCount, setSpoolCount] = useState<number>(4);
   const [spoolMaterial, setSpoolMaterial] = useState<'cardboard' | 'plastic' | 'mixed'>('mixed');
   const [returnMethod, setReturnMethod] = useState<'7-11_ibon' | 'post_office'>('7-11_ibon');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [recycleTrackingCode, setRecycleTrackingCode] = useState('');
 
-  // 50 points per spool returned!
-  const earnedPoints = spoolCount * 50;
+  // 20 points per spool returned!
+  const earnedPoints = spoolCount * 20;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,10 +44,16 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
     setIsSubmitted(true);
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col relative"
+        className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-200 flex flex-col relative cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -68,7 +72,7 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-emerald-200/80">
-                每回收 1 盤回饋 50 點創客積分 • 滿 3 盤超商寄件免運
+                每回收 1 盤回饋 20 點創客積分 • 滿 3 盤超商寄件免運
               </p>
             </div>
           </div>

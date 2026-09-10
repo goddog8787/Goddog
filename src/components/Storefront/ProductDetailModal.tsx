@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   ShoppingCart, 
@@ -11,7 +11,12 @@ import {
   Star, 
   Check, 
   Zap,
-  ArrowRight
+  ArrowRight,
+  Package,
+  Bot,
+  Calculator,
+  Copy,
+  CheckCheck
 } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode } from '../../types';
 import { formatPrice, translations } from '../../utils/i18n';
@@ -23,6 +28,7 @@ interface ProductDetailModalProps {
   onClose: () => void;
   onAddToCart: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
   onQuickCheckout: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
+  onAskAI?: (product: FilamentProduct) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -32,15 +38,76 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onClose,
   onAddToCart,
   onQuickCheckout,
+  onAskAI,
 }) => {
-  if (!product) return null;
   const t = translations[lang];
 
-  const [selectedColor, setSelectedColor] = useState<ColorOption>(product.colors[0]);
-  const [selectedDiameter, setSelectedDiameter] = useState<'1.75mm' | '2.85mm'>(product.diameter);
+  const defaultColor: ColorOption = { name: '經典黑', hex: '#111827', stock: 10 };
+  const [selectedColor, setSelectedColor] = useState<ColorOption>(product?.colors?.[0] || defaultColor);
+  const [selectedDiameter, setSelectedDiameter] = useState<'1.75mm' | '2.85mm'>(product?.diameter || '1.75mm');
   const [quantity, setQuantity] = useState(1);
-  const [activeTab, setActiveTab] = useState<'specs' | 'slicer' | 'reviews'>('specs');
+  const [activeTab, setActiveTab] = useState<'specs' | 'slicer' | 'calculator' | 'reviews'>('specs');
   const [isAdded, setIsAdded] = useState(false);
+  const [partWeightGrams, setPartWeightGrams] = useState<number>(45);
+  const [copiedParams, setCopiedParams] = useState(false);
+
+  // Sync color & diameter when product prop changes
+  useEffect(() => {
+    if (product) {
+      if (product.colors?.[0]) setSelectedColor(product.colors[0]);
+      if (product.diameter) setSelectedDiameter(product.diameter);
+      setQuantity(1);
+      setIsAdded(false);
+    }
+  }, [product]);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  if (!product) return null;
+
+  // Approximate material densities in g/cm³
+  const materialDensities: Record<string, number> = {
+    'High-Speed PLA': 1.24,
+    'PETG': 1.27,
+    'ABS': 1.04,
+    'TPU': 1.21,
+    'Carbon Fiber': 1.25,
+    'Resin': 1.15,
+  };
+  const density = materialDensities[product.material] || 1.24;
+  // Spool weight assumed 1000g net
+  const spoolNetGrams = 1000;
+  // Estimated total meters for 1.75mm
+  const radiusCm = 0.175 / 2;
+  const areaCm2 = Math.PI * radiusCm * radiusCm;
+  const totalLengthMeters = Math.round((spoolNetGrams / (density * areaCm2)) / 100);
+  const costPerGram = product.price / spoolNetGrams;
+  const partCost = Math.round(costPerGram * partWeightGrams * 10) / 10;
+  const partsPerSpool = Math.floor(spoolNetGrams / Math.max(1, partWeightGrams));
+
+  const handleCopyParams = () => {
+    const text = `【神狗勾 3D 耗材 - ${product.name} 切片建議】
+材質: ${product.material}
+噴嘴溫度: ${product.printTemp}
+熱床溫度: ${product.bedTemp}
+最大推薦速度: ${product.maxSpeed}
+線徑: ${selectedDiameter}
+近端回抽: 0.8mm (35mm/s)
+遠端回抽: 4.5mm (45mm/s)
+相容切片軟體: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`;
+    navigator.clipboard?.writeText?.(text);
+    setCopiedParams(true);
+    setTimeout(() => setCopiedParams(false), 2000);
+  };
 
   const handleAdd = () => {
     onAddToCart(product, selectedColor, selectedDiameter, quantity);
@@ -53,9 +120,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col relative"
+        className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 flex flex-col relative cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
@@ -71,11 +142,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           {/* Left Column: Image & Spool preview */}
           <div className="bg-slate-50 p-6 sm:p-8 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200">
             <div className="relative aspect-square rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-inner flex items-center justify-center p-4">
-              <img
-                src={product.imageUrl}
-                alt={product.name}
-                className="w-full h-full object-cover rounded-xl"
-              />
+              {product.imageUrl && product.imageUrl.trim() !== '' ? (
+                <img
+                  src={product.imageUrl}
+                  alt={product.name}
+                  className="w-full h-full object-cover rounded-xl"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                  <Package className="w-16 h-16" />
+                </div>
+              )}
               
               <div className="absolute top-3 left-3 flex flex-col gap-1">
                 {product.badge && (
@@ -126,7 +203,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div className="p-6 sm:p-8 flex flex-col justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs text-indigo-600 font-bold mb-1">
-                <span>{product.brand}</span>
+                <span>{product.brand.replace(/\s*pro/gi, '')}</span>
                 <span>•</span>
                 <span className="text-slate-500 font-mono">SKU: {product.sku}</span>
               </div>
@@ -247,11 +324,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
               {/* Detail Tabs */}
               <div className="mt-5 border-t border-slate-100 pt-3">
-                <div className="flex border-b border-slate-200 gap-2 mb-3">
+                <div className="flex border-b border-slate-200 gap-2 mb-3 overflow-x-auto scrollbar-none">
                   <button
                     type="button"
                     onClick={() => setActiveTab('specs')}
-                    className={`pb-2 text-xs font-bold transition-colors cursor-pointer ${
+                    className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
                       activeTab === 'specs'
                         ? 'border-b-2 border-indigo-600 text-indigo-600'
                         : 'text-slate-500 hover:text-slate-800'
@@ -262,7 +339,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('slicer')}
-                    className={`pb-2 text-xs font-bold transition-colors cursor-pointer ${
+                    className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
                       activeTab === 'slicer'
                         ? 'border-b-2 border-indigo-600 text-indigo-600'
                         : 'text-slate-500 hover:text-slate-800'
@@ -272,14 +349,26 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </button>
                   <button
                     type="button"
+                    onClick={() => setActiveTab('calculator')}
+                    className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1 ${
+                      activeTab === 'calculator'
+                        ? 'border-b-2 border-indigo-600 text-indigo-600'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <Calculator className="w-3.5 h-3.5" />
+                    <span>成本與件數估算</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setActiveTab('reviews')}
-                    className={`pb-2 text-xs font-bold transition-colors cursor-pointer ${
+                    className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
                       activeTab === 'reviews'
                         ? 'border-b-2 border-indigo-600 text-indigo-600'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    創客實測評價 ({product.reviewsCount})
+                    創客評價 ({product.reviewsCount})
                   </button>
                 </div>
 
@@ -298,7 +387,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 )}
 
                 {activeTab === 'slicer' && (
-                  <div className="space-y-2 text-xs">
+                  <div className="space-y-2.5 text-xs">
                     <div className="grid grid-cols-2 gap-2 text-[11px]">
                       <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
                         <span className="text-slate-400 block">第一層熱床溫度：</span>
@@ -317,9 +406,79 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                         <span className="font-mono font-bold text-indigo-600">22 - 26 mm³/s</span>
                       </div>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      支援 Bambu Studio, OrcaSlicer, PrusaSlicer, Cura。直接套用 Generic {product.material} 預設即可極速列印。
-                    </p>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <p className="text-[11px] text-slate-400">
+                        支援 Bambu Studio, OrcaSlicer, PrusaSlicer, Cura
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleCopyParams}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        {copiedParams ? (
+                          <>
+                            <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">已複製切片配置</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>一鍵複製切片參數</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'calculator' && (
+                  <div className="space-y-3 text-xs bg-slate-50 p-3 rounded-2xl border border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">預估單件列印重量 (切片軟體估重)：</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="1"
+                          max="1000"
+                          value={partWeightGrams}
+                          onChange={(e) => setPartWeightGrams(Math.max(1, Number(e.target.value) || 1))}
+                          className="w-16 px-2 py-1 bg-white border border-slate-300 rounded-lg text-center font-mono font-bold text-slate-900"
+                        />
+                        <span className="text-slate-500 font-medium">克 (g)</span>
+                      </div>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="5"
+                      max="300"
+                      step="5"
+                      value={partWeightGrams}
+                      onChange={(e) => setPartWeightGrams(Number(e.target.value))}
+                      className="w-full accent-indigo-600 cursor-pointer"
+                    />
+
+                    <div className="grid grid-cols-3 gap-2 text-center pt-1">
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block">單件線材成本</span>
+                        <span className="text-sm font-bold text-emerald-600 font-mono">
+                          NT$ {partCost}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block">1卷可印件數</span>
+                        <span className="text-sm font-bold text-indigo-600 font-mono">
+                          約 {partsPerSpool} 件
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded-xl border border-slate-200">
+                        <span className="text-[10px] text-slate-400 block">整卷線材長度</span>
+                        <span className="text-sm font-bold text-slate-800 font-mono">
+                          約 {totalLengthMeters}m
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -390,6 +549,22 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Quick Ask AI button */}
+            {onAskAI && (
+              <div className="mt-2.5">
+                <button
+                  id="modal-ask-ai-btn"
+                  type="button"
+                  onClick={() => onAskAI(product)}
+                  className="w-full py-2.5 px-3 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  title="開啟 AI 客服小視窗詢問切片與最佳列印參數"
+                >
+                  <Bot className="w-4 h-4 text-indigo-600" />
+                  <span>打開 AI 顧問小視窗詢問此款線材切片參數</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

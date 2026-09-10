@@ -41,7 +41,6 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
   onOpenTrackingWithCode,
   onLogout,
 }) => {
-  if (!isOpen) return null;
   const [activeTab, setActiveTab] = useState<'perks' | 'orders'>('perks');
   const [copied, setCopied] = useState(false);
 
@@ -60,10 +59,16 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
   );
   const displayOrders = customerOrders.length > 0 ? customerOrders : orders;
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden relative"
+        className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden relative cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -186,8 +191,8 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
                   <div className="p-3 bg-white border border-slate-200 rounded-xl flex items-center gap-2.5 shadow-2xs">
                     <Zap className="w-4 h-4 text-amber-500 shrink-0" />
                     <div>
-                      <div className="font-bold text-slate-900">消費每滿 $10 贈 1 點</div>
-                      <div className="text-[10px] text-slate-500">積分無使用期限</div>
+                      <div className="font-bold text-slate-900">消費享 5% 點數回饋</div>
+                      <div className="text-[10px] text-slate-500">每滿 $100 送 5 點，積分無期限</div>
                     </div>
                   </div>
                   <div className="p-3 bg-white border border-slate-200 rounded-xl flex items-center gap-2.5 shadow-2xs">

@@ -56,6 +56,7 @@ export const AdSenseBanner: React.FC<AdSenseBannerProps> = ({
   const adRef = useRef<HTMLModElement | null>(null);
   const [adLoaded, setAdLoaded] = useState(false);
   const [clicked, setClicked] = useState(false);
+  const [googleAdUnfilled, setGoogleAdUnfilled] = useState(false);
 
   // Determine slot ID
   const slotId =
@@ -107,14 +108,9 @@ export const AdSenseBanner: React.FC<AdSenseBannerProps> = ({
     }
   }, [isVisible, config.testMode, config.publisherId, slotId]);
 
-  if (!isVisible) return null;
-
-  const demoAd = SPONSORED_DEMO_ADS[placement];
-  const [googleAdUnfilled, setGoogleAdUnfilled] = useState(false);
-
   // Monitor if Google AdSense rendered an ad or returned unfilled / collapsed
   useEffect(() => {
-    if (config.testMode) return;
+    if (!isVisible || config.testMode) return;
     const checkTimer = setTimeout(() => {
       if (adRef.current) {
         const status = adRef.current.getAttribute('data-ad-status');
@@ -126,7 +122,11 @@ export const AdSenseBanner: React.FC<AdSenseBannerProps> = ({
     }, 1200);
 
     return () => clearTimeout(checkTimer);
-  }, [adLoaded, config.testMode]);
+  }, [isVisible, adLoaded, config.testMode]);
+
+  if (!isVisible) return null;
+
+  const demoAd = SPONSORED_DEMO_ADS[placement];
 
   // If in test mode OR if Google ad is unfilled / rejected / pending review, render rich interactive maker sponsor ad
   if (config.testMode || googleAdUnfilled || !config.publisherId || !config.publisherId.startsWith('ca-pub-')) {
@@ -196,11 +196,13 @@ export const AdSenseBanner: React.FC<AdSenseBannerProps> = ({
 
           <div>
             <div className="h-36 rounded-xl overflow-hidden mb-3 relative bg-slate-100">
-              <img
-                src={demoAd.image}
-                alt={demoAd.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
+              {demoAd.image && demoAd.image.trim() !== '' && (
+                <img
+                  src={demoAd.image}
+                  alt={demoAd.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+              )}
               <div className="absolute bottom-2 left-2 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded-md">
                 {demoAd.brand}
               </div>

@@ -13,10 +13,15 @@ import {
   Image as ImageIcon,
   Sparkles,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Upload,
+  Camera,
+  Wand2,
+  SlidersHorizontal
 } from 'lucide-react';
-import { FilamentProduct, ColorOption, MaterialType, CurrencyCode } from '../../types';
+import { FilamentProduct, ColorOption, MaterialType, CurrencyCode, ALL_MATERIAL_CATEGORIES } from '../../types';
 import { formatPrice } from '../../utils/i18n';
+import { ProductImageStudioModal } from './ProductImageStudioModal';
 
 interface EditProductModalProps {
   isOpen: boolean;
@@ -52,6 +57,47 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
   const [spoolType, setSpoolType] = useState('Cardboard 環保紙盤');
   const [badge, setBadge] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+
+  // Image Studio & Mobile Upload States
+  const [isImageStudioOpen, setIsImageStudioOpen] = useState(false);
+  const [studioInitialTab, setStudioInitialTab] = useState<'editor' | 'ai'>('editor');
+  const mobileFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const mobileCameraInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleMobileFileSelect = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const res = e.target?.result as string;
+      if (!res) return;
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1200;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.88);
+          setImageUrl(compressed);
+        }
+      };
+      img.src = res;
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Pricing & Stock
   const [price, setPrice] = useState(690);
@@ -302,14 +348,15 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
                     onChange={(e) => setMaterial(e.target.value as any)}
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold cursor-pointer focus:bg-white"
                   >
-                    <option value="High-Speed PLA">High-Speed PLA (高速)</option>
-                    <option value="PLA">標準 PLA</option>
-                    <option value="PETG">PETG (韌性防潮)</option>
-                    <option value="ABS">ABS (耐熱工程)</option>
-                    <option value="TPU">TPU (高彈性體)</option>
-                    <option value="Carbon Fiber">Carbon Fiber (碳纖維複材)</option>
-                    <option value="Resin">8K 光固化樹脂</option>
-                    <option value="Accessories">3D 列印配件工具</option>
+                    {ALL_MATERIAL_CATEGORIES.map((group) => (
+                      <optgroup key={group.groupName} label={`${group.icon} ${group.groupName}`}>
+                        {group.materials.map((mat) => (
+                          <option key={mat.value} value={mat.value}>
+                            {mat.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                 </div>
 
@@ -376,36 +423,130 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
                 </div>
               </div>
 
-              {/* Image URL & Preset Selection */}
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-slate-800 flex items-center gap-1.5">
+              {/* Image Management & AI Studio */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3.5">
+                {/* Hidden File / Camera Inputs */}
+                <input
+                  type="file"
+                  ref={mobileFileInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleMobileFileSelect(f);
+                  }}
+                />
+                <input
+                  type="file"
+                  ref={mobileCameraInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleMobileFileSelect(f);
+                  }}
+                />
+
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
                     <ImageIcon className="w-4 h-4 text-indigo-600" />
-                    商品封面圖片 URL
+                    <span>商品主圖與 AI 影像增強</span>
                   </label>
-                  <span className="text-[11px] text-slate-400">支援 HTTPS 圖片直連</span>
+                  <span className="text-[11px] text-slate-400">
+                    支援手機拍照、本機檔案存取、裁切調光與 AI 重繪
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <input
-                    type="url"
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/..."
-                    className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono"
-                  />
-                  <div className="w-12 h-12 rounded-xl border border-slate-300 bg-white overflow-hidden shrink-0 flex items-center justify-center shadow-xs">
-                    {imageUrl ? (
-                      <img src={imageUrl} alt="預覽" className="w-full h-full object-cover" />
+                {/* Main Preview & Action Buttons Row */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+                  <div className="relative w-24 h-24 sm:w-20 sm:h-20 rounded-xl border border-slate-300 bg-slate-100 overflow-hidden shrink-0 flex items-center justify-center shadow-xs group">
+                    {imageUrl && imageUrl.trim() !== '' ? (
+                      <img src={imageUrl.trim()} alt="商品預覽" className="w-full h-full object-cover" />
                     ) : (
-                      <Package className="w-5 h-5 text-slate-400" />
+                      <Package className="w-8 h-8 text-slate-400" />
                     )}
+                    {imageUrl && imageUrl.trim() !== '' && (
+                      <div 
+                        onClick={() => {
+                          setStudioInitialTab('editor');
+                          setIsImageStudioOpen(true);
+                        }}
+                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold cursor-pointer"
+                      >
+                        點擊修圖
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-2 w-full">
+                    {/* Primary Fast Actions */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => mobileFileInputRef.current?.click()}
+                        className="px-2.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1 transition-colors cursor-pointer border border-indigo-200/60"
+                        title="從手機檔案或相簿選取照片"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>手機檔案選圖</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => mobileCameraInputRef.current?.click()}
+                        className="px-2.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1 transition-colors cursor-pointer border border-emerald-200/60"
+                        title="使用手機相機直接拍照"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>手機相機拍照</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStudioInitialTab('editor');
+                          setIsImageStudioOpen(true);
+                        }}
+                        className="px-2.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1 transition-colors cursor-pointer border border-sky-200/60"
+                        title="開啟裁切、旋轉、濾鏡與品牌角標工具"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <span>裁切/調光/水印</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStudioInitialTab('ai');
+                          setIsImageStudioOpen(true);
+                        }}
+                        className="px-2.5 py-2 bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-600 hover:opacity-90 text-white font-bold rounded-xl text-[11px] flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs shadow-purple-500/20"
+                        title="給予照片與文字描述，由 Gemini AI 生成高品質電商攝影棚圖"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 text-amber-300" />
+                        <span>AI 生成更好圖片</span>
+                      </button>
+                    </div>
+
+                    {/* URL Direct Input */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-400 font-bold shrink-0">或輸入網址：</span>
+                      <input
+                        type="url"
+                        value={imageUrl}
+                        onChange={(e) => setImageUrl(e.target.value)}
+                        placeholder="https://images.unsplash.com/..."
+                        className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono"
+                      />
+                    </div>
                   </div>
                 </div>
 
+                {/* Preset Suggestions */}
                 <div>
-                  <span className="text-[11px] text-slate-500 font-semibold block mb-1.5">
-                    快速套用推薦圖片庫：
+                  <span className="text-[11px] text-slate-500 font-semibold block mb-1">
+                    快速套用官方精選圖片庫：
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {PRESET_IMAGES.map((preset, idx) => (
@@ -840,6 +981,20 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Full Image Studio & AI Enhancement Modal */}
+      {isImageStudioOpen && (
+        <ProductImageStudioModal
+          isOpen={isImageStudioOpen}
+          onClose={() => setIsImageStudioOpen(false)}
+          product={product}
+          initialImage={imageUrl || product?.imageUrl || ''}
+          onApplyImage={(newImgUrl) => {
+            setImageUrl(newImgUrl);
+            setIsImageStudioOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

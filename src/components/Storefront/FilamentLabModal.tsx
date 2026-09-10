@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Calculator,
@@ -17,7 +17,13 @@ import {
   Sliders,
   CheckCircle2,
   Cpu,
-  Palette
+  Palette,
+  Wind,
+  Droplets,
+  Thermometer,
+  Clock,
+  ShieldCheck,
+  AlertTriangle
 } from 'lucide-react';
 import { FilamentProduct, CurrencyCode, LanguageCode } from '../../types';
 import { formatPrice } from '../../utils/i18n';
@@ -26,8 +32,9 @@ interface FilamentLabModalProps {
   isOpen: boolean;
   onClose: () => void;
   products: FilamentProduct[];
-  currency: CurrencyCode;
-  lang: LanguageCode;
+  currency?: CurrencyCode;
+  lang?: LanguageCode;
+  onAddToCart?: (product: FilamentProduct, color: any, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
   onSelectProductToCart?: (product: FilamentProduct) => void;
 }
 
@@ -49,6 +56,69 @@ const SPOOL_TYPES = [
   { id: 'refill', name: '裸裝補充包 (無盤重)', tareWeight: 0, desc: '純線料秤重，空盤重 0g' },
 ];
 
+// Drying Guide Constants
+const DRYING_GUIDELINES: Array<{
+  material: string;
+  badge: string;
+  temp: string;
+  time: string;
+  storageRh: string;
+  spoolLimit: string;
+  symptoms: string[];
+  tips: string;
+}> = [
+  {
+    material: 'High-Speed PLA / PLA+',
+    badge: '日常主力',
+    temp: '45°C - 50°C',
+    time: '4 - 6 小時',
+    storageRh: '< 25% RH',
+    spoolLimit: '紙盤勿超過 50°C 以防軟化變形',
+    symptoms: ['微量細絲蜘蛛網', '表面微小氣泡爆音', '線材變脆折斷'],
+    tips: '烘烤溫度切勿超過 53°C，否則 PLA 結晶軟化會黏結整盤卡死！'
+  },
+  {
+    material: 'PETG / PETG-HF 高速耐候',
+    badge: '中度吸濕',
+    temp: '60°C - 65°C',
+    time: '6 - 8 小時',
+    storageRh: '< 20% RH',
+    spoolLimit: '適用標準塑膠盤或耐溫盤',
+    symptoms: ['嚴重粗拉絲、牽絲成網', '噴嘴處持續爆裂聲音', '表面粗糙多斑點'],
+    tips: 'PETG 吸水速度是 PLA 的 3 倍，拆封 48 小時後建議烘乾後再列印。'
+  },
+  {
+    material: 'TPU 95A / 85A 彈性軟膠',
+    badge: '極度吸濕',
+    temp: '50°C - 55°C',
+    time: '8 - 12 小時',
+    storageRh: '< 15% RH',
+    spoolLimit: '需使用乾燥盒直供邊烘邊印',
+    symptoms: ['劇烈滲料流涎', '內部空隙與結構發泡', '擠出機齒輪打滑卡死'],
+    tips: 'TPU 列印前務必強制烘乾，強烈推薦直接從加熱乾燥盒中穿管出料列印！'
+  },
+  {
+    material: 'PLA-CF / PETG-CF 碳纖維',
+    badge: '高剛性複合',
+    temp: '60°C - 70°C',
+    time: '6 - 8 小時',
+    storageRh: '< 20% RH',
+    spoolLimit: '碳纖維易吸附環境濕氣',
+    symptoms: ['消光表面失真發亮', '層間結合強度大幅降低', '噴嘴微堵出料不均'],
+    tips: '碳纖維多孔結構比純樹脂更容易鎖住水氣，徹底乾燥可保證消光無層紋質感。'
+  },
+  {
+    material: 'ABS+ / ASA / PA-CF 尼龍工程',
+    badge: '高溫工程',
+    temp: '70°C - 80°C',
+    time: '8 - 12 小時',
+    storageRh: '< 10% RH',
+    spoolLimit: '嚴禁使用一般低熔點紙盤直接 80°C 烘烤',
+    symptoms: ['層間完全不黏開裂', '列印時發出劈啪水氣聲', '模型劇烈收縮翹邊'],
+    tips: 'PA/尼龍極易飽和吸水，請使用專業防潮烘乾箱並搭配分子篩變色乾燥劑。'
+  }
+];
+
 export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
   isOpen,
   onClose,
@@ -57,9 +127,18 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
   lang,
   onSelectProductToCart,
 }) => {
-  if (!isOpen) return null;
+  const [activeTab, setActiveTab] = useState<'estimator' | 'cost' | 'ams' | 'slicer' | 'drying'>('estimator');
 
-  const [activeTab, setActiveTab] = useState<'estimator' | 'cost' | 'ams' | 'slicer'>('estimator');
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   // --- Calculator 1: Remaining Filament State ---
   const [selectedMaterial, setSelectedMaterial] = useState<string>('PLA');
@@ -113,34 +192,73 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
   };
 
   // --- Slicer Parameters Preset State ---
-  const [slicerPrinter, setSlicerPrinter] = useState<'bambu' | 'creality' | 'prusa' | 'voron'>('bambu');
-  const [slicerMaterial, setSlicerMaterial] = useState<'pla' | 'petg' | 'abs' | 'cf'>('pla');
+  const [slicerPrinter, setSlicerPrinter] = useState<'bambu' | 'creality' | 'flashforge' | 'snapmaker' | 'anycubic' | 'elegoo' | 'prusa' | 'voron' | 'qidi'>('bambu');
+  const [slicerMaterial, setSlicerMaterial] = useState<'pla' | 'petg' | 'abs' | 'cf' | 'tpu'>('pla');
   const [copiedPreset, setCopiedPreset] = useState(false);
 
   const SLICER_PRESETS: Record<string, Record<string, any>> = {
     bambu: {
-      pla: { nozzle: '215 - 225°C', bed: '55 - 60°C', speed: '300 - 450 mm/s', fan: '100%', volFlow: '24 mm³/s', retraction: '0.8 mm (Direct)', note: 'Bambu Lab X1C / P1S / A1 專用高流速配置，第一層降至 50mm/s 確保附著。' },
-      petg: { nozzle: '245 - 255°C', bed: '70 - 75°C', speed: '180 - 250 mm/s', fan: '40 - 60%', volFlow: '18 mm³/s', retraction: '1.0 mm (Direct)', note: '冷卻風扇勿開滿以防層間強度降低，熱床必須塗口紅膠或使用紋理 PEI 盤。' },
-      abs: { nozzle: '260 - 270°C', bed: '90 - 100°C', speed: '150 - 200 mm/s', fan: '10 - 20%', volFlow: '16 mm³/s', retraction: '0.8 mm', note: '必須封箱列印！關閉腔體通風風扇，列印完閉冷卻至 40°C 以下再開箱防翹曲。' },
-      cf: { nozzle: '255 - 265°C', bed: '65 - 70°C', speed: '200 - 300 mm/s', fan: '50 - 70%', volFlow: '21 mm³/s', retraction: '0.8 mm', note: '必須使用硬化鋼噴嘴 (0.4mm 以上) 與硬化擠出輪，嚴防不銹鋼噴嘴磨損！' },
+      pla: { nozzle: '215 - 225°C', bed: '55 - 60°C', speed: '300 - 450 mm/s', fan: '100%', volFlow: '24 mm³/s', retraction: '0.8 mm (Direct)', note: 'Bambu Lab X1C / P1S / A1 專用高流速配置，第一層降至 45mm/s 確保抓地力。' },
+      petg: { nozzle: '245 - 255°C', bed: '70 - 75°C', speed: '200 - 280 mm/s', fan: '40 - 60%', volFlow: '19 mm³/s', retraction: '1.0 mm (Direct)', note: '冷卻風扇勿開滿以防層間弱化，紋理粉體 PEI 鋼板免塗膠。' },
+      abs: { nozzle: '260 - 275°C', bed: '95 - 105°C', speed: '150 - 250 mm/s', fan: '10 - 20%', volFlow: '16 mm³/s', retraction: '0.8 mm', note: 'X1C/P1S 全封閉保溫，A1 開放機種需外加保溫帳篷避免收縮翹邊。' },
+      cf: { nozzle: '255 - 265°C', bed: '60 - 65°C', speed: '200 - 300 mm/s', fan: '60 - 80%', volFlow: '22 mm³/s', retraction: '0.8 mm', note: '必須使用原廠 0.4mm 以上硬化鋼噴嘴與硬化鋼擠出輪！' },
+      tpu: { nozzle: '220 - 235°C', bed: '45 - 50°C', speed: '35 - 50 mm/s', fan: '100%', volFlow: '6 mm³/s', retraction: '0.5 mm @ 20mm/s', note: '嚴禁放入 AMS！必須從機身後方外掛料架直接供料入擠出機。' },
     },
     creality: {
-      pla: { nozzle: '205 - 215°C', bed: '50 - 60°C', speed: '120 - 250 mm/s', fan: '100%', volFlow: '18 mm³/s', retraction: '0.8 mm (K1/Ender-3 V3)', note: '推薦開啟自動壓頻 (Input Shaping) 消除共振鬼影。' },
-      petg: { nozzle: '235 - 245°C', bed: '70 - 75°C', speed: '80 - 150 mm/s', fan: '30 - 50%', volFlow: '14 mm³/s', retraction: '1.2 mm', note: '第一層厚度可稍微放寬至 0.24mm 避免過度擠壓造成拖料。' },
-      abs: { nozzle: '250 - 260°C', bed: '90 - 95°C', speed: '60 - 120 mm/s', fan: '0 - 15%', volFlow: '12 mm³/s', retraction: '0.8 mm', note: '無箱體機種建議加裝隔熱罩 (Enclosure tent)。' },
-      cf: { nozzle: '245 - 255°C', bed: '60 - 65°C', speed: '100 - 180 mm/s', fan: '40 - 60%', volFlow: '15 mm³/s', retraction: '0.8 mm', note: '更換雙金屬或硬化鋼噴嘴以防喉管磨穿。' },
+      pla: { nozzle: '205 - 220°C', bed: '55 - 60°C', speed: '250 - 400 mm/s (K1/V3)', fan: '100%', volFlow: '22 mm³/s', retraction: '0.8 mm', note: 'K1C / Ender-3 V3 支援自動壓頻共振補償，高速平整度絕佳。' },
+      petg: { nozzle: '240 - 250°C', bed: '70 - 80°C', speed: '150 - 220 mm/s', fan: '30 - 50%', volFlow: '16 mm³/s', retraction: '1.0 mm', note: '第一層厚度建議 0.24mm，適度加寬首層擠出寬度。' },
+      abs: { nozzle: '260 - 270°C', bed: '95 - 100°C', speed: '120 - 200 mm/s', fan: '10 - 15%', volFlow: '15 mm³/s', retraction: '0.8 mm', note: 'K1C / K1 封閉機型請保持艙門緊閉；Ender-3 開放型建議搭配保溫罩。' },
+      cf: { nozzle: '245 - 255°C', bed: '60 - 65°C', speed: '150 - 250 mm/s', fan: '50 - 70%', volFlow: '18 mm³/s', retraction: '0.8 mm', note: 'K1C 標配獨角獸一體式硬化鋼噴嘴可直上；傳統黃銅需升級硬化鋼。' },
+      tpu: { nozzle: '220 - 230°C', bed: '45 - 50°C', speed: '30 - 50 mm/s', fan: '100%', volFlow: '5 mm³/s', retraction: '0.5 mm', note: '近端擠出機微調進料齒輪張力避免咬料變形。' },
+    },
+    flashforge: {
+      pla: { nozzle: '210 - 220°C', bed: '50 - 60°C', speed: '250 - 400 mm/s', fan: '100%', volFlow: '22 mm³/s', retraction: '0.8 mm', note: '5M Pro 快拆噴嘴加熱迅速，雙重空氣濾清提供無味列印。' },
+      petg: { nozzle: '240 - 250°C', bed: '75 - 80°C', speed: '150 - 220 mm/s', fan: '40%', volFlow: '16 mm³/s', retraction: '1.0 mm', note: '紋理 PEI 彈簧鋼板附著優異，冷卻至室溫後自動彈脫。' },
+      abs: { nozzle: '260 - 270°C', bed: '100°C', speed: '120 - 180 mm/s', fan: '10 - 20%', volFlow: '15 mm³/s', retraction: '0.8 mm', note: '5M Pro 內循環濾清 + 全封箱，列印 ABS 零翹邊、無刺鼻塑膠氣味。' },
+      cf: { nozzle: '245 - 255°C', bed: '60 - 65°C', speed: '150 - 250 mm/s', fan: '60%', volFlow: '18 mm³/s', retraction: '0.8 mm', note: '需使用閃鑄 0.4mm / 0.6mm 高強度耐磨噴嘴組件。' },
+      tpu: { nozzle: '220 - 230°C', bed: '45°C', speed: '30 - 45 mm/s', fan: '100%', volFlow: '5 mm³/s', retraction: '0.5 mm', note: '關閉機箱頂蓋風扇，外掛料架低阻力進料。' },
+    },
+    snapmaker: {
+      pla: { nozzle: '210 - 220°C', bed: '55 - 60°C', speed: '150 - 250 mm/s (J1s 350mm/s)', fan: '100%', volFlow: '18 mm³/s', retraction: '0.6 mm', note: 'J1 / J1s 具備 IDEX 獨立雙頭，可雙色或複製/鏡像模式同時列印兩組！' },
+      petg: { nozzle: '240 - 250°C', bed: '75 - 80°C', speed: '120 - 180 mm/s', fan: '40%', volFlow: '15 mm³/s', retraction: '0.8 mm', note: 'IDEX 獨立雙頭最佳搭檔：可用 PLA 印主體，PETG 印支撐接觸面，零間隙鏡面剝離！' },
+      abs: { nozzle: '260 - 270°C', bed: '95 - 100°C', speed: '100 - 150 mm/s', fan: '10%', volFlow: '14 mm³/s', retraction: '0.6 mm', note: 'J1/Artisan 全封箱具備優良熱保溫性能，建議熱床預熱 15 分鐘後啟印。' },
+      cf: { nozzle: '245 - 255°C', bed: '60 - 65°C', speed: '120 - 200 mm/s', fan: '50%', volFlow: '17 mm³/s', retraction: '0.6 mm', note: '更換耐磨硬化噴嘴模組，航模零件與剛性卡扣首選。' },
+      tpu: { nozzle: '220 - 235°C', bed: '45°C', speed: '30 - 45 mm/s', fan: '100%', volFlow: '5 mm³/s', retraction: '0.4 mm', note: 'J1 近端直驅雙齒輪進料順暢，雙噴頭可同時印出硬質主體 + 軟膠緩衝墊圈！' },
+    },
+    anycubic: {
+      pla: { nozzle: '210 - 220°C', bed: '55 - 60°C', speed: '250 - 400 mm/s', fan: '100%', volFlow: '22 mm³/s', retraction: '0.8 mm', note: 'Kobra 3 搭配 ACE Pro 主動烘乾多色箱，在線乾燥防潮列印。' },
+      petg: { nozzle: '240 - 250°C', bed: '75 - 80°C', speed: '150 - 220 mm/s', fan: '40 - 50%', volFlow: '17 mm³/s', retraction: '1.0 mm', note: 'ACE Pro 可將 PETG 維持在 55°C 乾燥環境，徹底告別拉絲。' },
+      abs: { nozzle: '255 - 265°C', bed: '95 - 100°C', speed: '100 - 160 mm/s', fan: '10%', volFlow: '14 mm³/s', retraction: '0.8 mm', note: '開放式機型強烈建議加裝簡易保溫罩以防開裂。' },
+      cf: { nozzle: '245 - 255°C', bed: '60 - 65°C', speed: '150 - 220 mm/s', fan: '60%', volFlow: '18 mm³/s', retraction: '0.8 mm', note: '換裝硬化鋼噴嘴，避免原廠黃銅噴嘴快速被碳纖維磨損。' },
+      tpu: { nozzle: '220 - 230°C', bed: '45°C', speed: '30 - 45 mm/s', fan: '100%', volFlow: '5 mm³/s', retraction: '0.5 mm', note: '嚴禁放入 ACE Pro 多色進料盒！必須使用機身外掛料架直接進料。' },
+    },
+    elegoo: {
+      pla: { nozzle: '210 - 220°C', bed: '55 - 60°C', speed: '200 - 350 mm/s', fan: '100%', volFlow: '20 mm³/s', retraction: '0.8 mm', note: 'Neptune 4 具備後置大散熱橫流風扇，高速懸垂冷卻極其強悍。' },
+      petg: { nozzle: '240 - 250°C', bed: '75 - 80°C', speed: '140 - 200 mm/s', fan: '35 - 50%', volFlow: '16 mm³/s', retraction: '1.0 mm', note: '橫流風扇轉速建議降至 30-40%，過大風速會導致 PETG 層裂。' },
+      abs: { nozzle: '255 - 265°C', bed: '95 - 100°C', speed: '100 - 150 mm/s', fan: '10%', volFlow: '14 mm³/s', retraction: '0.8 mm', note: 'Centauri Carbon 封箱機型可直接印；Neptune 4 需外掛保溫帳篷。' },
+      cf: { nozzle: '245 - 255°C', bed: '60 - 65°C', speed: '140 - 220 mm/s', fan: '50%', volFlow: '18 mm³/s', retraction: '0.8 mm', note: '標配或更換耐磨硬化鋼噴嘴，確保高精度尺寸穩定度。' },
+      tpu: { nozzle: '220 - 230°C', bed: '45°C', speed: '30 - 45 mm/s', fan: '80%', volFlow: '5 mm³/s', retraction: '0.5 mm', note: 'Neptune 近端雙齒輪擠出機推料穩定，平穩慢速輸出。' },
     },
     prusa: {
-      pla: { nozzle: '210 - 215°C', bed: '60°C', speed: '150 - 200 mm/s', fan: '100%', volFlow: '16 mm³/s', retraction: '0.8 mm', note: 'Prusa MK4 / XL Nextruder 壓力傳感自動首層，精細度極高。' },
+      pla: { nozzle: '210 - 215°C', bed: '60°C', speed: '150 - 200 mm/s', fan: '100%', volFlow: '16 mm³/s', retraction: '0.8 mm', note: 'Prusa MK4S / XL Nextruder 壓力傳感自動首層，精細度極高。' },
       petg: { nozzle: '240°C', bed: '85°C', speed: '120 - 160 mm/s', fan: '50%', volFlow: '15 mm³/s', retraction: '1.0 mm', note: '務必使用粉體 PEI 鋼板，避免光滑 PEI 盤被 PETG 黏破。' },
-      abs: { nozzle: '255°C', bed: '100°C', speed: '80 - 120 mm/s', fan: '10%', volFlow: '13 mm³/s', retraction: '0.8 mm', note: '搭配 Prusa Enclosure 恒溫箱效果極佳。' },
+      abs: { nozzle: '255°C', bed: '100°C', speed: '80 - 120 mm/s', fan: '10%', volFlow: '13 mm³/s', retraction: '0.8 mm', note: 'Prusa Core One 具備 60°C 主動腔溫控制，列印高溫材料零翹邊。' },
       cf: { nozzle: '250°C', bed: '70°C', speed: '120 - 180 mm/s', fan: '50%', volFlow: '16 mm³/s', retraction: '0.8 mm', note: '請換裝 Prusa Nozzle Hardened Steel。' },
+      tpu: { nozzle: '225 - 235°C', bed: '50°C', speed: '30 - 45 mm/s', fan: '100%', volFlow: '5 mm³/s', retraction: '0.4 mm', note: 'Nextruder 內部導料管間隙極小，列印 TPU 表現極為可靠。' },
     },
     voron: {
       pla: { nozzle: '220 - 230°C', bed: '60°C', speed: '250 - 500 mm/s', fan: '100%', volFlow: '26 mm³/s', retraction: '0.6 mm', note: 'Voron 2.4 / Trident StealthBurner 高速高冷卻設置。' },
       petg: { nozzle: '250°C', bed: '75°C', speed: '180 - 280 mm/s', fan: '40%', volFlow: '20 mm³/s', retraction: '0.8 mm', note: '高剛性機架可大幅提升加速至 10,000 mm/s²。' },
       abs: { nozzle: '265 - 275°C', bed: '105 - 110°C', speed: '200 - 300 mm/s', fan: '15%', volFlow: '18 mm³/s', retraction: '0.6 mm', note: 'Voron 經典原生材質！腔體溫度需達 50°C 以上再開始列印。' },
       cf: { nozzle: '260°C', bed: '80°C', speed: '200 - 300 mm/s', fan: '50%', volFlow: '22 mm³/s', retraction: '0.6 mm', note: '極致工裝治具與無人機機架首選。' },
+      tpu: { nozzle: '225 - 235°C', bed: '45°C', speed: '35 - 55 mm/s', fan: '100%', volFlow: '6 mm³/s', retraction: '0.5 mm', note: 'Clockwork 2 齒輪微調壓力，避免過度壓陷。' },
+    },
+    qidi: {
+      pla: { nozzle: '215 - 225°C', bed: '55 - 60°C', speed: '300 - 450 mm/s', fan: '100%', volFlow: '24 mm³/s', retraction: '0.8 mm', note: '標配高流速熱端，支援超高速穩定輸出。' },
+      petg: { nozzle: '245 - 255°C', bed: '75 - 80°C', speed: '180 - 260 mm/s', fan: '40%', volFlow: '18 mm³/s', retraction: '1.0 mm', note: '高抗衝擊防潮耐溫，表面無拉絲。' },
+      abs: { nozzle: '265 - 275°C', bed: '100 - 105°C', speed: '180 - 250 mm/s', fan: '10%', volFlow: '18 mm³/s', retraction: '0.8 mm', note: '開啟 X-Max 3 主動 65°C 腔體加熱！工業大尺寸無內應力、零翹邊！' },
+      cf: { nozzle: '260 - 270°C', bed: '70 - 75°C', speed: '200 - 300 mm/s', fan: '50%', volFlow: '20 mm³/s', retraction: '0.8 mm', note: '標配硬化鋼耐磨噴嘴，耐溫可達 350°C。' },
+      tpu: { nozzle: '225 - 235°C', bed: '45°C', speed: '35 - 50 mm/s', fan: '100%', volFlow: '6 mm³/s', retraction: '0.5 mm', note: '關閉腔溫加熱，頂部透氣窗微開，軟膠成型回彈極佳。' },
     }
   };
 
@@ -161,10 +279,16 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
     setTimeout(() => setCopiedPreset(false), 2000);
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col relative"
+        className="bg-white w-full h-full sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 flex flex-col relative cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
@@ -244,6 +368,18 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
           >
             <Sliders className="w-4 h-4 text-purple-600" />
             <span>切片參數一鍵生成</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('drying')}
+            className={`px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+              activeTab === 'drying'
+                ? 'bg-white text-amber-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Wind className="w-4 h-4 text-amber-500" />
+            <span>耗材防潮與烘烤指南</span>
           </button>
         </div>
 
@@ -618,19 +754,24 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4 text-xs">
                   <div>
-                    <label className="font-bold text-slate-800 block mb-1.5">選擇印表機種體系：</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <label className="font-bold text-slate-800 block mb-1.5">選擇印表機種體系 (收錄市售全機型)：</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {[
-                        { id: 'bambu', name: 'Bambu Lab (X1C/P1S/A1)' },
-                        { id: 'creality', name: 'Creality (K1/Ender-3)' },
-                        { id: 'prusa', name: 'Prusa (MK4 / XL)' },
-                        { id: 'voron', name: 'Voron 2.4 / Klipper' },
+                        { id: 'bambu', name: '拓竹 Bambu Lab' },
+                        { id: 'creality', name: '創想 Creality' },
+                        { id: 'flashforge', name: '閃鑄 Flashforge' },
+                        { id: 'snapmaker', name: '快造 Snapmaker' },
+                        { id: 'anycubic', name: '縱維 Anycubic' },
+                        { id: 'elegoo', name: '愛樂酷 Elegoo' },
+                        { id: 'prusa', name: 'Prusa Research' },
+                        { id: 'voron', name: 'Voron / Klipper' },
+                        { id: 'qidi', name: '啟龐 QIDI Tech' },
                       ].map((p) => (
                         <button
                           key={p.id}
                           type="button"
                           onClick={() => setSlicerPrinter(p.id as any)}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                             slicerPrinter === p.id
                               ? 'border-purple-600 bg-purple-50 text-purple-950 font-bold ring-2 ring-purple-500/20'
                               : 'border-slate-200 hover:border-slate-300 text-slate-700'
@@ -644,18 +785,19 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
 
                   <div>
                     <label className="font-bold text-slate-800 block mb-1.5">選擇耗材材質：</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {[
-                        { id: 'pla', name: '高速 PLA (High-Speed)' },
-                        { id: 'petg', name: '耐候韌性 PETG' },
-                        { id: 'abs', name: '高耐熱工程 ABS' },
-                        { id: 'cf', name: '碳纖維複合 (CF/GF)' },
+                        { id: 'pla', name: '高速 Hyper PLA' },
+                        { id: 'petg', name: '耐候韌性 PETG-HF' },
+                        { id: 'abs', name: '玻纖耐熱 ABS-GF' },
+                        { id: 'cf', name: '航太碳纖 PLA-CF' },
+                        { id: 'tpu', name: '高回彈減震 TPU 95A' },
                       ].map((m) => (
                         <button
                           key={m.id}
                           type="button"
                           onClick={() => setSlicerMaterial(m.id as any)}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                             slicerMaterial === m.id
                               ? 'border-purple-600 bg-purple-50 text-purple-950 font-bold ring-2 ring-purple-500/20'
                               : 'border-slate-200 hover:border-slate-300 text-slate-700'
@@ -734,6 +876,99 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                       </>
                     )}
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* TAB 5: DRYING & STORAGE MASTER GUIDE */}
+          {activeTab === 'drying' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-2xl border border-amber-200 flex items-start gap-3">
+                <Wind className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="font-black text-slate-900 text-xs sm:text-sm">3D 列印專業烘烤與防潮保存金科玉律</h3>
+                  <p className="text-xs text-amber-950/90 leading-relaxed mt-1">
+                    90% 的列印瑕疵（如劇烈拉絲、氣泡爆裂聲、層間脆化）皆源於線材受潮！請依材質設定對應烘乾溫度與時間，避免溫度過高導致線材熔結軟化。
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {DRYING_GUIDELINES.map((item, idx) => (
+                  <div 
+                    key={idx} 
+                    className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-amber-300 transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div className="font-black text-slate-900 text-sm tracking-tight">{item.material}</div>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                          {item.badge}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+                        <div className="p-2 rounded-xl bg-orange-50/80 border border-orange-100">
+                          <div className="text-[10px] text-orange-700 flex items-center justify-center gap-1">
+                            <Thermometer className="w-3 h-3" />
+                            <span>推薦溫度</span>
+                          </div>
+                          <div className="text-xs font-black font-mono text-orange-950 mt-0.5">{item.temp}</div>
+                        </div>
+
+                        <div className="p-2 rounded-xl bg-blue-50/80 border border-blue-100">
+                          <div className="text-[10px] text-blue-700 flex items-center justify-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            <span>烘烤時間</span>
+                          </div>
+                          <div className="text-xs font-black font-mono text-blue-950 mt-0.5">{item.time}</div>
+                        </div>
+
+                        <div className="p-2 rounded-xl bg-emerald-50/80 border border-emerald-100">
+                          <div className="text-[10px] text-emerald-700 flex items-center justify-center gap-1">
+                            <Droplets className="w-3 h-3" />
+                            <span>儲存濕度</span>
+                          </div>
+                          <div className="text-xs font-black font-mono text-emerald-950 mt-0.5">{item.storageRh}</div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 text-xs">
+                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                          <div className="font-bold text-slate-800 text-[11px] mb-1 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-500" />
+                            <span>受潮典型症狀：</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {item.symptoms.map((sym, sIdx) => (
+                              <span key={sIdx} className="px-2 py-0.5 bg-white border border-slate-200 text-slate-600 rounded-md text-[10.5px]">
+                                {sym}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-100/80 text-[11px] text-amber-900 leading-relaxed">
+                          💡 <strong>溫馨提醒：</strong>{item.tips}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pro Storage Advice Banner */}
+              <div className="p-4 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 font-black">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-white">神狗勾 3D 原裝真空密封承諾</h4>
+                    <p className="text-[11px] text-slate-300">
+                      全系列線材出廠前均經 12 小時深層除濕，內附高吸水量指示型矽膠乾燥劑，拆封即用、品質如新！
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

@@ -26,8 +26,6 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   onClose,
   currency,
 }) => {
-  if (!isOpen) return null;
-
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>(SUBSCRIPTION_PLANS[0]);
   const [frequency, setFrequency] = useState<'monthly' | 'bimonthly'>('monthly');
   const [preferredMaterial, setPreferredMaterial] = useState('High-Speed PLA + PETG');
@@ -42,10 +40,16 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     });
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden relative"
+        className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden relative cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   CreditCard, 
@@ -50,7 +50,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onOrderCompleted,
   onOpenTracking,
 }) => {
-  if (!isOpen || cartItems.length === 0) return null;
   const t = translations[lang];
 
   // Shipping & customer form
@@ -71,6 +70,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeGatewayModal, setActiveGatewayModal] = useState<'none' | 'ecpay_credit' | 'ecpay_atm' | 'ecpay_cvs' | 'linepay'>('none');
   const [createdOrder, setCreatedOrder] = useState<Order | null>(null);
+
+  // Close on Escape key (if no active modal popup)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeGatewayModal === 'none') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, activeGatewayModal]);
 
   // ECPay simulated card state
   const [ecpayCardNum, setEcpayCardNum] = useState('4000 2211 4488 9922');
@@ -93,7 +103,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const shippingFee = appliedCoupon?.freeShipping ? 0 : baseShippingFee;
   const discount = appliedCoupon ? appliedCoupon.discountAmount : 0;
   const total = Math.max(0, subtotal + shippingFee - pointsToUse - discount);
-  const pointsEarned = Math.floor(total / 10);
+  const pointsEarned = Math.floor(total * 0.05);
 
   const handleApplyCoupon = (codeToApply?: string) => {
     const code = (codeToApply || couponCode).trim().toUpperCase();
@@ -223,10 +233,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     });
   };
 
+  if (!isOpen || (!createdOrder && cartItems.length === 0)) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in">
+    <div 
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="bg-white rounded-3xl max-w-4xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 flex flex-col relative"
+        className="bg-white w-full h-full sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 flex flex-col relative cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
@@ -1007,8 +1023,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <span className="font-mono">NT$ {total}</span>
                 </div>
                 <div className="flex justify-between text-[#06C755] font-bold">
-                  <span>LINE Points 點數回饋 (週末 10%)</span>
-                  <span>+{Math.floor(total * 0.1)} 點</span>
+                  <span>LINE Points 點數回饋 (5%)</span>
+                  <span>+{Math.floor(total * 0.05)} 點</span>
                 </div>
               </div>
 

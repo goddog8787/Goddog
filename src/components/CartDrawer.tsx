@@ -8,7 +8,8 @@ import {
   ShoppingCart, 
   Truck, 
   ShieldCheck, 
-  Sparkles 
+  Sparkles,
+  Package 
 } from 'lucide-react';
 import { CartItem, LanguageCode, CurrencyCode, MemberProfile } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
@@ -106,11 +107,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 key={`${item.product.id}-${item.selectedColor.name}-${item.selectedDiameter}-${idx}`}
                 className="p-3 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center space-x-3"
               >
-                <img
-                  src={item.product.imageUrl}
-                  alt={item.product.name}
-                  className="w-16 h-16 rounded-lg object-cover bg-slate-100 shrink-0"
-                />
+                {item.product.imageUrl && item.product.imageUrl.trim() !== '' ? (
+                  <img
+                    src={item.product.imageUrl}
+                    alt={item.product.name}
+                    className="w-16 h-16 rounded-lg object-cover bg-slate-100 shrink-0"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 text-slate-400">
+                    <Package className="w-6 h-6" />
+                  </div>
+                )}
 
                 <div className="flex-1 min-w-0">
                   <h4 className="text-xs font-bold text-slate-900 truncate">

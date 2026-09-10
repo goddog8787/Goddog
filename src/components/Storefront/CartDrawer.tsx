@@ -8,7 +8,8 @@ import {
   Truck, 
   Coins, 
   Check, 
-  Sparkles 
+  Sparkles,
+  Package 
 } from 'lucide-react';
 import { CartItem, CurrencyCode, LanguageCode, MemberProfile } from '../../types';
 import { formatPrice, translations } from '../../utils/i18n';
@@ -36,7 +37,6 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   lang,
   member,
 }) => {
-  if (!isOpen) return null;
   const t = translations[lang];
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
@@ -50,10 +50,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const pointsUsed = usePoints ? maxRedeemablePoints : 0;
   const total = Math.max(0, subtotal - pointsUsed);
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/50 backdrop-blur-xs flex justify-end">
+    <div 
+      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/50 backdrop-blur-xs flex justify-end cursor-pointer select-none"
+      onClick={onClose}
+      title="點擊背景空白處可返回主頁面"
+    >
       <div 
-        className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between animate-slide-in-right"
+        className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between animate-slide-in-right cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -113,11 +119,17 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 key={`${item.product.id}-${item.selectedColor.name}-${item.selectedDiameter}`}
                 className="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-2xl border border-slate-200/80 flex gap-3 transition-colors"
               >
-                <img
-                  src={item.product.imageUrl}
-                  alt={item.product.name}
-                  className="w-16 h-16 object-cover rounded-xl border border-slate-200 bg-white shrink-0"
-                />
+                {item.product.imageUrl && item.product.imageUrl.trim() !== '' ? (
+                  <img
+                    src={item.product.imageUrl}
+                    alt={item.product.name}
+                    className="w-16 h-16 object-cover rounded-xl border border-slate-200 bg-white shrink-0"
+                  />
+                ) : (
+                  <div className="w-16 h-16 rounded-xl border border-slate-200 bg-white flex items-center justify-center shrink-0 text-slate-400">
+                    <Package className="w-6 h-6" />
+                  </div>
+                )}
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between">

@@ -104,9 +104,9 @@ interface BrandMeta {
 
 const BRAND_METAS: BrandMeta[] = [
   {
-    name: '神狗勾 Pro',
-    aliases: ['神狗勾', 'goddog', 'pro', '神狗勾 pro', '旗艦'],
-    badge: '自研旗艦 👑',
+    name: '神狗勾',
+    aliases: ['神狗勾', 'goddog', '自研', '旗艦'],
+    badge: '自研品牌 👑',
     description: '台灣在地調校高速耗材，極速流動 ±0.02mm 公差'
   },
   {
@@ -143,7 +143,7 @@ const TRENDING_SEARCH_TAGS = [
   { label: 'PETG 耐候', query: 'PETG', icon: '🛡️' },
   { label: 'TPU 95A 軟膠', query: 'TPU', icon: '🤸' },
   { label: 'S2 智慧乾燥盒', query: '乾燥盒', icon: '🔥' },
-  { label: '神狗勾 Pro', query: '神狗勾 Pro', icon: '👑' },
+  { label: '神狗勾自研耗材', query: '神狗勾', icon: '👑' },
   { label: '8K 光固化樹脂', query: 'Resin', icon: '💎' },
 ];
 
@@ -550,11 +550,17 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                           }`}
                         >
                           <div className="flex items-center gap-3">
-                            <img
-                              src={p.imageUrl}
-                              alt={p.name}
-                              className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
-                            />
+                            {p.imageUrl && p.imageUrl.trim() !== '' ? (
+                              <img
+                                src={p.imageUrl}
+                                alt={p.name}
+                                className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-lg border border-slate-200 shrink-0 bg-slate-100 flex items-center justify-center text-slate-400">
+                                <Package className="w-5 h-5" />
+                              </div>
+                            )}
                             <div className="min-w-0">
                               <div className="text-xs font-bold text-slate-900 truncate max-w-[280px] sm:max-w-md">
                                 {highlightMatch(p.name, trimmedQuery)}
