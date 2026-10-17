@@ -205,7 +205,8 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               text.includes('【Gemini 模型調度指示】') ||
               text.includes('【Gemini 模型調度異常】') ||
               text.includes('【Gemini 調度異常】') ||
-              text.includes('尚未偵測到 Google Gemini API Key')
+              text.includes('尚未偵測到 Google Gemini API Key') ||
+              text.includes('針對您詢問的')
             );
           });
           if (cleaned.length > 0) return sanitizeChatOrder(cleaned);
