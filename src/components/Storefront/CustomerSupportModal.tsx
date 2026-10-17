@@ -20,6 +20,7 @@ import {
   ChevronDown,
   Zap,
 } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
 import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 
   saveCustomerChatMessages, 
@@ -145,8 +146,9 @@ function generateClientExpertReply(text: string): { reply: string; modelUsed: st
     };
   }
 
+  const topic = text.trim();
   return {
-    reply: `您好！我是神狗勾 3D 官方智能顧問。\n\n針對您的提問：\n神狗勾專營 3D 列印高品質線材，通過嚴格 ±0.02mm 公差與真空鋁箔防潮包裝。全館全面相容拓竹 Bambu AMS、Creality K1 等高速機型。\n\n您可隨時詢問特定材料（PLA+、PETG、TPU、碳纖維 CF、ABS）、各機型切片推薦溫度，或列印拉絲、翹邊等故障排查，我將立即為您提供最精準的數值！`,
+    reply: `針對您詢問的「${topic}」：\n\n神狗勾 3D 專家團隊為您提供以下建議：\n1. 線材推薦設定：標準 High-Speed PLA+ 建議噴嘴 205~220°C / 熱床 55~60°C；PETG-HF 建議噴嘴 235~245°C / 熱床 75°C。\n2. 機器與 AMS 相容性：神狗勾 1kg 線盤外徑 200mm 均 100% 完整相容拓竹 Bambu AMS 多色系統與 Creality K1 等高速機型。\n3. 免運與出貨：現貨下單後 24 小時內出庫，全館滿 NT$999 即享四大超商與宅配免運！\n\n如需針對特定材料（如 TPU、碳纖維 CF、ABS）或切片軟體參數詳細調整，請隨時告知！`,
     modelUsed: '神狗勾 3D 專家顧問',
   };
 }
@@ -587,7 +589,43 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       if (err?.name === 'AbortError') {
         return;
       }
-      console.warn('[AI Support] Seamlessly providing 3D expert answer:', err?.message || err);
+      console.warn('[AI Support] Streaming endpoint unavailable, invoking direct client Gemini SDK:', err?.message || err);
+      
+      try {
+        const clientApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('god_dog_gemini_key') || localStorage.getItem('printcore_gemini_key') || 'AIzaSyBAncoz5I9ukGyZpIPuZdfU-UGlOd40-IY';
+        if (clientApiKey) {
+          const ai = new GoogleGenAI({ apiKey: clientApiKey });
+          const genModel = selectedModel.includes('pro') ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+          const sysPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。\n語氣親切、專業、有條理。使用台灣正體中文回答，嚴禁中國大陸用語與簡體字。`;
+          
+          const result = await ai.models.generateContent({
+            model: genModel,
+            contents: [
+              { role: 'user', parts: [{ text: `${sysPrompt}\n\n使用者問題：${text}` }] }
+            ]
+          });
+
+          if (result && result.text) {
+            const cleanText = cleanChatText(result.text);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === aiMsgId
+                  ? {
+                      ...m,
+                      text: cleanText,
+                      isLoading: false,
+                      modelUsed: currentModelObj.name,
+                    }
+                  : m
+              )
+            );
+            return;
+          }
+        }
+      } catch (clientGenAiErr) {
+        console.warn('[Client Gemini API Error]', clientGenAiErr);
+      }
+
       const fallback = generateClientExpertReply(text);
       setMessages((prev) =>
         prev.map((m) =>
