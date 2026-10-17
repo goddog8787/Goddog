@@ -21,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { generateClientGeminiChat } from '../../lib/geminiClient';
 import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 
   saveCustomerChatMessages, 
@@ -604,35 +605,26 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       console.warn('[AI Support] Streaming endpoint unavailable, invoking direct client Gemini SDK:', err?.message || err);
       
       try {
-        const clientApiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || localStorage.getItem('god_dog_gemini_key') || localStorage.getItem('printcore_gemini_key') || 'AIzaSyBAncoz5I9ukGyZpIPuZdfU-UGlOd40-IY';
-        if (clientApiKey) {
-          const ai = new GoogleGenAI({ apiKey: clientApiKey });
-          const genModel = selectedModel.includes('pro') ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
-          const sysPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。\n語氣親切、專業、有條理。使用台灣正體中文回答，嚴禁中國大陸用語與簡體字。`;
-          
-          const result = await ai.models.generateContent({
-            model: genModel,
-            contents: [
-              { role: 'user', parts: [{ text: `${sysPrompt}\n\n使用者問題：${text}` }] }
-            ]
-          });
+        const geminiReply = await generateClientGeminiChat(
+          text,
+          updatedHistory.filter((m) => !m.isLoading).map((m) => ({ sender: m.sender, text: m.text }))
+        );
 
-          if (result && result.text) {
-            const cleanText = cleanChatText(result.text);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === aiMsgId
-                  ? {
-                      ...m,
-                      text: cleanText,
-                      isLoading: false,
-                      modelUsed: currentModelObj.name,
-                    }
-                  : m
-              )
-            );
-            return;
-          }
+        if (geminiReply && geminiReply.trim()) {
+          const cleanText = cleanChatText(geminiReply);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    text: cleanText,
+                    isLoading: false,
+                    modelUsed: currentModelObj.name,
+                  }
+                : m
+            )
+          );
+          return;
         }
       } catch (clientGenAiErr) {
         console.warn('[Client Gemini API Error]', clientGenAiErr);
