@@ -439,7 +439,9 @@ function cleanStoredMessages(msgs: ChatMessage[]): ChatMessage[] {
       m.text.includes('【Gemini 模型調度指示】') ||
       m.text.includes('【Gemini 模型調度異常】') ||
       m.text.includes('【Gemini 調度異常】') ||
-      m.text.includes('尚未偵測到 Google Gemini API Key')
+      m.text.includes('尚未偵測到 Google Gemini API Key') ||
+      m.text.includes('針對您詢問的') ||
+      m.text.includes('神狗勾 3D 專家團隊為您提供以下建議')
     ) {
       return false;
     }
