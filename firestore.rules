@@ -1,0 +1,139 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'babe0615@gmail.com' ||
+        request.auth.token.email == 'goddog@gmail.com'
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validation helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'email', 'name', 'tier', 'points']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.email is string && data.email.size() <= 128 &&
+        data.name is string && data.name.size() <= 64 &&
+        data.tier is string && data.tier in ['Bronze', 'Silver', 'Gold', 'Diamond'] &&
+        data.points is number && data.points >= 0;
+    }
+
+    function isValidCustomerData(data) {
+      return data.keys().hasAll(['id', 'userId', 'type']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.userId is string && data.userId.size() <= 128 &&
+        data.type is string && data.type in ['cart', 'wishlist', 'chat', 'tracking', 'recentlyViewed', 'profile', 'subscription', 'printers', 'addresses', 'settings'];
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['id', 'userId', 'customerName', 'customerEmail', 'shippingAddress', 'totalAmount', 'status']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.userId is string && data.userId.size() <= 128 &&
+        data.customerName is string && data.customerName.size() <= 64 &&
+        data.customerEmail is string && data.customerEmail.size() <= 128 &&
+        data.shippingAddress is string && data.shippingAddress.size() <= 256 &&
+        data.totalAmount is number && data.totalAmount >= 0 &&
+        data.status is string && data.status in ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+    }
+
+    function isValidReview(data) {
+      return data.keys().hasAll(['id', 'productId', 'userId', 'userName', 'rating', 'comment']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.productId is string && data.productId.size() <= 64 &&
+        data.userId is string && data.userId.size() <= 128 &&
+        data.userName is string && data.userName.size() <= 64 &&
+        data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+        data.comment is string && data.comment.size() <= 1000;
+    }
+
+    function isValidProductStats(data) {
+      return data.keys().hasAll(['id', 'productId', 'rating', 'reviewsCount']) &&
+        data.id is string && data.id.size() <= 64 &&
+        data.productId is string && data.productId.size() <= 64 &&
+        data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+        data.reviewsCount is number && data.reviewsCount >= 0;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+      allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
+      allow delete: if isValidId(userId) && isAdmin();
+
+      // Persistent customer data subcollection (cart, wishlist, chat, tracking)
+      match /userData/{dataId} {
+        allow get, list: if isValidId(userId) && (isOwner(userId) || isAdmin());
+        allow create, update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidId(dataId) && isValidCustomerData(incoming());
+        allow delete: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidId(dataId);
+      }
+    }
+
+    // Orders collection
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(orderId) && isSignedIn() && incoming().userId == request.auth.uid && isValidOrder(incoming());
+      allow update: if isValidId(orderId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid)) && isValidOrder(incoming());
+      allow delete: if isValidId(orderId) && isAdmin();
+    }
+
+    // Product reviews collection
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isValidId(reviewId) && isValidReview(incoming()) && (
+        !isSignedIn() || incoming().userId == request.auth.uid || isAdmin()
+      );
+      allow update: if isValidId(reviewId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid)) && isValidReview(incoming());
+      allow delete: if isValidId(reviewId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+    }
+
+    // Product review statistics collection
+    match /productStats/{productId} {
+      allow read: if true;
+      allow create, update: if isValidId(productId) && isValidProductStats(incoming());
+      allow delete: if isValidId(productId) && isAdmin();
+    }
+
+    // Store settings & monetization rules
+    match /settings/{settingId} {
+      allow read: if isValidId(settingId);
+      allow write: if isValidId(settingId) && (isAdmin() || isSignedIn());
+    }
+
+    // Test connection probe collection
+    match /test/{testId} {
+      allow get: if true;
+      allow list, create, update, delete: if false;
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "神狗勾耗材商城",
+  "short_name": "神狗勾",
+  "description": "台灣頂尖 3D 列印耗材專營，高速 PLA、PETG、ABS 專業首選",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/wolf-logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/wolf-logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
