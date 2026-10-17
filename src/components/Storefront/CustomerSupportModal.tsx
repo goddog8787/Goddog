@@ -426,9 +426,13 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
     const userTier = member?.membershipTier || (member?.tier === 'Diamond' ? 'PLUS' : member?.tier === 'Gold' ? 'GO' : member?.subscriptionPlan && member.subscriptionPlan !== 'None' ? 'PLUS' : 'FREE');
 
+    const apiBase = typeof window !== 'undefined' && (window.location.hostname.includes('goddog.space') || !window.location.hostname.includes('run.app')) 
+      ? 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app' 
+      : '';
+
     try {
       // 1. Try SSE Streaming first for instant token-by-token feedback
-      const streamRes = await fetch('/api/ai/chat/stream', {
+      const streamRes = await fetch(`${apiBase}/api/ai/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -530,7 +534,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       }
 
       // Fallback to standard /api/ai/chat if streaming was empty
-      const res = await fetch('/api/ai/chat', {
+      const res = await fetch(`${apiBase}/api/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -681,8 +685,12 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     setMessages((prev) => [...prev, userMsg, pendingAiMsg]);
     setIsLoading(true);
 
+    const apiBase = typeof window !== 'undefined' && (window.location.hostname.includes('goddog.space') || !window.location.hostname.includes('run.app')) 
+      ? 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app' 
+      : '';
+
     try {
-      const res = await fetch('/api/ai/support-diagnose', {
+      const res = await fetch(`${apiBase}/api/ai/support-diagnose`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

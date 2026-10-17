@@ -213,8 +213,12 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
   // Request Deep Gemini AI Diagnosis
   const handleDiagnose = async () => {
     setIsLoading(true);
+    const apiBase = typeof window !== 'undefined' && (window.location.hostname.includes('goddog.space') || !window.location.hostname.includes('run.app')) 
+      ? 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app' 
+      : '';
+
     try {
-      const res = await fetch('/api/ai/recommend-filament', {
+      const res = await fetch(`${apiBase}/api/ai/recommend-filament`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
