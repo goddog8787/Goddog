@@ -810,13 +810,12 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  alert('已傳送熱感應列印指令至標籤機！列印規格：A6 (100x150mm) 4x6 吋。');
-                  setShowLabelModal(false);
+                  window.print();
                 }}
                 className="flex-1 py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-indigo-600 transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
                 <Printer className="w-4 h-4" />
-                <span>列印熱感應標籤 (A6 / 4x6)</span>
+                <span>一鍵列印熱感應標籤 (A6 / 4x6)</span>
               </button>
 
               <button
