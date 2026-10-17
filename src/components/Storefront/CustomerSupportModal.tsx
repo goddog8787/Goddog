@@ -146,9 +146,16 @@ function generateClientExpertReply(text: string): { reply: string; modelUsed: st
     };
   }
 
+  if (/^欸|哈囉|你好|嗨|hi|hello|在嗎|安安|早安|午安|晚安|神狗勾|小幫手/i.test(lower) || lower.length <= 3) {
+    return {
+      reply: '您好！我是神狗勾 3D 官方智能顧問。\n\n無論是材料選購、拓竹 AMS 多色系統相容性、切片溫度與速度參數調整，或是列印拉絲、翹邊等故障排查，都可以隨時跟我聊聊喔！請告訴我您的疑問或使用的 3D 印表機型號！',
+      modelUsed: '神狗勾 3D 專家顧問',
+    };
+  }
+
   const topic = text.trim();
   return {
-    reply: `針對您詢問的「${topic}」：\n\n神狗勾 3D 專家團隊為您提供以下建議：\n1. 線材推薦設定：標準 High-Speed PLA+ 建議噴嘴 205~220°C / 熱床 55~60°C；PETG-HF 建議噴嘴 235~245°C / 熱床 75°C。\n2. 機器與 AMS 相容性：神狗勾 1kg 線盤外徑 200mm 均 100% 完整相容拓竹 Bambu AMS 多色系統與 Creality K1 等高速機型。\n3. 免運與出貨：現貨下單後 24 小時內出庫，全館滿 NT$999 即享四大超商與宅配免運！\n\n如需針對特定材料（如 TPU、碳纖維 CF、ABS）或切片軟體參數詳細調整，請隨時告知！`,
+    reply: `關於您詢問的「${topic}」：\n\n神狗勾 3D 顧問團隊為您提供以下說明與建議：\n• High-Speed PLA+ 推薦噴嘴 205~220°C / 熱床 55~60°C；PETG-HF 推薦噴嘴 235~245°C / 熱床 75°C。\n• 線盤與 AMS 相容性：神狗勾全館 1kg 標準線盤外徑 200mm，100% 相容拓竹 Bambu AMS 多色系統與 Creality K1 高速機型。\n• 現貨出貨與免運：下單後 24 小時內快速出庫，全館滿 NT$999 享超商與宅配免運！\n\n您可以隨時告訴我您使用的印表機型號或切片疑問，我將為您提供最適合的參數調校！`,
     modelUsed: '神狗勾 3D 專家顧問',
   };
 }
