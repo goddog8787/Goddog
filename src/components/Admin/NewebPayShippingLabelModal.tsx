@@ -239,6 +239,10 @@ ${currentOrder.items.map((i, idx) => `  ${idx + 1}. ${i.name} x${i.quantity}`).j
       {/* Print-specific CSS injected directly */}
       <style>{`
         @media print {
+          @page {
+            size: 100mm 150mm;
+            margin: 0;
+          }
           body * {
             visibility: hidden !important;
           }

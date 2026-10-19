@@ -244,7 +244,7 @@ export const MakerToolsPage: React.FC = () => {
           }`}
         >
           <ShoppingBag className="w-4 h-4 text-orange-500" />
-          <span>蝦皮文案與主圖</span>
+          <span>電商文案與主圖</span>
         </button>
       </div>
 
@@ -609,14 +609,14 @@ export const MakerToolsPage: React.FC = () => {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-                      蝦皮 (Shopee) 垂直專欄電商文案生成器
+                      3D 列印商品文案與主圖生成器
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/60 text-orange-700 dark:text-orange-300 text-xs font-bold border border-orange-200 dark:border-orange-800">
-                      蝦皮演算法 4 大合規標準
+                      電商高轉化 4 大合規標準
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1">
-                    嚴格落實蝦皮電商四大產出規範：60 字內高權重 SEO 標題、條列式規格、買家須知、10 個 #Hashtag，並支援 800×800 正方形主圖輸出！
+                    嚴格落實電商四大產出規範：60 字內高權重 SEO 標題、條列式規格、買家須知、10 個 #Hashtag，並支援 800×800 正方形主圖輸出！
                   </p>
                 </div>
               </div>
@@ -728,21 +728,21 @@ export const MakerToolsPage: React.FC = () => {
                   className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-orange-600 hover:bg-orange-600 text-white font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{isGeneratingShopee ? '生成中...' : '重新生成蝦皮文案'}</span>
+                  <span>{isGeneratingShopee ? '生成中...' : '重新生成商品文案'}</span>
                 </button>
               </div>
 
-              {/* Shopee Main Image 800x800 Standard Card */}
+              {/* Product Main Image 800x800 Standard Card */}
               <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-700/60 p-4 rounded-2xl bg-orange-50/60 dark:bg-orange-950/30 border border-orange-100 dark:border-orange-900/40 space-y-2.5">
                 <div className="flex items-center gap-2 text-orange-900 dark:text-orange-200 font-bold text-xs">
                   <ImageIcon className="w-4 h-4 text-orange-600" />
-                  <span>蝦皮 800×800 正方形電商主圖標準</span>
+                  <span>800×800 正方形電商主圖標準</span>
                 </div>
                 <ul className="text-[11px] text-orange-950/80 dark:text-orange-300/80 space-y-1 list-disc pl-4 leading-relaxed">
                   <li><strong>解析度規範：</strong>固定為 800×800 正方形像素 (1:1 比例)。</li>
                   <li><strong>視覺主體：</strong>商品主體占據畫面 70%~80%，無邊角裁切。</li>
                   <li><strong>背景色調：</strong>純白底 (#FFFFFF) 或淺灰攝影棚，提升點擊率。</li>
-                  <li><strong>文字限制：</strong>避免大面積文字壓圖，以免觸發蝦皮降權。</li>
+                  <li><strong>文字限制：</strong>避免大面積文字壓圖，以免影響商品曝光。</li>
                 </ul>
               </div>
             </div>
@@ -757,7 +757,7 @@ export const MakerToolsPage: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-orange-500"></span>
                         <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                          蝦皮 SEO 搜尋最佳化標題 (嚴格限制 60 字內)
+                          電商 SEO 搜尋最佳化標題 (嚴格限制 60 字內)
                         </h4>
                       </div>
                       <div className="flex items-center gap-2">
@@ -851,7 +851,7 @@ export const MakerToolsPage: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <Hash className="w-4 h-4 text-purple-500" />
                         <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                          10 個熱搜 #Hashtag (蝦皮標籤權重)
+                          10 個熱搜 #Hashtag (搜尋標籤權重)
                         </h4>
                       </div>
                       <button
@@ -892,12 +892,12 @@ export const MakerToolsPage: React.FC = () => {
                     {copiedShopeeAll ? (
                       <>
                         <Check className="w-5 h-5 text-emerald-200" />
-                        <span>已複製全部蝦皮上架文案至剪貼簿！</span>
+                        <span>已複製全部商品上架文案至剪貼簿！</span>
                       </>
                     ) : (
                       <>
                         <Copy className="w-5 h-5" />
-                        <span>一鍵複製全部文案 (可直接貼入蝦皮賣家後台)</span>
+                        <span>一鍵複製全部文案 (可直接貼入賣家後台)</span>
                       </>
                     )}
                   </button>
@@ -908,9 +908,9 @@ export const MakerToolsPage: React.FC = () => {
                     <Sparkles className="w-8 h-8" />
                   </div>
                   <div>
-                    <h4 className="font-black text-lg text-slate-900 dark:text-white">點擊按鈕立即生成高轉化蝦皮文案</h4>
+                    <h4 className="font-black text-lg text-slate-900 dark:text-white">點擊按鈕立即生成高轉化商品文案</h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
-                      系統將依據您輸入的耗材賣點與蝦皮繁體中文演算法標準，輸出 60 字內 SEO 標題、條列規格、須知與 10 個標籤。
+                      系統將依據您輸入的耗材賣點與繁體中文電商演算法標準，輸出 60 字內 SEO 標題、條列規格、須知與 10 個標籤。
                     </p>
                   </div>
                   <button

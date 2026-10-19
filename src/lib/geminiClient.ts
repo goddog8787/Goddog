@@ -35,10 +35,29 @@ export async function generateClientGeminiChat(
 
   const fullPrompt = `${systemPrompt}\n\n${pastConvo ? `【歷史對話】\n${pastConvo}\n\n` : ''}顧客提問：${userMessage}\n\n顧問回答：`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.8-flash',
-    contents: fullPrompt,
-  });
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: fullPrompt,
+    });
+    if (response.text && response.text.trim()) {
+      return response.text.trim();
+    }
+  } catch (err: any) {
+    console.warn('[Gemini Client] gemini-3.8-flash call error, trying backup model:', err?.message || err);
+    try {
+      const backupRes = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: fullPrompt,
+      });
+      if (backupRes.text && backupRes.text.trim()) {
+        return backupRes.text.trim();
+      }
+    } catch (backupErr) {
+      console.warn('[Gemini Client] backup model call failed:', backupErr);
+      throw backupErr;
+    }
+  }
 
-  return response.text || '';
+  return '';
 }
