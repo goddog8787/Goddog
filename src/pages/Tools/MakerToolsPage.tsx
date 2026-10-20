@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 import { SEO } from '../../components/SEO';
 import { Link } from 'react-router-dom';
-import { ShopeeCopyResult } from '../../types';
+import { EcommerceCopyResult } from '../../types';
+import { generateClientEcommerceCopy } from '../../lib/geminiClient';
 
 // Material densities in g/cm3
 const MATERIAL_SPECS: Record<string, { density: number; name: string; hdt: number; tensile: number; amsOk: boolean; desc: string }> = {
@@ -54,7 +55,7 @@ const DRYING_GUIDE = [
 ];
 
 export const MakerToolsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'quote' | 'spool' | 'drying' | 'ams' | 'shopee'>('quote');
+  const [activeTab, setActiveTab] = useState<'quote' | 'spool' | 'drying' | 'ams' | 'ecommerce' | 'shopee'>('quote');
 
   // --- Tool 1: Print Quoting Calculator States ---
   const [partWeight, setPartWeight] = useState<number>(85);
@@ -68,43 +69,67 @@ export const MakerToolsPage: React.FC = () => {
   const [profitMargin, setProfitMargin] = useState<number>(35);
   const [copiedQuote, setCopiedQuote] = useState(false);
 
-  // --- Tool 5: Shopee Vertical Column Tool States ---
-  const [shopeeProductName, setShopeeProductName] = useState('神狗勾高速 Hyper PLA 3D列印線材');
-  const [shopeeMaterial, setShopeeMaterial] = useState('PLA');
-  const [shopeeFeatures, setShopeeFeatures] = useState('600mm/s 超高速出料、真圓度±0.02mm、雙層鋁箔真空包裝、Bambu AMS 相容');
-  const [shopeeAudience, setShopeeAudience] = useState('拓竹創客、模型代印工作室、機構打樣工程師');
-  const [shopeePromotion, setShopeePromotion] = useState('滿999免運費 / 台灣現貨當日發');
-  const [isGeneratingShopee, setIsGeneratingShopee] = useState(false);
-  const [shopeeResult, setShopeeResult] = useState<ShopeeCopyResult | null>(null);
+  // --- Tool 5: Ecommerce Vertical Column Tool States ---
+  const [ecommerceProductName, setEcommerceProductName] = useState('神狗勾高速 Hyper PLA 3D列印線材');
+  const [ecommerceMaterial, setEcommerceMaterial] = useState('PLA');
+  const [ecommerceFeatures, setEcommerceFeatures] = useState('600mm/s 超高速出料、真圓度±0.02mm、雙層鋁箔真空包裝、Bambu AMS 相容');
+  const [ecommerceAudience, setEcommerceAudience] = useState('拓竹創客、模型代印工作室、機構打樣工程師');
+  const [ecommercePromotion, setEcommercePromotion] = useState('滿999免運費 / 台灣現貨當日發');
+  const [isGeneratingEcommerce, setIsGeneratingEcommerce] = useState(false);
+  const [ecommerceResult, setEcommerceResult] = useState<EcommerceCopyResult | null>(null);
 
-  const [copiedShopeeTitle, setCopiedShopeeTitle] = useState(false);
-  const [copiedShopeeSpecs, setCopiedShopeeSpecs] = useState(false);
-  const [copiedShopeeNotices, setCopiedShopeeNotices] = useState(false);
-  const [copiedShopeeTags, setCopiedShopeeTags] = useState(false);
-  const [copiedShopeeAll, setCopiedShopeeAll] = useState(false);
+  const [copiedEcommerceTitle, setCopiedEcommerceTitle] = useState(false);
+  const [copiedEcommerceSpecs, setCopiedEcommerceSpecs] = useState(false);
+  const [copiedEcommerceNotices, setCopiedEcommerceNotices] = useState(false);
+  const [copiedEcommerceTags, setCopiedEcommerceTags] = useState(false);
+  const [copiedEcommerceAll, setCopiedEcommerceAll] = useState(false);
 
-  const handleGenerateShopeeCopy = async () => {
-    setIsGeneratingShopee(true);
+  const handleGenerateEcommerceCopy = async () => {
+    setIsGeneratingEcommerce(true);
     try {
-      const res = await fetch('/api/ai/shopee-copy', {
+      const res = await fetch('/api/ai/ecommerce-copy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          productName: shopeeProductName,
-          material: shopeeMaterial,
-          features: shopeeFeatures,
-          targetAudience: shopeeAudience,
-          promotion: shopeePromotion,
+          productName: ecommerceProductName,
+          material: ecommerceMaterial,
+          features: ecommerceFeatures,
+          targetAudience: ecommerceAudience,
+          promotion: ecommercePromotion,
         }),
       });
-      const data = await res.json();
-      if (data?.success && data?.data) {
-        setShopeeResult(data.data);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success && data?.data) {
+          setEcommerceResult(data.data);
+          return;
+        }
       }
+      // Resilient fallback to direct client-side Gemini generation
+      const fallback = await generateClientEcommerceCopy({
+        productName: ecommerceProductName,
+        material: ecommerceMaterial,
+        features: ecommerceFeatures,
+        targetAudience: ecommerceAudience,
+        promotion: ecommercePromotion,
+      });
+      setEcommerceResult(fallback);
     } catch (err) {
-      console.warn('Shopee copy generation error:', err);
+      console.warn('Ecommerce copy API network notice, running direct browser Gemini engine:', err);
+      try {
+        const fallback = await generateClientEcommerceCopy({
+          productName: ecommerceProductName,
+          material: ecommerceMaterial,
+          features: ecommerceFeatures,
+          targetAudience: ecommerceAudience,
+          promotion: ecommercePromotion,
+        });
+        setEcommerceResult(fallback);
+      } catch (clientErr) {
+        console.error('Client copy generation failed:', clientErr);
+      }
     } finally {
-      setIsGeneratingShopee(false);
+      setIsGeneratingEcommerce(false);
     }
   };
 
@@ -232,13 +257,13 @@ export const MakerToolsPage: React.FC = () => {
 
         <button
           onClick={() => {
-            setActiveTab('shopee');
-            if (!shopeeResult) {
-              handleGenerateShopeeCopy();
+            setActiveTab('ecommerce');
+            if (!ecommerceResult) {
+              handleGenerateEcommerceCopy();
             }
           }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'shopee'
+            activeTab === 'ecommerce' || activeTab === 'shopee'
               ? 'bg-white dark:bg-slate-900 text-orange-600 dark:text-orange-400 shadow-sm'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
@@ -597,8 +622,8 @@ export const MakerToolsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 5: Shopee Vertical Column Copy & 800x800 Image Standards */}
-      {activeTab === 'shopee' && (
+      {/* Tab 5: Ecommerce Copywriting & 800x800 Image Standards */}
+      {(activeTab === 'ecommerce' || activeTab === 'shopee') && (
         <div className="space-y-8">
           <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-orange-500/5 dark:from-orange-950/40 dark:to-slate-900 border border-orange-200 dark:border-orange-800/60 rounded-3xl p-6 sm:p-8">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -623,11 +648,11 @@ export const MakerToolsPage: React.FC = () => {
 
               <button
                 type="button"
-                onClick={handleGenerateShopeeCopy}
-                disabled={isGeneratingShopee}
+                onClick={handleGenerateEcommerceCopy}
+                disabled={isGeneratingEcommerce}
                 className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-orange-600 hover:bg-orange-700 disabled:bg-slate-300 text-white font-extrabold text-sm shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap disabled:cursor-not-allowed"
               >
-                {isGeneratingShopee ? (
+                {isGeneratingEcommerce ? (
                   <>
                     <Sparkles className="w-4 h-4 animate-spin text-amber-200" />
                     <span>AI 演算生成中...</span>
@@ -657,8 +682,8 @@ export const MakerToolsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={shopeeProductName}
-                    onChange={(e) => setShopeeProductName(e.target.value)}
+                    value={ecommerceProductName}
+                    onChange={(e) => setEcommerceProductName(e.target.value)}
                     placeholder="例：神狗勾高速 Hyper PLA 3D列印線材"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-semibold"
                   />
@@ -669,8 +694,8 @@ export const MakerToolsPage: React.FC = () => {
                     主要材質種類
                   </label>
                   <select
-                    value={shopeeMaterial}
-                    onChange={(e) => setShopeeMaterial(e.target.value)}
+                    value={ecommerceMaterial}
+                    onChange={(e) => setEcommerceMaterial(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-semibold"
                   >
                     <option value="PLA">PLA / 高速 Hyper PLA+ (日常展示、高剛性)</option>
@@ -688,8 +713,8 @@ export const MakerToolsPage: React.FC = () => {
                   </label>
                   <textarea
                     rows={3}
-                    value={shopeeFeatures}
-                    onChange={(e) => setShopeeFeatures(e.target.value)}
+                    value={ecommerceFeatures}
+                    onChange={(e) => setEcommerceFeatures(e.target.value)}
                     placeholder="例：600mm/s 超高速出料、真圓度±0.02mm、雙層鋁箔真空包裝、Bambu AMS 相容"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs leading-relaxed"
                   />
@@ -701,8 +726,8 @@ export const MakerToolsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={shopeeAudience}
-                    onChange={(e) => setShopeeAudience(e.target.value)}
+                    value={ecommerceAudience}
+                    onChange={(e) => setEcommerceAudience(e.target.value)}
                     placeholder="例：拓竹創客、模型代印工作室、機構打樣工程師"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
                   />
@@ -714,8 +739,8 @@ export const MakerToolsPage: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    value={shopeePromotion}
-                    onChange={(e) => setShopeePromotion(e.target.value)}
+                    value={ecommercePromotion}
+                    onChange={(e) => setEcommercePromotion(e.target.value)}
                     placeholder="例：滿999免運費 / 台灣現貨當日發"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
                   />
@@ -723,12 +748,12 @@ export const MakerToolsPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={handleGenerateShopeeCopy}
-                  disabled={isGeneratingShopee}
+                  onClick={handleGenerateEcommerceCopy}
+                  disabled={isGeneratingEcommerce}
                   className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-orange-600 hover:bg-orange-600 text-white font-bold text-xs shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{isGeneratingShopee ? '生成中...' : '重新生成商品文案'}</span>
+                  <span>{isGeneratingEcommerce ? '生成中...' : '重新生成商品文案'}</span>
                 </button>
               </div>
 
@@ -749,7 +774,7 @@ export const MakerToolsPage: React.FC = () => {
 
             {/* Right Formatted Output */}
             <div className="lg:col-span-7 space-y-5">
-              {shopeeResult ? (
+              {ecommerceResult ? (
                 <>
                   {/* 1. 60-char SEO Title Card */}
                   <div className="bg-white dark:bg-slate-800/90 rounded-3xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
@@ -762,28 +787,28 @@ export const MakerToolsPage: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          shopeeResult.seoTitle.length <= 60 
+                          ecommerceResult.seoTitle.length <= 60 
                             ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200' 
                             : 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-200'
                         }`}>
-                          {shopeeResult.seoTitle.length} / 60 字 {shopeeResult.seoTitle.length <= 60 ? '✓ 合規' : '⚠️ 超出'}
+                          {ecommerceResult.seoTitle.length} / 60 字 {ecommerceResult.seoTitle.length <= 60 ? '✓ 合規' : '⚠️ 超出'}
                         </span>
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(shopeeResult.seoTitle);
-                            setCopiedShopeeTitle(true);
-                            setTimeout(() => setCopiedShopeeTitle(false), 2000);
+                            navigator.clipboard.writeText(ecommerceResult.seoTitle);
+                            setCopiedEcommerceTitle(true);
+                            setTimeout(() => setCopiedEcommerceTitle(false), 2000);
                           }}
                           className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-orange-50 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
                         >
-                          {copiedShopeeTitle ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedShopeeTitle ? '已複製' : '複製標題'}</span>
+                          {copiedEcommerceTitle ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedEcommerceTitle ? '已複製' : '複製標題'}</span>
                         </button>
                       </div>
                     </div>
                     <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 font-bold text-sm leading-relaxed">
-                      {shopeeResult.seoTitle}
+                      {ecommerceResult.seoTitle}
                     </div>
                   </div>
 
@@ -799,18 +824,18 @@ export const MakerToolsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(shopeeResult.specBulletPoints.join('\n'));
-                          setCopiedShopeeSpecs(true);
-                          setTimeout(() => setCopiedShopeeSpecs(false), 2000);
+                          navigator.clipboard.writeText(ecommerceResult.specBulletPoints.join('\n'));
+                          setCopiedEcommerceSpecs(true);
+                          setTimeout(() => setCopiedEcommerceSpecs(false), 2000);
                         }}
                         className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-indigo-50 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
                       >
-                        {copiedShopeeSpecs ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedShopeeSpecs ? '已複製' : '複製規格'}</span>
+                        {copiedEcommerceSpecs ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedEcommerceSpecs ? '已複製' : '複製規格'}</span>
                       </button>
                     </div>
                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
-                      {shopeeResult.specBulletPoints.map((item, idx) => (
+                      {ecommerceResult.specBulletPoints.map((item, idx) => (
                         <div key={idx} className="font-medium">{item}</div>
                       ))}
                     </div>
@@ -828,18 +853,18 @@ export const MakerToolsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(shopeeResult.buyerNotice.join('\n'));
-                          setCopiedShopeeNotices(true);
-                          setTimeout(() => setCopiedShopeeNotices(false), 2000);
+                          navigator.clipboard.writeText(ecommerceResult.buyerNotice.join('\n'));
+                          setCopiedEcommerceNotices(true);
+                          setTimeout(() => setCopiedEcommerceNotices(false), 2000);
                         }}
                         className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-emerald-50 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
                       >
-                        {copiedShopeeNotices ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedShopeeNotices ? '已複製' : '複製須知'}</span>
+                        {copiedEcommerceNotices ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedEcommerceNotices ? '已複製' : '複製須知'}</span>
                       </button>
                     </div>
                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs text-slate-700 dark:text-slate-200 leading-relaxed">
-                      {shopeeResult.buyerNotice.map((item, idx) => (
+                      {ecommerceResult.buyerNotice.map((item, idx) => (
                         <div key={idx} className="font-medium">{item}</div>
                       ))}
                     </div>
@@ -857,18 +882,18 @@ export const MakerToolsPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(shopeeResult.hashtags.join(' '));
-                          setCopiedShopeeTags(true);
-                          setTimeout(() => setCopiedShopeeTags(false), 2000);
+                          navigator.clipboard.writeText(ecommerceResult.hashtags.join(' '));
+                          setCopiedEcommerceTags(true);
+                          setTimeout(() => setCopiedEcommerceTags(false), 2000);
                         }}
                         className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-purple-50 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1"
                       >
-                        {copiedShopeeTags ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedShopeeTags ? '已複製' : '複製標籤'}</span>
+                        {copiedEcommerceTags ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedEcommerceTags ? '已複製' : '複製標籤'}</span>
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {shopeeResult.hashtags.map((tag, idx) => (
+                      {ecommerceResult.hashtags.map((tag, idx) => (
                         <span
                           key={idx}
                           className="px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 text-xs font-bold"
@@ -883,13 +908,13 @@ export const MakerToolsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      navigator.clipboard.writeText(shopeeResult.fullFormattedDescription);
-                      setCopiedShopeeAll(true);
-                      setTimeout(() => setCopiedShopeeAll(false), 2500);
+                      navigator.clipboard.writeText(ecommerceResult.fullFormattedDescription);
+                      setCopiedEcommerceAll(true);
+                      setTimeout(() => setCopiedEcommerceAll(false), 2500);
                     }}
                     className="w-full py-4 rounded-2xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-black text-sm shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
                   >
-                    {copiedShopeeAll ? (
+                    {copiedEcommerceAll ? (
                       <>
                         <Check className="w-5 h-5 text-emerald-200" />
                         <span>已複製全部商品上架文案至剪貼簿！</span>
@@ -915,8 +940,8 @@ export const MakerToolsPage: React.FC = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={handleGenerateShopeeCopy}
-                    disabled={isGeneratingShopee}
+                    onClick={handleGenerateEcommerceCopy}
+                    disabled={isGeneratingEcommerce}
                     className="px-6 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-2"
                   >
                     <Zap className="w-4 h-4 text-amber-200" />

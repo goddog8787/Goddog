@@ -535,13 +535,15 @@ export const SUPPORTED_AI_MODELS: AIModelOption[] = [
   },
 ];
 
-export interface ShopeeCopyResult {
+export interface EcommerceCopyResult {
   seoTitle: string;
   specBulletPoints: string[];
   buyerNotice: string[];
   hashtags: string[];
   fullFormattedDescription: string;
 }
+
+export type ShopeeCopyResult = EcommerceCopyResult;
 
 export interface StoreCoupon {
   id: string;

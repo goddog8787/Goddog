@@ -21,16 +21,21 @@ import {
   Sparkles,
   QrCode
 } from 'lucide-react';
-import { LogisticsSettings } from '../../types';
+import { Order, LogisticsSettings } from '../../types';
+import { NewebPayShippingLabelModal, createSampleOrderForTesting } from './NewebPayShippingLabelModal';
 
 interface LogisticsManagerProps {
   settings: LogisticsSettings;
   onSaveSettings: (newSettings: LogisticsSettings) => void;
+  orders?: Order[];
+  onPrintOrderLabel?: (order: Order) => void;
 }
 
 export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
   settings,
   onSaveSettings,
+  orders = [],
+  onPrintOrderLabel,
 }) => {
   const [formData, setFormData] = useState<LogisticsSettings>({
     freeShippingThreshold: settings.freeShippingThreshold ?? 999,
@@ -57,6 +62,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
   const [showSavedToast, setShowSavedToast] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [selectedLabelBrand, setSelectedLabelBrand] = useState<'7-11' | 'familymart' | 'hilife' | 'okmart'>('7-11');
+  const [selectedPrintOrders, setSelectedPrintOrders] = useState<Order[]>([]);
   
   // NewebPay connection testing state
   const [isTestingConnection, setIsTestingConnection] = useState(false);
@@ -202,11 +208,35 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
 
           <button
             type="button"
-            onClick={() => setShowLabelModal(true)}
+            onClick={() => {
+              const pendingOrders = orders.filter(
+                (o) => o.orderStatus === 'picking' || o.orderStatus === 'shipped'
+              );
+              setSelectedPrintOrders(
+                pendingOrders.length > 0
+                  ? pendingOrders
+                  : [createSampleOrderForTesting(selectedLabelBrand)]
+              );
+              setShowLabelModal(true);
+            }}
+            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+            title="一鍵列印藍新金流熱感應託運單 (支援 7-11/全家/萊爾富/OK/宅配)"
+          >
+            <Printer className="w-4 h-4 text-amber-200" />
+            <span>一鍵列印藍新物流單 (A6 / 4x6)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedPrintOrders([createSampleOrderForTesting(selectedLabelBrand)]);
+              setShowLabelModal(true);
+            }}
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="開啟藍新金流超商/宅配託運單樣板以測試列印"
           >
             <Barcode className="w-4 h-4 text-indigo-600" />
-            <span>預覽超商電子託運單</span>
+            <span>測試列印樣板單</span>
           </button>
 
           <button
@@ -705,144 +735,17 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
         </div>
       </form>
 
-      {/* Simulated NewebPay Electronic Shipping Label Modal */}
+      {/* Real NewebPay Electronic Thermal Shipping Label Modal */}
       {showLabelModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Barcode className="w-5 h-5 text-indigo-600" />
-                <span className="font-black text-slate-900 text-sm">
-                  藍新超商電子託運單與門市交寄單 (A6 規格預覽)
-                </span>
-              </div>
-              <button
-                onClick={() => setShowLabelModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-xs font-bold"
-              >
-                關閉
-              </button>
-            </div>
-
-            {/* Brand Switcher in Modal */}
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setSelectedLabelBrand('7-11')}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  selectedLabelBrand === '7-11' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600'
-                }`}
-              >
-                7-11 交貨便
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedLabelBrand('familymart')}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  selectedLabelBrand === 'familymart' ? 'bg-white text-sky-700 shadow-xs' : 'text-slate-600'
-                }`}
-              >
-                全家店到店
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedLabelBrand('hilife')}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  selectedLabelBrand === 'hilife' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-600'
-                }`}
-              >
-                萊爾富 Life-ET
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedLabelBrand('okmart')}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  selectedLabelBrand === 'okmart' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600'
-                }`}
-              >
-                OK 超商
-              </button>
-            </div>
-
-            {/* Printable Thermal Label */}
-            <div className="p-4 border-2 border-dashed border-slate-300 rounded-2xl bg-slate-50 font-mono text-[11px] space-y-3">
-              <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                <span className="font-black text-sm text-slate-900">
-                  {selectedLabelBrand === '7-11' && '7-ELEVEN 交貨便 C2C'}
-                  {selectedLabelBrand === 'familymart' && '全家 FamilyMart 店到店'}
-                  {selectedLabelBrand === 'hilife' && '萊爾富 Hi-Life 電子寄件'}
-                  {selectedLabelBrand === 'okmart' && 'OK·MART 超商託運單'}
-                </span>
-                <span className="bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold text-[10px]">
-                  熱感應標籤樣板 (依訂單動態套印)
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-slate-400">藍新物流託運單號：</div>
-                  <div className="text-sm font-black tracking-wider text-slate-900">
-                    （正式出貨由藍新金流即時指派）
-                  </div>
-                </div>
-                <div className="p-1.5 bg-white border border-slate-200 rounded-lg">
-                  <QrCode className="w-7 h-7 text-slate-800" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[10px] bg-white p-2.5 rounded-xl border border-slate-200">
-                <div>
-                  <span className="text-slate-400">取件門市：</span>
-                  <div className="font-bold text-slate-900">依買家結帳指定門市</div>
-                </div>
-                <div>
-                  <span className="text-slate-400">代收貨款金額：</span>
-                  <div className="font-bold text-indigo-700">依正式訂單實付金額</div>
-                </div>
-                <div>
-                  <span className="text-slate-400">寄件人：</span>
-                  <div className="font-bold text-slate-700">{formData.senderName}</div>
-                </div>
-                <div>
-                  <span className="text-slate-400">藍新特店編號：</span>
-                  <div className="font-bold text-slate-700">{formData.newebpayLogisticsMerchantId}</div>
-                </div>
-              </div>
-
-              {/* Barcode representation */}
-              <div className="py-2 border-y border-slate-200 text-center font-bold text-slate-800 space-y-1">
-                <div className="tracking-[6px] text-sm">||| | ||||| ||| || |||||| |||| |</div>
-                <div className="text-[10px] tracking-widest text-slate-500">託運單號條碼依正式單據動態列印</div>
-              </div>
-
-              <div className="text-[10px] text-slate-500 flex items-center justify-between">
-                <span>到店簡訊通知取件，請攜帶相片證件領取。</span>
-                <span className="font-bold text-slate-600">NewebPay 物流</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  window.print();
-                }}
-                className="flex-1 py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-indigo-600 transition-colors cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Printer className="w-4 h-4" />
-                <span>一鍵列印熱感應標籤 (A6 / 4x6)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowLabelModal(false)}
-                className="px-4 py-2.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
-              >
-                關閉
-              </button>
-            </div>
-          </div>
-        </div>
+        <NewebPayShippingLabelModal
+          isOpen={showLabelModal}
+          onClose={() => {
+            setShowLabelModal(false);
+            setSelectedPrintOrders([]);
+          }}
+          orders={selectedPrintOrders.length > 0 ? selectedPrintOrders : [createSampleOrderForTesting(selectedLabelBrand)]}
+          logisticsSettings={formData}
+        />
       )}
     </div>
   );

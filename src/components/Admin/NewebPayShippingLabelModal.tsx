@@ -18,13 +18,69 @@ import {
 } from 'lucide-react';
 import { Order, LogisticsSettings } from '../../types';
 
-interface NewebPayShippingLabelModalProps {
+export interface NewebPayShippingLabelModalProps {
   isOpen: boolean;
   onClose: () => void;
   orders: Order[]; // Support single or batch orders
   logisticsSettings: LogisticsSettings;
   onMarkAsDispatched?: (orderIds: string[]) => void;
 }
+
+export const createSampleOrderForTesting = (brand: '7-11' | 'familymart' | 'hilife' | 'okmart' | 'delivery' = '7-11'): Order => {
+  const storeMap: Record<string, { name: string; method: Order['shippingMethod'] }> = {
+    '7-11': { name: '7-11 神犬旗艦門市 (991823)', method: 'UNIMARTC2C' },
+    'familymart': { name: '全家 民雄金世界門市 (018234)', method: 'FAMIC2C' },
+    'hilife': { name: '萊爾富 嘉義民雄門市 (HL9921)', method: 'HILIFEC2C' },
+    'okmart': { name: 'OK·MART 民雄興國門市 (OK8832)', method: 'OKMARTC2C' },
+    'delivery': { name: '嘉義縣民雄鄉福樂村埤角1-50號 (神狗勾3D創客基地)', method: 'HOME' },
+  };
+
+  const selected = storeMap[brand] || storeMap['7-11'];
+  const testId = Date.now().toString().slice(-6);
+
+  return {
+    id: `TEST_ORD_${testId}`,
+    orderNumber: `GD2026${testId}`,
+    createdAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    customerName: '陳冠宇 (測試創客)',
+    customerEmail: 'maker.test@goddog.space',
+    customerPhone: '0988-123-456',
+    shippingMethod: selected.method,
+    storeOrAddress: selected.name,
+    orderStatus: 'picking',
+    subtotal: 1280,
+    shippingFee: 0,
+    discount: 0,
+    pointsDeduction: 0,
+    pointsEarned: 12,
+    total: 1280,
+    paymentGateway: 'credit_card',
+    paymentStatus: 'paid',
+    tradeNo: `NW${Date.now().toString().slice(-10)}`,
+    shipOrderNo: `NW${Date.now().toString().slice(-8)}`,
+    trackingNumber: `NW${Date.now().toString().slice(-8)}`,
+    invoiceNumber: `AB-${Date.now().toString().slice(-8)}`,
+    invoiceType: 'cloud',
+    items: [
+      {
+        productId: 'p-hyper-pla',
+        name: '高速 Hyper PLA+ 3D列印線材 (高韌性/拓竹AMS相容)',
+        price: 490,
+        quantity: 2,
+        colorName: '啞光黑',
+        colorHex: '#1E293B',
+      },
+      {
+        productId: 'p-petg-hf',
+        name: '工程級 PETG-HF 高速抗衝擊線材 (耐候防水)',
+        price: 300,
+        quantity: 1,
+        colorName: '極光白',
+        colorHex: '#F8FAFC',
+      },
+    ],
+  };
+};
 
 /**
  * Generate a realistic-looking Code 128 / Code 39 SVG barcode
@@ -126,7 +182,7 @@ export const NewebPayShippingLabelModal: React.FC<NewebPayShippingLabelModalProp
   // Determine logistics provider branding
   const getProviderBrand = (shippingMethod?: string, storeOrAddress?: string) => {
     const raw = `${shippingMethod || ''} ${storeOrAddress || ''}`.toLowerCase();
-    if (raw.includes('全家') || raw.includes('family')) {
+    if (raw.includes('全家') || raw.includes('family') || raw.includes('famic2c')) {
       return {
         brandName: '全家 FamilyMart 店到店',
         subName: '藍新金流 C2C 電子門市交寄單',
@@ -136,7 +192,7 @@ export const NewebPayShippingLabelModal: React.FC<NewebPayShippingLabelModalProp
         labelType: '全家店到店包裹託運單',
       };
     }
-    if (raw.includes('萊爾富') || raw.includes('hilife')) {
+    if (raw.includes('萊爾富') || raw.includes('hilife') || raw.includes('hilifec2c')) {
       return {
         brandName: '萊爾富 Hi-Life 電子寄件',
         subName: '藍新金流 Life-ET 寄件代碼單',
@@ -146,7 +202,7 @@ export const NewebPayShippingLabelModal: React.FC<NewebPayShippingLabelModalProp
         labelType: '萊爾富超商託運單',
       };
     }
-    if (raw.includes('ok') || raw.includes('okmart')) {
+    if (raw.includes('ok') || raw.includes('okmart') || raw.includes('okmartc2c')) {
       return {
         brandName: 'OK·MART 超商寄件',
         subName: '藍新金流 OK·go 門市託運單',

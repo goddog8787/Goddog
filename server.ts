@@ -1623,7 +1623,7 @@ ${storeContextNotes}
 // 3. 買家須知
 // 4. 10 個專屬 #Hashtag
 // -------------------------------------------------------------
-app.post('/api/ai/shopee-copy', async (req, res) => {
+app.post(['/api/ai/ecommerce-copy', '/api/ai/shopee-copy'], async (req, res) => {
   try {
     const { 
       productName, 

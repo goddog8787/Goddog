@@ -33,7 +33,7 @@ interface ProductImageStudioModalProps {
   onApplyImage: (newImageUrl: string) => void;
 }
 
-type AspectRatioOption = 'shopee_800' | '1:1' | '4:3' | '16:9' | 'free';
+type AspectRatioOption = 'standard_800' | '1:1' | '4:3' | '16:9' | 'free' | 'shopee_800';
 
 interface FilterAdjustments {
   brightness: number; // -50 to 50
@@ -251,7 +251,7 @@ export const ProductImageStudioModal: React.FC<ProductImageStudioModalProps> = (
       let cropX = 0;
       let cropY = 0;
 
-      if (aspectRatio === 'shopee_800' || aspectRatio === '1:1') {
+      if (aspectRatio === 'standard_800' || aspectRatio === 'shopee_800' || aspectRatio === '1:1') {
         const minSide = Math.min(sourceWidth, sourceHeight);
         cropWidth = minSide;
         cropHeight = minSide;
@@ -279,8 +279,8 @@ export const ProductImageStudioModal: React.FC<ProductImageStudioModalProps> = (
         }
       }
 
-      // Output size (Fixed 800x800 for Shopee standard & square ecommerce)
-      const targetSize = (aspectRatio === 'shopee_800' || aspectRatio === '1:1') ? 800 : 900;
+      // Output size (Fixed 800x800 for square ecommerce standard)
+      const targetSize = (aspectRatio === 'standard_800' || aspectRatio === 'shopee_800' || aspectRatio === '1:1') ? 800 : 900;
       let outW = targetSize;
       let outH = targetSize;
 
@@ -701,7 +701,7 @@ export const ProductImageStudioModal: React.FC<ProductImageStudioModalProps> = (
                   <span className="font-bold text-slate-800 block">📐 裁切顯示比例</span>
                   <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
                     {[
-                      { id: 'shopee_800', label: '800×800 正方' },
+                      { id: 'standard_800', label: '800×800 正方' },
                       { id: '1:1', label: '1:1 正方 (電商)' },
                       { id: '4:3', label: '4:3 標準' },
                       { id: '16:9', label: '16:9 寬螢幕' },
