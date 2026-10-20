@@ -214,7 +214,7 @@ export const NewebPayShippingLabelModal: React.FC<NewebPayShippingLabelModalProp
 寄件人：${logisticsSettings.senderName} (${logisticsSettings.senderPhone})
 寄件地址：${logisticsSettings.senderAddress}
 耗材明細：
-${currentOrder.items.map((i, idx) => `  ${idx + 1}. ${i.name} x${i.quantity}`).join('\n')}
+${(currentOrder.items || []).map((i, idx) => `  ${idx + 1}. ${i.name} x${i.quantity || 1}`).join('\n')}
 ------------------------------------------------------
 列印時間：${new Date().toLocaleString('zh-TW')}
 ======================================================
@@ -440,18 +440,18 @@ ${currentOrder.items.map((i, idx) => `  ${idx + 1}. ${i.name} x${i.quantity}`).j
             {/* Ordered Items Summary */}
             <div className="border-t border-dashed border-slate-300 pt-2 space-y-1">
               <span className="text-[10px] font-bold text-slate-700 block">
-                託運商品規格清單 (共 {currentOrder.items.reduce((acc, i) => acc + i.quantity, 0)} 盤線材)：
+                託運商品規格清單 (共 {(currentOrder.items || []).reduce((acc, i) => acc + (i.quantity || 1), 0)} 盤線材)：
               </span>
               <div className="space-y-0.5 text-[10px] font-mono text-slate-600">
-                {currentOrder.items.slice(0, 3).map((item, idx) => (
+                {(currentOrder.items || []).slice(0, 3).map((item, idx) => (
                   <div key={idx} className="flex justify-between">
                     <span className="truncate max-w-[240px]">• {item.name}</span>
-                    <span className="font-bold">x{item.quantity}</span>
+                    <span className="font-bold">x{item.quantity || 1}</span>
                   </div>
                 ))}
-                {currentOrder.items.length > 3 && (
+                {(currentOrder.items || []).length > 3 && (
                   <div className="text-slate-400 italic">
-                    ...其餘 {currentOrder.items.length - 3} 個品項省略
+                    ...其餘 {(currentOrder.items || []).length - 3} 個品項省略
                   </div>
                 )}
               </div>

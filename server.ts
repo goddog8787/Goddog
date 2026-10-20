@@ -2970,7 +2970,7 @@ app.post('/api/payment/period-checkout', (req, res) => {
   try {
     const { planId, planName, price, days, email, frequencyLabel, useSandbox, userId } = req.body;
     
-    // 強化金額解析與方案默認金額補全，避免前端事件物件或未帶金額導致報錯
+    // 強化金額解析與方案預設金額補全，避免前端事件物件或未帶金額導致報錯
     let finalPrice = Number(price);
     if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
       if (planId === 'vip-monthly') finalPrice = 99;

@@ -57,13 +57,19 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
   };
 
   const calcStorage = () => {
-    let total = 0;
-    for (const x in localStorage) {
-      if (Object.prototype.hasOwnProperty.call(localStorage, x)) {
-        total += (localStorage[x].length + x.length) * 2;
+    try {
+      let total = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) {
+          const val = localStorage.getItem(key) || '';
+          total += (key.length + val.length) * 2;
+        }
       }
+      setStorageUsageKB(Math.round(total / 1024));
+    } catch {
+      setStorageUsageKB(0);
     }
-    setStorageUsageKB(Math.round(total / 1024));
   };
 
   const loadAuditLogs = () => {

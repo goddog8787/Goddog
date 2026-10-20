@@ -52,6 +52,7 @@ import { OrderCertificateModal } from './OrderCertificateModal';
 import { CvsStoreSelectorModal } from './CvsStoreSelectorModal';
 import { TrustCertModal } from './TrustCertModal';
 import { validateCoupon } from '../../utils/couponManager';
+import { createClientNewebPayCheckout } from '../../lib/newebpayClient';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -228,42 +229,62 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         return;
       }
 
-      // 藍新金流真實串接
-      const res = await fetch(window.location.origin + '/api/payment/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      // 藍新金流真實串接 (支援伺服器端與靜態前端直接加密雙模式)
+      let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
+
+      try {
+        const res = await fetch(window.location.origin + '/api/payment/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: total,
+            email: customerEmail,
+            desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
+            paymentMethod: methodToUse,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success && data.formParams) {
+            checkoutData = data;
+          }
+        }
+      } catch (networkErr) {
+        console.warn('[Checkout] 伺服器端結帳端點未啟動，自動切換至前端高防護金流加密模組:', networkErr);
+      }
+
+      // 若後端端點未回應 (例如託管於靜態站點時)，自動啟用前端真實藍新 AES-256-CBC 與 SHA256 授權模組
+      if (!checkoutData) {
+        checkoutData = createClientNewebPayCheckout({
           amount: total,
           email: customerEmail,
-          desc: cartItems.map(i => `${i.product.name} x${i.quantity}`).join(', '),
-          paymentMethod: methodToUse // 傳遞選擇的付款方式給後端
-        })
-      });
-      const data = await res.json();
-      
-      if (data.success && data.formParams) {
+          desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
+          paymentMethod: methodToUse,
+        });
+      }
+
+      if (checkoutData && checkoutData.formParams) {
         // 建立隱藏表單自動送出跳轉到藍新金流 (真實付款流程)
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = data.url;
+        form.action = checkoutData.url;
         if (window.self !== window.top) {
           form.target = '_blank';
         }
-        
-        Object.keys(data.formParams).forEach(key => {
+
+        Object.keys(checkoutData.formParams).forEach((key) => {
           const input = document.createElement('input');
           input.type = 'hidden';
           input.name = key;
-          input.value = data.formParams[key];
+          input.value = checkoutData!.formParams[key];
           form.appendChild(input);
         });
-        
+
         document.body.appendChild(form);
         form.submit();
-        return; // 瀏覽器將會跳轉，中斷後續執行
+        return; // 瀏覽器跳轉至藍新金流安全收銀台
       } else {
-        console.error('Failed to initiate payment', data);
-        setFormError('無法啟動藍新金流，請確認您的 MerchantID 與金鑰設定是否正確，且帳號已審核通過。');
+        setFormError('無法啟動藍新金流，請確認網路連線或稍後再試。');
       }
     } catch (err) {
       console.error(err);

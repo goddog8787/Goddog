@@ -427,9 +427,53 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
     const userTier = member?.membershipTier || (member?.tier === 'Diamond' ? 'PLUS' : member?.tier === 'Gold' ? 'GO' : member?.subscriptionPlan && member.subscriptionPlan !== 'None' ? 'PLUS' : 'FREE');
 
-    const apiBase = typeof window !== 'undefined' && (window.location.hostname.includes('goddog.space') || !window.location.hostname.includes('run.app')) 
-      ? 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app' 
-      : '';
+    // On static hosting (goddog.space), invoke client Gemini AI directly for instant response without server timeout delays
+    const isStaticHost = typeof window !== 'undefined' && (window.location.hostname.includes('goddog.space') || (!window.location.hostname.includes('run.app') && !window.location.hostname.includes('localhost')));
+
+    if (isStaticHost) {
+      try {
+        const geminiReply = await generateClientGeminiChat(
+          text,
+          updatedHistory.filter((m) => !m.isLoading).map((m) => ({ sender: m.sender, text: m.text }))
+        );
+
+        if (geminiReply && geminiReply.trim()) {
+          const cleanText = cleanChatText(geminiReply);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    text: cleanText,
+                    isLoading: false,
+                    modelUsed: currentModelObj.name,
+                  }
+                : m
+            )
+          );
+          return;
+        }
+      } catch (clientGenAiErr) {
+        console.warn('[Direct Client Gemini] Fallback to expert reply:', clientGenAiErr);
+        const fallback = generateClientExpertReply(text);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? {
+                  ...m,
+                  text: fallback.reply,
+                  solution: fallback.solution,
+                  isLoading: false,
+                  modelUsed: fallback.modelUsed,
+                }
+              : m
+          )
+        );
+        return;
+      }
+    }
+
+    const apiBase = '';
 
     try {
       // 1. Try SSE Streaming first for instant token-by-token feedback

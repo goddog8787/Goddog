@@ -35,6 +35,7 @@ import { MemberProfile, LanguageCode } from '../../types';
 import { SEO } from '../../components/SEO';
 import { saveCustomerUserData, saveCustomerProfileDoc } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
+import { createClientNewebPayPeriodCheckout } from '../../lib/newebpayClient';
 
 interface SubscriptionPageProps {
   member: MemberProfile | null;
@@ -450,11 +451,36 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
       const email = member?.email || auth.currentUser?.email || 'customer@gmail.com';
       const uid = member?.id || auth.currentUser?.uid || '';
       const priceVal = Number(plan.price);
+      let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
 
-      const res = await fetch('/api/payment/period-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      try {
+        const res = await fetch('/api/payment/period-checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            planId: plan.id,
+            planName: plan.name,
+            price: priceVal,
+            days: Number(plan.durationDays) || 30,
+            email: email,
+            frequencyLabel: plan.frequencyLabel,
+            userId: uid,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success && data.formParams) {
+            checkoutData = data;
+          }
+        }
+      } catch (networkErr) {
+        console.warn('[Period Checkout] 伺服器端定期扣款端點未啟動，自動切換至前端高防護金流加密模組:', networkErr);
+      }
+
+      // 若後端端點未回應 (例如託管於靜態站點時)，自動啟用前端真實藍新定期定額加密模組
+      if (!checkoutData) {
+        checkoutData = createClientNewebPayPeriodCheckout({
           planId: plan.id,
           planName: plan.name,
           price: priceVal,
@@ -462,12 +488,11 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
           email: email,
           frequencyLabel: plan.frequencyLabel,
           userId: uid,
-        }),
-      });
+        });
+      }
 
-      const data = await res.json();
-      if (!data.success || !data.formParams) {
-        throw new Error(data.message || '無法連線藍新金流定期定額系統');
+      if (!checkoutData || !checkoutData.formParams) {
+        throw new Error('無法啟動藍新金流定期定額系統，請稍候重試');
       }
 
       // 將待訂閱資訊存於 localStorage 作為金流導回時驗證核對
@@ -484,16 +509,16 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
       // 動態建立 Form 表單提交至藍新定期定額閘道
       const form = document.createElement('form');
       form.method = 'POST';
-      form.action = data.url;
+      form.action = checkoutData.url;
       // 若處於 iframe 內（如預覽環境），使用新分頁開啟以避免 X-Frame-Options 阻擋
       if (window.self !== window.top) {
         form.target = '_blank';
       }
-      Object.keys(data.formParams).forEach((key) => {
+      Object.keys(checkoutData.formParams).forEach((key) => {
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = key;
-        input.value = data.formParams[key];
+        input.value = checkoutData!.formParams[key];
         form.appendChild(input);
       });
       document.body.appendChild(form);
