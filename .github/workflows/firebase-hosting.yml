@@ -23,7 +23,11 @@ jobs:
         run: npm ci || npm install
 
       - name: Build Project
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_PROJECT_ID: goddog-shop
         run: npm run build
+
 
       - name: Deploy to Firebase Hosting
         env:

@@ -143,6 +143,7 @@ export interface FilamentProduct {
   spoolType: 'Cardboard 環保紙盤' | 'High-Temp Reusable 耐高溫線盤' | 'Refill 裸裝補充包' | string;
   nozzleTemp: string;
   bedTemp: string;
+  printTemp?: string;
   maxSpeed: string;
   rating: number;
   reviewsCount: number;
@@ -232,9 +233,9 @@ export type PaymentGateway =
 
 export type PaymentStatus = 'paid' | 'pending' | 'failed';
 
-export type OrderStatus = 'new' | 'paid' | 'picking' | 'dispatched' | 'in_transit' | 'delivered' | 'completed';
+export type OrderStatus = 'new' | 'paid' | 'picking' | 'dispatched' | 'shipped' | 'in_transit' | 'delivered' | 'completed';
 
-export type ShippingMethod = 'UNIMARTC2C' | 'FAMIC2C' | 'HILIFEC2C' | 'OKMARTC2C' | 'HOME';
+export type ShippingMethod = 'UNIMARTC2C' | 'FAMIC2C' | 'HILIFEC2C' | 'OKMARTC2C' | 'HOME' | '7-11' | 'familymart' | 'blackcat';
 
 export interface OrderItem {
   productId: string;
@@ -311,14 +312,15 @@ export interface MemberProfile {
   id: string;
   name: string;
   email: string;
-  phone: string;
-  tier: 'Bronze' | 'Silver' | 'Gold' | 'Diamond';
+  phone?: string;
+  address?: string;
+  tier?: 'Bronze' | 'Silver' | 'Gold' | 'Diamond';
   membershipTier?: 'FREE' | 'GO' | 'PLUS';
   points: number;
-  totalSpent: number;
-  ordersCount: number;
-  referralCode: string;
-  birthday: string;
+  totalSpent?: number;
+  ordersCount?: number;
+  referralCode?: string;
+  birthday?: string;
   subscriptionPlan?: 'None' | '月卡' | '季卡' | '年卡' | string;
   subscriptionExpiry?: string;
   subscriptionStatus?: 'active' | 'cancelled' | 'paused' | 'expired' | 'inactive';

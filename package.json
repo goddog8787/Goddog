@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "node -e \"if(!require('fs').existsSync('firebase-applet-config.json')) require('fs').copyFileSync('firebase-applet-config.example.json', 'firebase-applet-config.json')\" && vite build",
+    "build": "node scripts/prepare-build.js && vite build",
     "start": "node server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -39,6 +39,8 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
     "typescript": "~5.8.2"
   }

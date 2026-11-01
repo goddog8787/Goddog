@@ -1108,7 +1108,24 @@ export function translateText(text: string, lang: LanguageCode): string {
  * Automatically tokenizes product title into Brand + Material + Modifiers + Specs
  * so ANY new product added in Chinese is rendered in fluent, colloquial English and Japanese!
  */
-export function translateProductName(name: string, lang: LanguageCode, brand: string = '', material: string = '', weight: string = ''): string {
+export function translateProductName(
+  name: string,
+  langOrBrand?: any,
+  brandOrMaterial: string = '',
+  materialOrWeight: string = '',
+  weightOrLang?: any
+): string {
+  let lang: LanguageCode = 'zh-TW';
+  let brand = '';
+
+  if (langOrBrand === 'zh-TW' || langOrBrand === 'en' || langOrBrand === 'ja') {
+    lang = langOrBrand;
+    brand = brandOrMaterial || '';
+  } else if (weightOrLang === 'zh-TW' || weightOrLang === 'en' || weightOrLang === 'ja') {
+    lang = weightOrLang;
+    brand = typeof langOrBrand === 'string' ? langOrBrand : '';
+  }
+
   if (!name || typeof name !== 'string' || lang === 'zh-TW') return name || '';
 
   // Check known brand translation
@@ -1117,6 +1134,7 @@ export function translateProductName(name: string, lang: LanguageCode, brand: st
 
   let enName = name || '';
   let jaName = name || '';
+
 
   // English Name Generation
   enName = enName

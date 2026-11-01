@@ -577,8 +577,8 @@ export default function App() {
 
   const handleRewardPoints = (points: number) => {
     setMember((prev) => {
-      const updated = {
-        ...(prev || {}),
+      const updated: MemberProfile = {
+        ...prev,
         points: (prev?.points || 0) + points,
       };
       saveUserProfileToFirestore(updated);
@@ -1794,7 +1794,7 @@ export default function App() {
               lang={lang}
               member={member}
               onSelectProduct={handleOpenProductDetail}
-              onAddToCart={(p) => handleAddToCart(p, p.colors?.[0] || { name: '預設', hex: '#000000' }, p.diameter || '1.75mm', 1)}
+              onAddToCart={(p) => handleAddToCart(p, p.colors?.[0] || { name: '預設', hex: '#000000', stock: 10 }, p.diameter || '1.75mm', 1)}
               onOpenHistoryModal={() => setIsHistoryOpen(true)}
             />
 
@@ -2076,7 +2076,7 @@ export default function App() {
           wishlistIds={wishlistIds}
           products={products}
           onRemoveFromWishlist={handleToggleWishlist}
-          onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
+          onAddToCart={(p) => handleAddToCart(p, p.colors?.[0] || { name: '預設', hex: '#000000', stock: 10 }, p.diameter || '1.75mm', 1)}
           onAddAllToCart={handleAddAllWishlistToCart}
           currency={currency}
           lang={lang}
