@@ -34,11 +34,12 @@ import {
   Clock
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LanguageCode, CurrencyCode, MemberProfile, FilamentProduct } from '../types';
+import { LanguageCode, CurrencyCode, MemberProfile, FilamentProduct, StoreAnnouncementConfig } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
 import { SearchAutocomplete } from './Storefront/SearchAutocomplete';
 
 interface NavbarProps {
+  announcement?: StoreAnnouncementConfig;
   isDarkMode?: boolean;
   toggleDarkMode?: () => void;
   currentTab?: 'store' | 'subscription' | 'ai-advisor' | 'logistics' | 'member' | 'admin';
@@ -76,6 +77,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
+  announcement,
   currentTab,
   setCurrentTab,
   activeTab,
@@ -188,67 +190,109 @@ export const Navbar: React.FC<NavbarProps> = ({
         : 'bg-white/95 backdrop-blur-md border-b border-slate-200'
     }`}>
       {/* Top Announcement Bar - Collapses smoothly on mobile when scrolled to let the main nav row pop right to the top */}
-      <div className={`bg-slate-900 text-white text-xs font-medium flex items-center transition-all duration-300 relative ${
+      <div className={`bg-slate-900 text-white text-xs font-medium flex items-center transition-all duration-300 relative overflow-hidden ${
         isScrolled ? 'max-h-0 py-0 opacity-0 sm:max-h-9 sm:py-1.5 sm:opacity-100' : 'max-h-12 py-1.5 opacity-100'
       }`}>
         
-        {/* Marquee Container (Takes up remaining space) */}
-        <div className="flex-1 overflow-hidden flex items-center relative h-full max-w-[calc(100vw-120px)] sm:max-w-[calc(100vw-280px)] mx-auto sm:mx-0 sm:pl-4 pointer-events-none">
-          <div className="flex items-center gap-4 animate-marquee whitespace-nowrap min-w-max pr-8">
+        {/* Full-width Marquee Container - Continuous edge-to-edge flow on all screens */}
+        <div className="flex-1 w-full overflow-hidden flex items-center relative h-full">
+          <div className="flex items-center gap-6 animate-marquee whitespace-nowrap min-w-max pr-6">
             {/* First Set */}
             <div className="flex items-center gap-4 shrink-0">
+              {announcement?.isEnabled && announcement?.text && (
+                <>
+                  <div className="flex items-center gap-1.5 shrink-0 bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 px-2 py-0.5 rounded-full">
+                    <span className="font-black text-[10px] text-amber-300">
+                      {announcement.type === 'promotion' ? '🔥 全館特惠' : announcement.type === 'shipping' ? '🚚 出貨公告' : announcement.type === 'holiday' ? '🏮 連假通知' : '📢 官方公告'}
+                    </span>
+                    <span className="text-[11px] sm:text-xs font-semibold text-white">
+                      {announcement.text}
+                    </span>
+                    {announcement.linkUrl && (
+                      <a
+                        href={announcement.linkUrl}
+                        className="text-cyan-300 hover:text-cyan-200 underline font-bold text-[10px] ml-1"
+                      >
+                        前往查看
+                      </a>
+                    )}
+                  </div>
+                  <span className="text-indigo-400 font-black px-2">•</span>
+                </>
+              )}
               <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase shrink-0">
                 {t.promoBadge || 'Promo'}
               </span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText1}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs font-bold text-amber-300">
                 {t.promoText2}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText3}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs text-emerald-300">
                 {t.promoText4}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
             </div>
             
-            {/* Second Set (Duplicate for seamless loop) */}
+            {/* Second Set (Identical duplicate for seamless continuous infinite loop) */}
             <div className="flex items-center gap-4 shrink-0">
+              {announcement?.isEnabled && announcement?.text && (
+                <>
+                  <div className="flex items-center gap-1.5 shrink-0 bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 px-2 py-0.5 rounded-full">
+                    <span className="font-black text-[10px] text-amber-300">
+                      {announcement.type === 'promotion' ? '🔥 全館特惠' : announcement.type === 'shipping' ? '🚚 出貨公告' : announcement.type === 'holiday' ? '🏮 連假通知' : '📢 官方公告'}
+                    </span>
+                    <span className="text-[11px] sm:text-xs font-semibold text-white">
+                      {announcement.text}
+                    </span>
+                    {announcement.linkUrl && (
+                      <a
+                        href={announcement.linkUrl}
+                        className="text-cyan-300 hover:text-cyan-200 underline font-bold text-[10px] ml-1"
+                      >
+                        前往查看
+                      </a>
+                    )}
+                  </div>
+                  <span className="text-indigo-400 font-black px-2">•</span>
+                </>
+              )}
               <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase shrink-0">
                 {t.promoBadge || 'Promo'}
               </span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText1}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs font-bold text-amber-300">
                 {t.promoText2}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText3}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs text-emerald-300">
                 {t.promoText4}
               </span>
-              <span className="text-indigo-400 font-black px-4">•</span>
+              <span className="text-indigo-400 font-black px-2">•</span>
             </div>
           </div>
           
-          {/* Fade gradients at edges */}
-          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-slate-900 to-transparent pointer-events-none"></div>
-          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-900 to-transparent pointer-events-none"></div>
+          {/* Subtle edge fade masks */}
+          <div className="absolute left-0 top-0 bottom-0 w-4 sm:w-6 bg-gradient-to-r from-slate-900 to-transparent pointer-events-none z-10" />
+          <div className="sm:hidden absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-slate-900 to-transparent pointer-events-none z-10" />
         </div>
 
-        {/* Right Status Actions (Fixed) */}
-        <div className="hidden sm:flex items-center space-x-3 text-slate-300 text-xs shrink-0 whitespace-nowrap px-4 bg-slate-900 relative z-10">
+        {/* Right Status Actions (Fixed on desktop, shadowed separation) */}
+        <div className="hidden sm:flex items-center space-x-3 text-slate-300 text-xs shrink-0 whitespace-nowrap pl-4 pr-4 bg-slate-900 relative z-20 shadow-[-14px_0_12px_#0f172a]">
           {onOpenRecycle && (
             <button
               onClick={onOpenRecycle}
@@ -298,9 +342,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
               />
             </div>
-            <div className="shrink-0">
+            <div className="shrink-0 min-w-0">
               <div className="flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
-                <span className="font-extrabold text-sm sm:text-lg text-slate-900 tracking-tight whitespace-nowrap">
+                <span className="font-extrabold text-sm sm:text-lg text-slate-900 tracking-tight whitespace-nowrap truncate max-w-[85px] xs:max-w-none">
                   {t.brandName || '神狗勾耗材'}
                 </span>
                 <span className="text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-sky-100 text-sky-800 rounded whitespace-nowrap shrink-0 hidden md:inline-block">
@@ -569,7 +613,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-wishlist"
                 onClick={onOpenWishlist}
-                className="relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 transition-colors cursor-pointer shrink-0"
+                className="relative hidden xs:flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 transition-colors cursor-pointer shrink-0"
                 title={t.wishlist || "我的願望清單 / 收藏庫"}
               >
                 <Heart className={`w-4 h-4 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
@@ -581,12 +625,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Recently Viewed Launch Button */}
+            {/* Recently Viewed Launch Button (Desktop & Tablet only; mobile has it in drawer and bottom profile) */}
             {onOpenHistory && (
               <button
                 id="btn-open-history"
                 onClick={onOpenHistory}
-                className="relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/60 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer shrink-0"
+                className="relative hidden md:flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/60 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer shrink-0"
                 title={t.navHistory || (lang === 'en' ? 'Recently Viewed' : '最近瀏覽記錄')}
               >
                 <Clock className="w-4 h-4" />
@@ -598,18 +642,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Shopping Cart Button */}
+            {/* Shopping Cart Button - Stable fixed size on mobile so items added never expand button or squish icons */}
             <button
               id="btn-open-cart"
               onClick={effectiveCartOpen}
-              className="relative flex items-center justify-center h-8 px-2 sm:h-9 sm:px-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-2xs cursor-pointer shrink-0 gap-1.5"
+              className="relative flex items-center justify-center w-8.5 h-8.5 sm:w-auto sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-xs cursor-pointer shrink-0 active:scale-95"
               aria-label={t.cart || "購物車"}
+              title={t.cart || "購物車"}
             >
-              <ShoppingCart className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-              <span className="text-xs font-bold hidden sm:inline">{t.cart || "購物車"}</span>
+              <ShoppingCart className="w-4 h-4 text-white" />
+              <span className="text-xs font-bold hidden sm:inline ml-1.5">{t.cart || "購物車"}</span>
               {cartCount > 0 && (
-                <span className="bg-rose-500 text-white text-[9px] sm:text-[10px] font-extrabold h-4 min-w-4 sm:h-4.5 sm:min-w-4.5 px-1 sm:px-1.5 rounded-full flex items-center justify-center border border-white shadow-xs">
-                  {cartCount}
+                <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums">
+                  {cartCount > 99 ? '99+' : cartCount}
                 </span>
               )}
             </button>

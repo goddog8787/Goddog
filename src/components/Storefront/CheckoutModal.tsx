@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   CreditCard, 
@@ -53,6 +53,7 @@ import { CvsStoreSelectorModal } from './CvsStoreSelectorModal';
 import { TrustCertModal } from './TrustCertModal';
 import { validateCoupon } from '../../utils/couponManager';
 import { createClientNewebPayCheckout } from '../../lib/newebpayClient';
+import { TaiwanAddressInput } from './TaiwanAddressInput';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -117,6 +118,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // CVS In-App Modal State
   const [isCvsModalOpen, setIsCvsModalOpen] = useState(false);
+  const [cvsModalBrand, setCvsModalBrand] = useState<'7-11' | 'familymart' | 'hilife' | 'okmart'>('7-11');
 
   // Close on Escape key (if no active modal popup)
   useEffect(() => {
@@ -146,7 +148,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const baseShippingFee = (subtotal >= 999 || hasFreeShippingItem) ? 0 : 60;
   const shippingFee = appliedCoupon?.freeShipping ? 0 : baseShippingFee;
   const discount = appliedCoupon ? appliedCoupon.discountAmount : 0;
-  const total = Math.max(0, subtotal + shippingFee - pointsToUse - discount);
+  const isFeePayment = ['atm', 'webatm', 'smartpay', 'cvs', 'barcode'].includes(paymentGateway);
+  const paymentFee = isFeePayment ? 20 : 0;
+  const total = Math.max(0, subtotal + shippingFee + paymentFee - pointsToUse - discount);
   const pointsEarned = Math.floor(total * 0.05) * (isVip ? 2 : 1);
 
   const handleApplyCoupon = (codeToApply?: string) => {
@@ -171,34 +175,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // -------------------------
   // NewebPay Logistics & CVS Store Selector Logic
   // -------------------------
-  const openLogisticsMap = (logType: ShippingMethod = shippingMethod) => {
-    // 優先開啟免受瀏覽器彈跳封鎖的應用程式內門市選擇器
+  const openCvsModal = (method: ShippingMethod = shippingMethod) => {
+    let brand: '7-11' | 'familymart' | 'hilife' | 'okmart' = '7-11';
+    if (method === 'FAMIC2C') brand = 'familymart';
+    else if (method === 'HILIFEC2C') brand = 'hilife';
+    else if (method === 'OKMARTC2C') brand = 'okmart';
+    setCvsModalBrand(brand);
     setIsCvsModalOpen(true);
-
-    // 監聽來自可能外部獨立視窗的 postMessage
-    const messageListener = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'NEWEBPAY_MAP_RESULT') {
-        const { StoreCode, StoreName, StoreAddr, fullFormatted } = event.data.data || {};
-        if (fullFormatted) {
-          setShippingAddress(fullFormatted);
-        } else if (StoreCode && StoreName) {
-          setShippingAddress(`${StoreName} (${StoreCode}) - ${StoreAddr || ''}`);
-        }
-        window.removeEventListener('message', messageListener);
-      }
-    };
-    window.addEventListener('message', messageListener);
   };
+
+  const openLogisticsMap = (logType: ShippingMethod = shippingMethod) => {
+    openCvsModal(logType);
+  };
+
+  const cvsBrandInfo = useMemo(() => {
+    if (shippingMethod === 'FAMIC2C') {
+      return { name: '全家便利商店', shortName: '全家', mapUrl: 'https://www.family.com.tw/Marketing/Map' };
+    }
+    if (shippingMethod === 'HILIFEC2C') {
+      return { name: '萊爾富便利商店', shortName: '萊爾富', mapUrl: 'https://www.hilife.com.tw/storeInquiry_street.aspx' };
+    }
+    if (shippingMethod === 'OKMARTC2C') {
+      return { name: 'OK 超商', shortName: 'OK', mapUrl: 'https://www.okmart.com.tw/convenient_shopSearch' };
+    }
+    return { name: '7-ELEVEN 統一超商', shortName: '7-ELEVEN', mapUrl: 'https://emap.pcsc.com.tw/' };
+  }, [shippingMethod]);
 
   const handleShippingMethodChange = (m: ShippingMethod) => {
     setShippingMethod(m);
     if (m === 'HOME') {
-      setShippingAddress(''); // 宅配由收件人填寫實際收件地址
+      setShippingAddress(''); // 宅配由收件人填寫實際收件地址，完全不需門市
     } else {
-      // 若尚未選擇門市，立即開啟互動式超商選擇器
-      if (!shippingAddress || shippingAddress.includes('尚未選擇')) {
-        setIsCvsModalOpen(true);
+      // 點選超商物流 (7-11、全家、萊爾富等)
+      let brand: '7-11' | 'familymart' | 'hilife' | 'okmart' = '7-11';
+      if (m === 'FAMIC2C') brand = 'familymart';
+      else if (m === 'HILIFEC2C') brand = 'hilife';
+      else if (m === 'OKMARTC2C') brand = 'okmart';
+
+      // 若當前選取的門市不屬於該品牌或尚未選店，清空舊地址以避免門市混淆
+      const brandPrefix = brand === 'familymart' ? '全家' : brand === 'hilife' ? '萊爾富' : brand === 'okmart' ? 'OK' : '7-ELEVEN';
+      if (!shippingAddress.startsWith(brandPrefix)) {
+        setShippingAddress('');
       }
+      // 點擊什麼超商物流就立即跳出選取該物流的門市 (點全家彈出全家門市、點7-11彈出7-11門市)
+      setCvsModalBrand(brand);
+      setIsCvsModalOpen(true);
     }
   };
 
@@ -216,6 +237,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         cartItems,
         subtotal,
         shippingFee,
+        paymentFee,
         discount,
         total,
         paymentGateway: methodToUse,
@@ -351,12 +373,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   TLS 1.3 256-bit 加密連線
                 </span>
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                <span>藍新金流 (NewebPay) 安全代收</span>
-                <span className="text-slate-300 dark:text-slate-700">•</span>
-                <span>支援信用卡線上刷卡 / Apple Pay / 超商取貨付款</span>
-                <span className="text-slate-300 dark:text-slate-700">•</span>
-                <span>SSL 加密保障</span>
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 leading-normal">
+                各大行庫信用卡 · 行動支付 · 超商與 ATM 256-bit SSL 安全代收
               </p>
             </div>
           </div>
@@ -455,7 +473,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   ✓ HMAC-SHA256 已簽核
                 </span>
               </div>
-              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed text-justify break-words">
                 本訂單已寫入 Google Firebase 雲端資料庫，並由藍新金流特店 MS1843364339 完成密碼學數位簽章，包含完整商品明細與物流單號，可供離線驗證資料完整性。
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -636,7 +654,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                           <Store className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                          已選取件超商門市
+                          已選 {cvsBrandInfo.shortName} 取件門市
                         </span>
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700 flex items-center gap-1">
                           <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
@@ -646,16 +664,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                       {shippingAddress && !shippingAddress.includes('國泰金融大樓') ? (
                         <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-indigo-100 dark:border-indigo-900 shadow-xs flex items-start justify-between gap-2">
-                          <div className="space-y-0.5">
-                            <p className="text-xs font-black text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <p className="text-xs font-black text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5 truncate">
                               <MapPin className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                              {shippingAddress}
+                              <span className="truncate">{shippingAddress}</span>
                             </p>
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400">商品到店後，系統將發送取件驗證碼簡訊至下方手機</p>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 text-justify leading-relaxed break-words">
+                              商品到店後，系統將發送取件簡訊通知取件，請攜帶身分證件至指定門市付款取貨。
+                            </p>
                           </div>
                           <button
                             type="button"
-                            onClick={() => setIsCvsModalOpen(true)}
+                            onClick={() => openCvsModal(shippingMethod)}
                             className="text-xs font-bold px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/50 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-lg transition-colors shrink-0 cursor-pointer"
                           >
                             變更門市
@@ -663,45 +683,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         </div>
                       ) : (
                         <div className="p-3.5 bg-amber-50/70 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800/80 text-center space-y-2">
-                          <div className="text-xs font-bold text-amber-900 dark:text-amber-200">尚未指定取件門市</div>
-                          <p className="text-[11px] text-amber-800 dark:text-amber-300">
-                            支援全台 7-11、全家、萊爾富、OK 門市快速選店：
+                          <div className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                            尚未指定 {cvsBrandInfo.shortName} 取件門市
+                          </div>
+                          <p className="text-[11px] text-amber-800 dark:text-amber-300 text-justify leading-relaxed break-words [text-align-last:center]">
+                            已為您連動 {cvsBrandInfo.name} 門市快速選店系統，請點選下方按鈕選取取件超商：
                           </p>
                           <button
                             type="button"
-                            onClick={() => setIsCvsModalOpen(true)}
+                            onClick={() => openCvsModal(shippingMethod)}
                             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all cursor-pointer inline-flex items-center gap-1.5"
                           >
                             <Store className="w-3.5 h-3.5" />
-                            立即選擇取件門市
+                            選擇 {cvsBrandInfo.shortName} 取件門市
                           </button>
                         </div>
                       )}
 
                       <div className="flex items-center justify-end text-[11px] pt-1">
                         <a
-                          href="https://emap.pcsc.com.tw/"
+                          href={cvsBrandInfo.mapUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 text-slate-700 dark:text-slate-300 hover:text-emerald-700 dark:hover:text-emerald-400 font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 text-slate-700 dark:text-slate-300 hover:text-indigo-700 dark:hover:text-indigo-400 font-bold transition-all shadow-2xs hover:shadow-xs cursor-pointer"
                         >
-                          <span>7-ELEVEN 全台門市搜索</span>
-                          <ExternalLink className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                          <span>{cvsBrandInfo.shortName} 全台門市搜索</span>
+                          <ExternalLink className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                         </a>
                       </div>
                     </div>
                   ) : (
-                    <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-1.5">
-                      <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                        宅配地址 (專車配送到府)
-                      </label>
-                      <input
-                        type="text"
+                    <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                      <TaiwanAddressInput
                         value={shippingAddress}
-                        onChange={(e) => setShippingAddress(e.target.value)}
-                        placeholder="請輸入完整收件地址 (包含縣市與樓層)..."
-                        className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                        onChange={(addr) => {
+                          setShippingAddress(addr);
+                          if (formError) setFormError(null);
+                        }}
+                        memberAddress={member?.address}
+                        label="宅配收件地址 (黑貓專車配送到府)"
+                        placeholder="請輸入路名街巷、門牌號碼與樓層 (例：和平東路二段100號3樓)"
                       />
                     </div>
                   )}
@@ -717,11 +738,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         value={customerName}
                         onChange={(e) => setCustomerName(e.target.value)}
                         placeholder="請輸入收件人真實姓名 (例如：陳大明)"
-                        className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                       />
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                        💡 取貨需核對身分證件，請填寫真實中文姓名（輸入文字後提示即會自動消失）
-                      </p>
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-1">
@@ -733,11 +751,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         value={customerPhone}
                         onChange={(e) => setCustomerPhone(e.target.value)}
                         placeholder="請輸入 10 碼手機號碼 (例如：0912345678)"
-                        className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono transition-all"
+                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-mono transition-all"
                       />
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                        💡 包裹配達指定超商門市時，系統將自動發送簡訊通知取件
-                      </p>
                     </div>
                   </div>
 
@@ -751,37 +766,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       value={customerEmail}
                       onChange={(e) => setCustomerEmail(e.target.value)}
                       placeholder="請輸入常用電子信箱 (例如：user@example.com)"
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                      className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                     />
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                      💡 藍新金流授權成功明細、物流追蹤進度與財政部電子發票將同步寄達此處
-                    </p>
                   </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                        {shippingMethod === 'blackcat' ? '宅配收件地址' : '超商取件門市名稱與代號'}
-                      </label>
-                      <span className="text-[10px] text-rose-500 font-medium">* 必填</span>
+                  {/* 僅在超商取貨且尚未填選門市時顯示門市名稱代號欄位；宅配到府時完全不需填寫門市 */}
+                  {shippingMethod !== 'HOME' && !shippingAddress && (
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          超商取件門市名稱與代號
+                        </label>
+                        <span className="text-[10px] text-rose-500 font-medium">* 必填</span>
+                      </div>
+                      <input
+                        type="text"
+                        value={shippingAddress}
+                        onChange={(e) => setShippingAddress(e.target.value)}
+                        placeholder={`點選上方按鈕選擇門市，或手動輸入 (例：${cvsBrandInfo.shortName} 敦南門市 991823)`}
+                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      value={shippingAddress}
-                      onChange={(e) => setShippingAddress(e.target.value)}
-                      placeholder={
-                        shippingMethod === 'blackcat'
-                          ? '請輸入完整宅配地址 (包含縣市區街巷與樓層，例如：台北市信義區忠孝東路五段1號8樓)'
-                          : '請點選上方紫藍色按鈕選擇門市，或直接在此輸入 (例如：7-ELEVEN 敦南門市 991823)'
-                      }
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                    />
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                      💡 {shippingMethod === 'blackcat'
-                        ? '黑貓宅急便專車配送到府，請務必填寫樓層或電鈴資訊'
-                        : '建議點選上方按鈕開啟超商電子地圖選取，門市店號將自動綁定並可直接列印出貨單'}
-                    </p>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -897,7 +903,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 3D OTP 驗證
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">支援 Visa / MasterCard / JCB / 國外信用卡</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援各大行庫 Visa、MasterCard、JCB 信用卡安全刷卡，藍新金流 3D OTP 加密驗證防護。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -927,7 +935,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 靈活分期
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">支援各主要銀行信用卡，減輕單次購買負擔</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援各大行庫信用卡 3、6、12 期靈活分期付款，分期付款輕鬆無負擔。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -957,7 +967,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 紅利變現金
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">使用信用卡累積之紅利點數直接折抵訂單金額</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援多家銀行信用卡紅利點數，結帳即時折抵消費現金，點數折抵更優惠。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -987,7 +999,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 銀聯在線
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">支援全台及境外發行之銀聯信用卡與提款卡線上扣款</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援全台及海外發行之銀聯信用卡與提款卡線上扣款，跨境金流快速便利。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1039,8 +1053,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                              {isAppleDevice ? '藍新金流連線 Apple Pay 官方安全扣款' : '非 Apple 系統請選擇「線上刷卡」、「Google Pay」或「超商取貨」'}
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              {isAppleDevice ? '透過 Apple 官方安全通道，支援 Face ID 或指紋快速感應扣款完成授權。' : '非 Apple 系統請切換至「線上刷卡」、「Google Pay」或「超商代碼/ATM」。'}
                             </p>
                           </div>
                         </div>
@@ -1071,7 +1085,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 Google 錢包
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">使用 Android 手機或 Chrome 瀏覽器綁定之 Google 錢包付款</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援 Android 智慧裝置與 Chrome 瀏覽器綁定之 Google 錢包快速結帳，一鍵安全認證扣款。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1101,7 +1117,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 金融卡/帳戶
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">支援全台公股與民營銀行台灣 Pay App、TWQR 掃碼即時付款</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援全台各大行庫台灣 Pay App、TWQR 共通條碼即時掃碼扣款，跨行轉帳超便利。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1131,7 +1149,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 玉山特約
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">使用玉山銀行 App 或玉山 Wallet 信用卡/帳戶直扣付款</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援玉山銀行 App 與玉山 Wallet 信用卡或帳戶即時連線扣款，專屬特約即時回饋。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1158,7 +1178,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2">
                               <span>Samsung Pay 行動支付</span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">使用 Samsung 三星智慧型手機指紋或密碼快速付款</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              支援 Samsung 三星智慧手機指紋或密碼快速感應完成安全付款，專屬 Knox 安全防護。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1187,13 +1209,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <Building className="w-4 h-4" />
                           </div>
                           <div>
-                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                               <span>ATM 虛擬帳號轉帳</span>
+                              <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800">
+                                轉帳手續費 NT$ 20
+                              </span>
                               <span className="bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
                                 自動對帳
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">取得訂單專屬虛擬帳號，手機網銀 App 或實體 ATM 皆可轉帳</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              產生專屬虛擬繳款帳號，各大銀行手機網銀 App 或實體 ATM 皆可轉帳 (加收手續費 NT$ 20)。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1217,13 +1244,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <Cpu className="w-4 h-4" />
                           </div>
                           <div>
-                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                               <span>WebATM 網路晶片讀卡機</span>
+                              <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800">
+                                轉帳手續費 NT$ 20
+                              </span>
                               <span className="bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
                                 插卡即付
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">使用晶片金融卡透過讀卡機插卡驗證密碼扣款</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              使用晶片金融卡透過讀卡機插卡驗證密碼扣款，免出門即時轉帳安全入帳 (加收手續費 NT$ 20)。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1247,10 +1279,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             Smart
                           </div>
                           <div>
-                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                               <span>智慧 ATM 2.0 / SmartPay 晶片金融卡</span>
+                              <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800">
+                                轉帳手續費 NT$ 20
+                              </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">財金資訊公司 SmartPay 晶片金融卡安全直扣</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              財金資訊公司 SmartPay 提供之晶片金融卡安全直扣轉帳，保障交易零風險 (加收手續費 NT$ 20)。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1279,13 +1316,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <Smartphone className="w-4 h-4" />
                           </div>
                           <div>
-                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                               <span>超商代碼繳費 (CVS)</span>
+                              <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800">
+                                代碼手續費 NT$ 20
+                              </span>
                               <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
                                 機台印單
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">至 7-11 ibon、全家 FamiPort、萊爾富、OK 機台列印繳費單並現金付款</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              取得專屬代碼後，至四大超商多媒體機台 (ibon/FamiPort) 列印繳費單至櫃台繳費 (手續費 NT$ 20)。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1309,13 +1351,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             <QrCode className="w-4 h-4" />
                           </div>
                           <div>
-                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                            <div className="font-bold text-xs text-slate-900 dark:text-slate-100 flex items-center gap-2 flex-wrap">
                               <span>超商條碼繳費 (Barcode)</span>
+                              <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-800">
+                                條碼手續費 NT$ 20
+                              </span>
                               <span className="bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 text-[10px] font-bold px-1.5 py-0.5 rounded">
                                 手機掃碼
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">手機螢幕直接出示 3 段超商繳費條碼，櫃台店員掃描後現金結帳</p>
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed text-justify break-words">
+                              出示手機三段繳款條碼，全台超商門市櫃台店員直接掃碼繳費 (手續費 NT$ 20)。
+                            </p>
                           </div>
                         </div>
                         <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
@@ -1339,78 +1386,80 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setInvoiceType('mobile_barcode')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
                       invoiceType === 'mobile_barcode'
                         ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
-                    手機條碼載具
+                    手機條碼
                   </button>
                   <button
                     type="button"
                     onClick={() => setInvoiceType('cloud')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
                       invoiceType === 'cloud'
                         ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
-                    會員載具 (自動對獎)
+                    會員載具
                   </button>
                   <button
                     type="button"
                     onClick={() => setInvoiceType('tax_id')}
-                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
                       invoiceType === 'tax_id'
                         ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
-                    公司三聯式統編
+                    公司統編
                   </button>
                 </div>
+
+                {invoiceType === 'cloud' && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed text-justify break-words">
+                    發票將自動託管於會員帳號，開獎時系統自動為您對獎並發送中獎通知。
+                  </p>
+                )}
 
                 {invoiceType === 'mobile_barcode' && (
                   <div>
                     <input
                       type="text"
-                      placeholder="請輸入以 / 開頭的手機載具條碼 (例如：/AB8892.)"
+                      placeholder="請輸入以 / 開頭的手機載具 (例：/AB8892.)"
                       value={invoiceCarrierValue}
                       onChange={(e) => setInvoiceCarrierValue(e.target.value)}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                      className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                     />
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                      💡 輸入 8 碼手機載具條碼，由財政部整合平台自動對獎並匯入中獎帳戶
-                    </p>
                   </div>
                 )}
                 {invoiceType === 'tax_id' && (
                   <div>
                     <input
                       type="text"
-                      placeholder="請輸入 8 碼統一編號 (例如：88392014)"
+                      placeholder="請輸入公司 8 碼統一編號 (例：88392014)"
                       value={invoiceCarrierValue}
                       onChange={(e) => setInvoiceCarrierValue(e.target.value)}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                      className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                     />
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                      💡 開立公司三聯式統一發票，請填寫正確統編以利公司報帳銷帳
-                    </p>
                   </div>
                 )}
               </div>
 
               {/* Sleek Guarantee Bar */}
-              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs">
+                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 min-w-0 flex-1">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span className="font-bold">全館享有 7 天猶豫鑑賞期與原廠品檢保證</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200 text-justify leading-relaxed break-words">
+                    全館商品享有 7 天猶豫鑑賞期與原廠品檢合格保障，購物安心有憑證。
+                  </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowTrustCertModal(true)}
-                  className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 cursor-pointer"
+                  className="self-end sm:self-auto text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 cursor-pointer whitespace-nowrap"
                 >
                   服務條款 ↗
                 </button>
@@ -1420,28 +1469,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {/* Right Column: Order Summary & Checkout Button */}
             <div className="lg:col-span-5 bg-slate-50 dark:bg-slate-950/70 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between h-fit">
               <div>
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-3">{t.orderSummary}</h3>
+                <div className="flex items-center justify-between mb-3 border-b border-slate-200/80 dark:border-slate-800 pb-2">
+                  <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">{t.orderSummary}</h3>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">共 {cartItems.reduce((acc, i) => acc + i.quantity, 0)} 件商品</span>
+                </div>
 
                 {/* Items preview list */}
                 <div className="max-h-48 overflow-y-auto space-y-2 pr-1 mb-4">
                   {cartItems.map((item) => (
                     <div 
                       key={`${item.product.id}-${item.selectedColor.name}`}
-                      className="flex items-center justify-between text-xs py-1.5 border-b border-slate-200/80 dark:border-slate-800/80"
+                      className="flex items-center justify-between text-xs py-2 border-b border-slate-200/80 dark:border-slate-800/80 gap-2.5"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
                         <span 
                           className="w-2.5 h-2.5 rounded-full shrink-0 border border-slate-300 dark:border-slate-600"
                           style={{ backgroundColor: item.selectedColor.hex }} 
                         />
-                        <span className="font-medium text-slate-800 dark:text-slate-200 truncate max-w-[150px]">
+                        <span className="font-medium text-slate-800 dark:text-slate-200 truncate">
                           {translateProductName(item.product.name, item.product.brand, item.product.material, item.product.weight, lang)}
                         </span>
-                        <span className="text-slate-400 dark:text-slate-500 font-mono">x{item.quantity}</span>
                       </div>
-                      <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
-                        {formatPrice(item.product.price * item.quantity, currency)}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                          × {item.quantity}
+                        </span>
+                        <span className="font-mono font-bold text-slate-900 dark:text-slate-100 min-w-[68px] text-right tabular-nums">
+                          {formatPrice(item.product.price * item.quantity, currency)}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1462,26 +1518,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <button
                       type="button"
                       onClick={() => handleApplyCoupon()}
-                      className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-indigo-600 dark:bg-slate-800 dark:hover:bg-indigo-600 text-white text-xs font-bold transition-colors cursor-pointer"
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-indigo-600 dark:bg-slate-800 dark:hover:bg-indigo-600 text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
                     >
                       套用
                     </button>
                   </div>
 
                   {couponError && (
-                    <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{couponError}</p>
+                    <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1 text-justify leading-relaxed break-words">{couponError}</p>
                   )}
 
                   {appliedCoupon && (
                     <div className="mt-1.5 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-[11px] flex items-center justify-between font-medium">
-                      <span>✓ {appliedCoupon.label}</span>
+                      <span className="truncate">✓ {appliedCoupon.label}</span>
                       <button
                         type="button"
                         onClick={() => {
                           setAppliedCoupon(null);
                           setCouponCode('');
                         }}
-                        className="text-emerald-700 dark:text-emerald-400 hover:text-rose-600 dark:hover:text-rose-400 underline text-[10px]"
+                        className="text-emerald-700 dark:text-emerald-400 hover:text-rose-600 dark:hover:text-rose-400 underline text-[10px] shrink-0 ml-2 cursor-pointer"
                       >
                         移除
                       </button>
@@ -1490,7 +1546,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                   {/* Coupon quick click pills */}
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap text-[10px]">
-                    <span className="text-slate-500 dark:text-slate-400">快速套用：</span>
+                    <span className="text-slate-500 dark:text-slate-400 shrink-0">快速套用：</span>
                     <button
                       type="button"
                       onClick={() => handleApplyCoupon('GODDOG')}
@@ -1517,40 +1573,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 {/* Calculations */}
                 <div className="space-y-2 text-xs border-t border-slate-200 dark:border-slate-800 pt-3">
-                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
                     <span>{t.subtotal}</span>
-                    <span className="font-mono text-slate-800 dark:text-slate-200 font-medium">{formatPrice(subtotal, currency)}</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-200 font-medium tabular-nums">{formatPrice(subtotal, currency)}</span>
                   </div>
                   {appliedCoupon && appliedCoupon.discountAmount > 0 && (
-                    <div className="flex justify-between text-rose-600 dark:text-rose-400 font-bold">
+                    <div className="flex justify-between items-center text-rose-600 dark:text-rose-400 font-bold">
                       <span>優惠代碼折抵 ({appliedCoupon.code})</span>
-                      <span className="font-mono">-{formatPrice(appliedCoupon.discountAmount, currency)}</span>
+                      <span className="font-mono tabular-nums">-{formatPrice(appliedCoupon.discountAmount, currency)}</span>
                     </div>
                   )}
                   {pointsToUse > 0 && (
-                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                    <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-medium">
                       <span>會員積分折抵</span>
-                      <span className="font-mono">-{formatPrice(pointsToUse, currency)}</span>
+                      <span className="font-mono tabular-nums">-{formatPrice(pointsToUse, currency)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                  <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
                     <span>物流運費</span>
-                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
-                      {shippingFee === 0 ? '超商/宅配免運 (滿額或折扣優惠)' : 'NT$60'}
+                    <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
+                      {shippingFee === 0 ? 'NT$ 0 (滿額免運)' : 'NT$ 60'}
                     </span>
                   </div>
-                  <div className="flex justify-between text-base font-extrabold text-slate-900 dark:text-slate-100 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  {paymentFee > 0 && (
+                    <div className="flex justify-between items-center text-amber-700 dark:text-amber-400 font-medium">
+                      <span className="flex items-center gap-1">
+                        <span>金流手續費</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">
+                          {['cvs', 'barcode'].includes(paymentGateway) ? '(超商代收/條碼)' : '(ATM/虛擬轉帳)'}
+                        </span>
+                      </span>
+                      <span className="font-mono font-bold tabular-nums">+{formatPrice(paymentFee, currency)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center text-base font-extrabold text-slate-900 dark:text-slate-100 pt-2 border-t border-slate-200 dark:border-slate-800">
                     <span>應付總額</span>
-                    <span className="font-mono text-indigo-600 dark:text-indigo-400 text-xl font-black">
+                    <span className="font-mono text-indigo-600 dark:text-indigo-400 text-xl font-black tabular-nums">
                       {formatPrice(total, currency)}
                     </span>
                   </div>
                 </div>
 
                 {/* Loyalty Point Earn Notice */}
-                <div className="mt-4 p-3 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/70 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between">
-                  <span>本次結帳將贈送：</span>
-                  <span className="font-bold text-amber-800 dark:text-amber-300 font-mono">+{pointsEarned} pt 會員點數</span>
+                <div className="mt-4 p-3 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200/70 dark:border-amber-800/70 text-amber-900 dark:text-amber-200 text-xs flex items-center justify-between gap-2">
+                  <span className="text-justify leading-relaxed">本次結帳將贈送會員點數：</span>
+                  <span className="font-bold text-amber-800 dark:text-amber-300 font-mono shrink-0 tabular-nums">+{pointsEarned} pt</span>
                 </div>
               </div>
 
@@ -1558,20 +1625,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 {formError && (
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-start gap-2">
                     <span className="shrink-0 mt-0.5">⚠️</span>
-                    <span>{formError}</span>
+                    <span className="text-justify leading-relaxed break-words flex-1">{formError}</span>
                   </div>
                 )}
 
                 {/* Security Trust Badges Strip */}
-                <div className="flex items-center justify-center gap-2.5 text-[11px] text-slate-500 dark:text-slate-400 py-0.5">
-                  <span className="flex items-center gap-1 font-medium">
-                    <Lock className="w-3.5 h-3.5 text-emerald-500" />
+                <div className="flex items-center justify-center gap-2.5 text-[11px] text-slate-500 dark:text-slate-400 py-0.5 flex-wrap">
+                  <span className="flex items-center gap-1 font-medium shrink-0">
+                    <Lock className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                     256-bit SSL 加密
                   </span>
-                  <span>•</span>
-                  <span>藍新金流安全代收</span>
-                  <span>•</span>
-                  <span>165反詐騙防護</span>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="shrink-0">藍新金流安全代收</span>
+                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                  <span className="shrink-0">165反詐騙防護</span>
                 </div>
                 
                 <button
@@ -1617,12 +1684,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   )}
                 </button>
 
-                <div className="space-y-1 text-center">
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500">
-                    點擊即由第三方金流進行安全 3D 驗證，全站不留存任何信用卡卡號或機密資訊。
+                <div className="space-y-1.5 text-center px-1">
+                  <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed text-justify break-words [text-align-last:center]">
+                    交易由第三方金流進行 3D 驗證，全站不留存任何信用卡卡號或機密帳戶資訊。
                   </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                    線上即時客服諮詢支援｜反詐騙諮詢請撥打：165
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed text-justify break-words [text-align-last:center]">
+                    提供線上即時客服諮詢支援｜反詐騙專線請撥打：165
                   </p>
                 </div>
               </div>
@@ -1649,6 +1716,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       <CvsStoreSelectorModal
         isOpen={isCvsModalOpen}
         onClose={() => setIsCvsModalOpen(false)}
+        targetBrand={cvsModalBrand}
         initialMethod={shippingMethod}
         onSelectStore={({ fullFormatted, shippingMethod: chosenMethod }) => {
           setShippingAddress(fullFormatted);

@@ -20,7 +20,6 @@ import {
   ChevronDown,
   Zap,
 } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
 import { generateClientGeminiChat } from '../../lib/geminiClient';
 import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 

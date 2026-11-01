@@ -29,22 +29,37 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App & Services from official firebase-applet-config.json
-// Resolve authDomain: Explicitly use goddog.space for authentication handler (https://goddog.space/__/auth/handler)
+// Resolve authDomain: Use goddog.space when on custom domain, otherwise use official firebaseapp.com auth domain
 const getEffectiveAuthDomain = (): string => {
   const customDomain = (import.meta as any).env?.VITE_CUSTOM_AUTH_DOMAIN;
   if (customDomain) {
     return customDomain;
   }
-  return 'goddog.space';
+  if (typeof window !== 'undefined' && window.location.hostname.includes('goddog.space')) {
+    return 'goddog.space';
+  }
+  return firebaseConfig.authDomain || 'goddog-shop.firebaseapp.com';
 };
 
 const effectiveConfig = {
   ...firebaseConfig,
+  apiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || '',
   authDomain: getEffectiveAuthDomain(),
 };
 
 const app: FirebaseApp = getApps().length > 0 ? getApp() : initializeApp(effectiveConfig);
-export const db: Firestore = (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.trim().length > 0) ? getFirestore(app, firebaseConfig.firestoreDatabaseId) : getFirestore(app);
+
+// Initialize Firestore with auto-detect long polling for iframe & mobile network stability
+export const db: Firestore = (() => {
+  const dbId = (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.trim().length > 0)
+    ? firebaseConfig.firestoreDatabaseId
+    : undefined;
+  try {
+    return (getFirestore as any)(app, dbId);
+  } catch {
+    return getFirestore(app);
+  }
+})();
 export const auth: Auth = getAuth(app);
 
 // Connection test on app boot

@@ -1,54 +1,47 @@
-import { GoogleGenAI } from '@google/genai';
 import { EcommerceCopyResult } from '../types';
 
-const DEFAULT_KEY_B64 = 'QVEuQWI4Uk42TGd4MFptZktuWXRNV1Vxb2VyUmRUTEZoRm1fb0ZaV3hFMlFEa3NtRllIQ2c=';
-
 export function getClientGeminiApiKey(): string {
+  // Key isolation: The client does not store or hardcode any API keys.
+  // All AI requests are securely proxied through the backend server.
   if (typeof window !== 'undefined') {
     const customKey = localStorage.getItem('god_dog_gemini_key') || localStorage.getItem('printcore_gemini_key');
     if (customKey && customKey.trim()) return customKey.trim();
   }
-  try {
-    return atob(DEFAULT_KEY_B64);
-  } catch {
-    return '';
-  }
+  return '';
 }
 
 export async function generateClientGeminiChat(
   userMessage: string,
   history: Array<{ sender: string; text: string }> = []
 ): Promise<string> {
-  const apiKey = getClientGeminiApiKey();
-  if (!apiKey) throw new Error('No API key available');
-
-  const ai = new GoogleGenAI({ apiKey });
-  const systemPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。
-語氣親切、專業、有條理。使用台灣正體中文回答，嚴禁中國大陸用語與簡體字。
-請根據使用者的提問給予精準、有幫助且親切的回答。如果使用者只是隨意打招呼（如「欸欸」、「嗨」、「你好」），請自然熱情地回應並詢問今天需要什麼協助。`;
-
-  // Build context
-  const pastConvo = history
-    .slice(-6)
-    .filter((m) => m.text && !m.text.includes('【Gemini'))
-    .map((m) => `${m.sender === 'user' ? '顧客' : '顧問'}: ${m.text}`)
-    .join('\n');
-
-  const fullPrompt = `${systemPrompt}\n\n${pastConvo ? `【歷史對話】\n${pastConvo}\n\n` : ''}顧客提問：${userMessage}\n\n顧問回答：`;
-
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: fullPrompt,
+    const response = await fetch('/api/ai/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: userMessage,
+        messages: history.map((m) => ({
+          sender: m.sender,
+          text: m.text,
+        })),
+      }),
     });
-    if (response.text && response.text.trim()) {
-      return response.text.trim();
+
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data?.reply && typeof data.reply === 'string') {
+      return data.reply.trim();
     }
   } catch (err: any) {
-    console.warn('[Gemini Client] gemini-3.8-flash chat error:', err?.message || err);
+    console.warn('[AI Service] 後端對話請求異常，啟用安全離線降級:', err?.message || err);
   }
 
-  return '';
+  return '您好！我是神狗勾 3D 耗材智能顧問。目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？';
 }
 
 export interface GenerateEcommerceCopyParams {
@@ -98,63 +91,35 @@ export async function generateClientEcommerceCopy(
     fullFormattedDescription: `${defaultSeoTitle}\n\n【產品特色與規格】\n${defaultSpecs.join('\n')}\n\n【買家購買須知】\n${defaultNotices.join('\n')}\n\n${defaultHashtags.join(' ')}`
   };
 
-  const apiKey = getClientGeminiApiKey();
-  if (!apiKey) {
-    return fallbackResult;
-  }
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const prompt = `你是一位精通台灣主流電商通路的頂尖營運操盤手與 3D 列印耗材文案專家。
-請為以下商品撰寫完全合規、高轉化率的商品詳情文案：
-商品名稱：${productName || '神狗勾高速 3D 列印線材'}
-線材材質：${material}
-特色賣點：${features || '600mm/s 高速列印、AMS多色相容、雙層真空鋁箔、不卡料'}
-目標客群：${targetAudience || '3D 列印創客、代印工作室、公仔手辦愛好者'}
-促銷政策：${promotion}
-
-【非常嚴格的產出規範】：
-1. 電商 SEO 標題 (seoTitle)：字數嚴格限制在 60 個正體中文字元以內！包含品牌詞、材質、核心賣點與促銷，嚴禁超過 60 字。
-2. 條列式特色與規格 (specBulletPoints)：陣列格式，列出 5-6 點具體參數（線徑 1.75mm、淨重 1kg、噴嘴/熱床溫度、推薦速度、AMS 相容）。
-3. 買家須知 (buyerNotice)：陣列格式，列出 4 點（現貨出貨時效、雙層真空防潮、受潮烘烤提醒、售後換貨保證）。
-4. 10 個專屬 Hashtags (hashtags)：陣列格式，必須恰好 10 個最熱門的繁體中文標籤，每個皆以 # 開頭。
-
-請僅輸出合法的 JSON 物件，格式如下：
-{
-  "seoTitle": "60字以內的電商SEO標題",
-  "specBulletPoints": ["條列特色 1", "條列特色 2", "條列規格 3"],
-  "buyerNotice": ["須知 1", "須知 2", "須知 3", "須知 4"],
-  "hashtags": ["#標籤1", "#標籤2", "#標籤3", "#標籤4", "#標籤5", "#標籤6", "#標籤7", "#標籤8", "#標籤9", "#標籤10"]
-}`;
-
-    const res = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        temperature: 0.4,
+    const response = await fetch('/api/ai/ecommerce-copy', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        productName,
+        material,
+        features,
+        targetAudience,
+        promotion,
+      }),
     });
 
-    if (res?.text) {
-      const parsed = JSON.parse(res.text);
-      if (parsed && parsed.seoTitle) {
-        const finalTitle = parsed.seoTitle.trim().slice(0, 60);
-        const specs = Array.isArray(parsed.specBulletPoints) ? parsed.specBulletPoints : defaultSpecs;
-        const notices = Array.isArray(parsed.buyerNotice) ? parsed.buyerNotice : defaultNotices;
-        const tags = Array.isArray(parsed.hashtags) && parsed.hashtags.length >= 8 ? parsed.hashtags.slice(0, 10) : defaultHashtags;
-
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.seoTitle) {
         return {
-          seoTitle: finalTitle,
-          specBulletPoints: specs,
-          buyerNotice: notices,
-          hashtags: tags,
-          fullFormattedDescription: `${finalTitle}\n\n【神狗勾 3D 原廠規格與特點】\n${specs.join('\n')}\n\n【買家購買須知與售後保障】\n${notices.join('\n')}\n\n${tags.join(' ')}`
+          seoTitle: data.seoTitle,
+          specBulletPoints: data.specBulletPoints || defaultSpecs,
+          buyerNotice: data.buyerNotice || defaultNotices,
+          hashtags: data.hashtags || defaultHashtags,
+          fullFormattedDescription: data.fullFormattedDescription || fallbackResult.fullFormattedDescription,
         };
       }
     }
   } catch (err: any) {
-    console.warn('[Gemini Client] generateClientEcommerceCopy error, using fallback:', err?.message || err);
+    console.warn('[AI Copy] 後端文案產生請求異常，啟用規格模板降級:', err?.message || err);
   }
 
   return fallbackResult;

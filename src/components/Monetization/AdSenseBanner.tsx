@@ -56,7 +56,7 @@ l.parentNode.insertBefore(s, l);
 </script>`;
 
 export const DEFAULT_ADSENSE_CONFIG: AdSenseConfig = {
-  enabled: false, // User requested: hide all ads across the entire site
+  enabled: true, // Active for Maker Column Blog per User Request
   publisherId: 'ca-pub-7053299616784703',
   enableAutoAds: false,
   testMode: false,
@@ -78,7 +78,7 @@ export const DEFAULT_ADSENSE_CONFIG: AdSenseConfig = {
   showTopBanner: false,
   showInFeedAd: false,
   showFooterBanner: false,
-  showArticleAd: false,
+  showArticleAd: true,
   showSidebarAd: false,
   showMobileStickyAd: false,
 };

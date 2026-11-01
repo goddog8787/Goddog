@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+.server_ai_config.json
+.aistudio/
+*.pem
+*.key
+firebase-applet-config.json
+!firebase-applet-config.example.json

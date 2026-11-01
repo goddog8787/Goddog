@@ -61,7 +61,7 @@ service cloud.firestore {
         data.customerEmail is string && data.customerEmail.size() <= 128 &&
         data.shippingAddress is string && data.shippingAddress.size() <= 256 &&
         data.totalAmount is number && data.totalAmount >= 0 &&
-        data.status is string && data.status in ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+        data.status is string && data.status in ['pending', 'confirmed', 'processing', 'picking', 'dispatched', 'in_transit', 'shipped', 'delivered', 'completed', 'cancelled'];
     }
 
     function isValidReview(data) {
@@ -100,11 +100,29 @@ service cloud.firestore {
 
     // Orders collection
     match /orders/{orderId} {
-      allow get: if isValidId(orderId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isValidId(orderId) && isSignedIn() && incoming().userId == request.auth.uid && isValidOrder(incoming());
+      allow get: if isValidId(orderId) && (isAdmin() || !isSignedIn() || existing().userId == request.auth.uid || existing().customerEmail == request.auth.token.email);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(orderId) && isValidOrder(incoming()) && (!isSignedIn() || incoming().userId == request.auth.uid || isAdmin());
       allow update: if isValidId(orderId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid)) && isValidOrder(incoming());
       allow delete: if isValidId(orderId) && isAdmin();
+    }
+
+    // Products collection (public read, admin write)
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Store announcements collection (public read, admin write)
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Store promotional coupons collection (public read, admin write)
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Product reviews collection
@@ -128,6 +146,12 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if isValidId(settingId);
       allow write: if isValidId(settingId) && (isAdmin() || isSignedIn());
+    }
+
+    // System settings & AI configurations
+    match /system_settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Test connection probe collection

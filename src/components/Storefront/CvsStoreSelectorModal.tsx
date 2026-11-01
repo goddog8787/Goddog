@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Store, 
   MapPin, 
@@ -29,6 +29,7 @@ import {
 interface CvsStoreSelectorModalProps {
   isOpen: boolean;
   onClose: () => void;
+  targetBrand?: '7-11' | 'familymart' | 'hilife' | 'okmart';
   initialMethod?: ShippingMethod;
   onSelectStore: (result: {
     brand: string;
@@ -43,16 +44,36 @@ interface CvsStoreSelectorModalProps {
 export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
   isOpen,
   onClose,
+  targetBrand,
   initialMethod = 'UNIMARTC2C',
   onSelectStore
 }) => {
   // Brand selection
   const [selectedBrand, setSelectedBrand] = useState<'7-11' | 'familymart' | 'hilife' | 'okmart'>(() => {
+    if (targetBrand) return targetBrand;
     if (initialMethod === 'FAMIC2C') return 'familymart';
     if (initialMethod === 'HILIFEC2C') return 'hilife';
     if (initialMethod === 'OKMARTC2C') return 'okmart';
     return '7-11';
   });
+
+  // 當開啟、targetBrand 或 initialMethod 改變時，立即連動選定對應超商體系
+  useEffect(() => {
+    if (isOpen) {
+      if (targetBrand) {
+        setSelectedBrand(targetBrand);
+      } else if (initialMethod === 'FAMIC2C') {
+        setSelectedBrand('familymart');
+      } else if (initialMethod === 'HILIFEC2C') {
+        setSelectedBrand('hilife');
+      } else if (initialMethod === 'OKMARTC2C') {
+        setSelectedBrand('okmart');
+      } else {
+        setSelectedBrand('7-11');
+      }
+      setSearchKeyword('');
+    }
+  }, [isOpen, targetBrand, initialMethod]);
 
   // Location filter state
   const [selectedRegion, setSelectedRegion] = useState<string>('全部地區');

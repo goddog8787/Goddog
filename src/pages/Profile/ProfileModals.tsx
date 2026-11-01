@@ -10,8 +10,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from "react-router-dom";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "../../lib/firebase";
-import {  X, MapPin, Printer, Package, Copy, Share2, Medal, Lock, Bell, Check, Edit2, Trash2, Plus, ArrowRight, ShieldCheck, Clock, CreditCard, ShoppingCart, Gift, Ticket, Download, ChevronDown, Star , Zap, Palette, Layers, Users, Calendar, Sliders, Truck } from 'lucide-react';
+import { X, MapPin, Printer, Package, Copy, Share2, Medal, Lock, Bell, Check, Edit2, Trash2, Plus, ArrowRight, ShieldCheck, Clock, CreditCard, ShoppingCart, Gift, Ticket, Download, ChevronDown, Star, Zap, Palette, Layers, Users, Calendar, Sliders, Truck } from 'lucide-react';
 import { OrderCertificateModal } from '../../components/Storefront/OrderCertificateModal';
+import { LogisticsTimelineModal } from '../../components/Storefront/LogisticsTimelineModal';
 
 const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => (
   <AnimatePresence>
@@ -47,6 +48,7 @@ export const OrderModal: React.FC<{
 }> = ({ isOpen, onClose, initialTab = 'all', orders = [], member, onConfirmReceipt, onGoReview, onOpenTracking }) => {
   const [tab, setTab] = useState(initialTab);
   const [selectedCertOrder, setSelectedCertOrder] = useState<any | null>(null);
+  const [selectedLogisticsOrder, setSelectedLogisticsOrder] = useState<any | null>(null);
   const [isConfirmingId, setIsConfirmingId] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
@@ -153,17 +155,13 @@ export const OrderModal: React.FC<{
                     )}
                   </button>
                 </div>
-                {onOpenTracking && (
-                  <button
-                    onClick={() => {
-                      onClose();
-                      onOpenTracking(order.raw.trackingNumber);
-                    }}
-                    className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer"
-                  >
-                    即時物流進度 ↗
-                  </button>
-                )}
+                <button
+                  onClick={() => setSelectedLogisticsOrder(order.raw)}
+                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <Truck className="w-3 h-3 text-indigo-600" />
+                  <span>即時物流進度 ↗</span>
+                </button>
               </div>
             )}
             <div className="space-y-2 mb-4">
@@ -176,6 +174,15 @@ export const OrderModal: React.FC<{
             <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-50">
               <span className="text-xs font-bold text-slate-400">{order.date}</span>
               <div className="flex flex-wrap items-center gap-2">
+                {/* 物流詳情按鈕 - 點擊調用物流 API 查詢即時配送軌跡時間軸 */}
+                <button
+                  onClick={() => setSelectedLogisticsOrder(order.raw)}
+                  className="px-2.5 py-1 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200/90 text-xs font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
+                  title="點擊調用物流 API 查詢即時配送軌跡時間軸"
+                >
+                  <Truck className="w-3.5 h-3.5 text-sky-600" />
+                  <span>物流詳情</span>
+                </button>
                 <button
                   onClick={() => setSelectedCertOrder(order.raw)}
                   className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
@@ -228,6 +235,11 @@ export const OrderModal: React.FC<{
         isOpen={!!selectedCertOrder}
         onClose={() => setSelectedCertOrder(null)}
         order={selectedCertOrder}
+      />
+      <LogisticsTimelineModal
+        isOpen={!!selectedLogisticsOrder}
+        onClose={() => setSelectedLogisticsOrder(null)}
+        order={selectedLogisticsOrder}
       />
     </ModalWrapper>
   );

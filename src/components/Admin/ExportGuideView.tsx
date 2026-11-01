@@ -79,7 +79,7 @@ NODE_ENV=production
 PORT=3000
 
 # Google Gemini API 金鑰 (用於 3D 切片 AI 顧問與 CRO 智慧分析)
-GEMINI_API_KEY=AIzaSy...你的正式API金鑰
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
 
 # 綠界金流正式特店金鑰 (向綠界科技申請正式審核後取得)
 ECPAY_MERCHANT_ID=你的正式特店代號

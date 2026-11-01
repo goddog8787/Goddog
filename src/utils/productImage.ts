@@ -45,6 +45,15 @@ export function getMaterialFallbackImage(material?: string, name?: string): stri
   if (text.includes('dry') || text.includes('乾燥') || text.includes('烘乾')) {
     return '/images/products/dryer_box_s2.svg';
   }
+  if (text.includes('matte') || text.includes('消光') || text.includes('啞光') || text.includes('莫蘭迪')) {
+    return '/images/products/pla_matte.webp';
+  }
+  if (text.includes('ams') || text.includes('feeder') || text.includes('進料') || text.includes('漏斗')) {
+    return '/images/products/nozzle_hardened_steel.webp';
+  }
+  if (text.includes('cardboard') || text.includes('紙盤')) {
+    return '/images/products/cardboard_spool.webp';
+  }
   if (text.includes('pei') || text.includes('鋼板') || text.includes('熱床')) {
     return '/images/products/pei_textured_sheet.svg';
   }

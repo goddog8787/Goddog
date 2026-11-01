@@ -260,6 +260,7 @@ export interface Order {
   discount: number;
   pointsDeduction: number;
   pointsEarned: number;
+  paymentFee?: number;
   total: number;
   paymentGateway: PaymentGateway;
   paymentStatus: PaymentStatus;

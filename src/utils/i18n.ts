@@ -54,13 +54,13 @@ export const translations = {
     spoolRecycleBtn: '空盤換幣',
     sslEncrypted: '藍新 SSL 安全加密',
     searchPlaceholderNav: '搜尋線材 (PLA, PETG, TPU)...',
-    searchPlaceholderInput: '搜尋耗材材質 (PLA+, 碳纖維, PETG, TPU) 或品牌 (神狗勾, Bambu)...',
+    searchPlaceholderInput: '搜尋耗材材質 (PLA+, 碳纖維, PETG, TPU) 或品牌 (Bambu, eSUN)...',
     searchPlaceholder: '搜尋 3D 列印耗材 (PLA, PETG, ABS, 碳纖維, 光固化樹脂, 線徑 1.75mm...)',
 
     // Marquee Promo Bar
     promoBadge: '限時優惠',
     promoText1: '⚡ 慶祝高速耗材登陸！全館滿 NT$999 享超商免運 ＋ 支援多元安全支付與超商取貨付款！',
-    promoText2: '🚀 新款神狗勾 PLA-CF 航太級碳纖維耗材熱烈預購中！',
+    promoText2: '🚀 新款 PLA-CF 航太級碳纖維耗材熱烈預購中！',
     promoText3: '🎁 凡於當月壽星專區結帳，輸入序號即享獨家神秘 3D 列印配件包！',
     promoText4: '♻️ 空盤回收換積分活動進行中，環保地球你我有責！',
 
@@ -600,7 +600,7 @@ export const translations = {
     // Marquee Promo Bar
     promoBadge: '限定特典',
     promoText1: '⚡ 次世代高速フィラメント登場！NT$999以上でコンビニ送料無料＆クレジットカード・Apple Pay即時決済対応！',
-    promoText2: '🚀 新製品！神狗勾 PLA-CF 航空グレードカーボンファイバー好評予約受付中！',
+    promoText2: '🚀 新製品！PLA-CF 航空グレードカーボンファイバー好評予約受付中！',
     promoText3: '🎁 お誕生月限定：ご注文時にクーポン入力で特製3Dプリントツールセット進呈！',
     promoText4: '♻️ 使用済み空スプール回収でポイント還元中！環境に優しい3Dプリントライフを！',
 

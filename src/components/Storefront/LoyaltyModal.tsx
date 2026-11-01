@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { MemberProfile, CurrencyCode, Order, LanguageCode } from '../../types';
 import { formatPrice, translateProductName, translateColorName } from '../../utils/i18n';
+import { LogisticsTimelineModal } from './LogisticsTimelineModal';
 
 interface LoyaltyModalProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
 }) => {
   const lang: LanguageCode = (propLang as LanguageCode) || 'zh-TW';
   const [activeTab, setActiveTab] = useState<'perks' | 'orders'>('perks');
+  const [selectedLogisticsOrder, setSelectedLogisticsOrder] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
 
   const handleCopyReferral = () => {
@@ -376,19 +378,14 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
                               {formatPrice(order.total || 0, currency)}
                             </div>
                           </div>
-                          {onOpenTrackingWithCode && (
-                            <button
-                              onClick={() => {
-                                onOpenTrackingWithCode(order.trackingNumber);
-                                onClose();
-                              }}
-                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                              title={lang === 'en' ? 'Track Package' : lang === 'ja' ? '追跡確認' : '查詢此包裹詳細即時物流'}
-                            >
-                              <Truck className="w-3.5 h-3.5" />
-                              <span>{lang === 'en' ? 'Track' : lang === 'ja' ? '追跡' : '即時追蹤'}</span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setSelectedLogisticsOrder(order)}
+                            className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs flex items-center gap-1 cursor-pointer transition-all shadow-2xs active:scale-95"
+                            title={lang === 'en' ? 'Track Details' : lang === 'ja' ? '物流詳細' : '查看即時物流詳情與時間軸'}
+                          >
+                            <Truck className="w-3.5 h-3.5" />
+                            <span>{lang === 'en' ? 'Logistics Details' : lang === 'ja' ? '物流詳細' : '物流詳情'}</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -415,6 +412,14 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Logistics Tracking Timeline Modal */}
+      <LogisticsTimelineModal
+        isOpen={!!selectedLogisticsOrder}
+        onClose={() => setSelectedLogisticsOrder(null)}
+        order={selectedLogisticsOrder}
+        lang={lang}
+      />
     </div>
   );
 };

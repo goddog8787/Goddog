@@ -22,12 +22,27 @@
 }
 
 @theme {
-  --animate-marquee: marquee 35s linear infinite;
-  
-  @keyframes marquee {
-    0% { transform: translateX(0%); }
-    100% { transform: translateX(-50%); }
+  --animate-marquee: marquee-flow 26s linear infinite;
+}
+
+@keyframes marquee-flow {
+  0% {
+    transform: translate3d(0, 0, 0);
   }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.animate-marquee {
+  display: flex !important;
+  width: max-content !important;
+  animation: marquee-flow 26s linear infinite !important;
+  will-change: transform;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
 }
 
 /* Custom scrollbar for dense tables and drawers */

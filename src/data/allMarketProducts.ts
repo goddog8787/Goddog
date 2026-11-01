@@ -29,7 +29,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
       '抗拉不易脆斷，公差 ±0.02mm 零卡料',
       '台灣新竹現貨快速出貨，全台超商滿 NT$999 免運'
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=700&auto=format&fit=crop&q=80',
+    imageUrl: '/images/products/hyper_pla_red.webp',
     colors: [
       { name: '極速白', hex: '#ffffff', stock: 200 },
       { name: '曜石黑', hex: '#1e293b', stock: 200 },
@@ -63,7 +63,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
       '內建高精度溫濕度感測器，即時監控濕度數值',
       '8孔出線口設計，支援一邊烘乾一邊極速列印'
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=700&auto=format&fit=crop&q=80',
+    imageUrl: '/images/products/dryer_box_s2.svg',
     colors: [
       { name: '極夜黑', hex: '#0f172a', stock: 45 }
     ],
@@ -94,7 +94,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
       '耐溫高達 200°C，完美支援 PLA / PETG / ABS / TPU',
       '模型降溫至室溫後輕彈自動脫模，不傷模型'
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?w=700&auto=format&fit=crop&q=80',
+    imageUrl: '/images/products/pei_textured_sheet.svg',
     colors: [
       { name: '金牌紋理', hex: '#eab308', stock: 230 }
     ],
@@ -125,7 +125,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
       '完美支援碳纖維 CF、木質 Wood、夜光 Glow 等磨耗耗材',
       '相容 Bambu Lab 全系列熱端與 Creality K1/Ender 系列'
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1581092162384-8987c1d64718?w=700&auto=format&fit=crop&q=80',
+    imageUrl: '/images/products/nozzle_hardened_steel.webp',
     colors: [
       { name: '硬化鋼黑', hex: '#334155', stock: 500 }
     ],
@@ -156,7 +156,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
       '環保硬紙盤相容 Bambu AMS 與多色列印系統',
       '神狗勾台灣現貨熱銷，多色齊全快速出貨'
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1615655406736-b37c4fabf923?w=700&auto=format&fit=crop&q=80',
+    imageUrl: '/images/products/pla_matte.webp',
     colors: [
       { name: '杏仁白', hex: '#f8fafc', stock: 100 },
       { name: '深海藍', hex: '#1e3a8a', stock: 80 },
@@ -190,7 +190,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
       '支援碳纖維、玻纖與高剛性工程耗材長效進料',
       '拓竹創客必備原廠升級備件'
     ],
-    imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=700&auto=format&fit=crop&q=80',
+    imageUrl: '/images/products/nozzle_hardened_steel.webp',
     colors: [
       { name: '拓竹灰', hex: '#475569', stock: 120 }
     ],

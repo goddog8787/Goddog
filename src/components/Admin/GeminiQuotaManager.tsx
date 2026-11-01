@@ -362,7 +362,7 @@ export const GeminiQuotaManager: React.FC = () => {
                 type="password"
                 value={inputKey}
                 onChange={(e) => setInputKey(e.target.value)}
-                placeholder="貼上 AIzaSy 開頭的 Google Gemini API 金鑰..."
+                placeholder="貼上您的 Google Gemini API 金鑰..."
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
