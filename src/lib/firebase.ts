@@ -55,6 +55,11 @@ const rawApiKey = (import.meta as any).env?.VITE_FIREBASE_API_KEY || firebaseCon
 const resolvedApiKey = (typeof rawApiKey === 'string' && rawApiKey.trim().length > 5) ? rawApiKey.trim() : FALLBACK_PUBLIC_KEY;
 
 const effectiveConfig = {
+  projectId: 'goddog-shop',
+  appId: '1:470116154074:web:6b5fe2382911d3fc3ec3e3',
+  firestoreDatabaseId: 'ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4',
+  storageBucket: 'goddog-shop.firebasestorage.app',
+  messagingSenderId: '470116154074',
   ...firebaseConfig,
   apiKey: resolvedApiKey,
   authDomain: getEffectiveAuthDomain(),
@@ -65,7 +70,11 @@ try {
   app = getApps().length > 0 ? getApp() : initializeApp(effectiveConfig);
 } catch (e) {
   console.warn('Firebase initializeApp fallback:', e);
-  app = (getApps().length > 0 ? getApp() : ({ name: '[DEFAULT]', options: effectiveConfig } as any));
+  try {
+    app = getApps().length > 0 ? getApp() : initializeApp({ ...effectiveConfig, apiKey: FALLBACK_PUBLIC_KEY }, 'GODDOG_SHOP');
+  } catch (e2) {
+    app = (getApps().length > 0 ? getApp() : ({ name: '[DEFAULT]', options: effectiveConfig } as any));
+  }
 }
 
 // Initialize Firestore with auto-detect long polling for iframe & mobile network stability

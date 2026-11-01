@@ -77,15 +77,32 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <GlobalErrorBoundary>
-      <HelmetProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </HelmetProvider>
-    </GlobalErrorBoundary>
-  </StrictMode>,
-);
+const rootElement = document.getElementById('root');
+if (rootElement) {
+  try {
+    createRoot(rootElement).render(
+      <StrictMode>
+        <GlobalErrorBoundary>
+          <HelmetProvider>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </HelmetProvider>
+        </GlobalErrorBoundary>
+      </StrictMode>,
+    );
+  } catch (mountErr: any) {
+    console.error('Fatal React createRoot mount error:', mountErr);
+    rootElement.innerHTML = `
+      <div style="min-height:100vh;background:#020617;color:#f8fafc;display:flex;align-items:center;justify-content:center;padding:24px;font-family:sans-serif;text-align:center;">
+        <div style="max-width:440px;background:#0f172a;border:1px solid #334155;border-radius:16px;padding:32px;">
+          <div style="font-size:36px;margin-bottom:12px;">🐕</div>
+          <h2 style="font-size:18px;font-weight:700;margin:0 0 8px 0;color:#f1f5f9;">神狗勾商城載入遇到問題</h2>
+          <p style="font-size:13px;color:#94a3b8;line-height:1.6;margin:0 0 20px 0;">瀏覽器未能正常初始化介面，請點擊下方按鈕重新整理。</p>
+          <button onclick="window.location.reload(true)" style="width:100%;padding:12px;background:#f59e0b;color:#0f172a;border:none;border-radius:10px;font-weight:700;cursor:pointer;">重新載入頁面</button>
+        </div>
+      </div>
+    `;
+  }
+}
 
