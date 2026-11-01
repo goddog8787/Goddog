@@ -44,8 +44,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const safeOrders = Array.isArray(orders) ? orders : [];
 
   const genuineMemberOrders = React.useMemo(() => {
-    const currentUid = member?.id || auth.currentUser?.uid;
+    const currentUid = (member?.id && !member.id.startsWith('guest')) ? member.id : auth.currentUser?.uid;
     const currentEmail = (member?.email || auth.currentUser?.email || '').trim().toLowerCase();
+    if (!currentUid && !currentEmail) return [];
 
     return safeOrders.filter((o: any) => {
       if (isMockOrder(o)) return false;
@@ -54,7 +55,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
       if (currentUid && orderUid && orderUid === currentUid) return true;
       if (currentEmail && orderEmail && orderEmail === currentEmail) return true;
-      if (!currentUid && orderUid === 'guest_maker') return true;
       return false;
     });
   }, [safeOrders, member?.id, member?.email]);
@@ -530,7 +530,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <PrinterModal isOpen={activeModal === 'printers'} onClose={() => setActiveModal(null)} member={member} />
         <AddressModal isOpen={activeModal === 'address'} onClose={() => setActiveModal(null)} member={member} />
         <ReferralModal isOpen={activeModal === 'referral'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
-        <AchievementModal isOpen={activeModal === 'achievements'} onClose={() => setActiveModal(null)} member={member} orders={orders} />
+        <AchievementModal isOpen={activeModal === 'achievements'} onClose={() => setActiveModal(null)} member={member} orders={genuineMemberOrders} />
         <SettingsModal isOpen={activeModal === 'settings'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
         <FAQModal isOpen={activeModal === 'faq'} onClose={() => setActiveModal(null)} />
         <HistoryModal 

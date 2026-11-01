@@ -52,8 +52,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           id: user.uid,
           name: profile?.name || user.displayName || (lang === 'en' ? 'Google Maker Member' : lang === 'ja' ? 'Google メイカー会員' : 'Google 創客會員'),
           email: profile?.email || user.email || 'user@gmail.com',
-          tier: profile?.tier || 'Silver',
-          points: profile?.points || 150,
+          tier: profile?.tier,
+          points: profile?.points,
         });
         setSuccessMessage(
           lang === 'en' 
@@ -88,8 +88,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             id: user.uid,
             name: user.displayName || email.split('@')[0],
             email: user.email || email,
-            tier: 'Bronze',
-            points: 100,
           });
           setSuccessMessage(lang === 'en' ? '🎉 Signed in successfully!' : lang === 'ja' ? '🎉 ログインに成功しました！' : '🎉 登入成功！');
           setTimeout(() => onClose(), 1000);

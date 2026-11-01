@@ -233,18 +233,27 @@ googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
 
+// Deterministic unique UID generator for email accounts (ensures same email always maps to same isolated UID and never mixes with other users)
+export function getDeterministicUserId(emailInput: string): string {
+  const normalized = (emailInput || '').trim().toLowerCase();
+  if (normalized === 'goddog' || normalized === 'goddog@gmail.com') {
+    return 'user-goddog-master';
+  }
+  const safeSlug = normalized.replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').slice(0, 64);
+  return `user_${safeSlug || 'member'}`;
+}
+
 // Google Sign-In with popup + graceful fallback for restricted iframes
 export async function signInWithGoogle(): Promise<{ user: User | null; isMock?: boolean; error?: string; profile?: any }> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
     let profile = null;
     if (result.user) {
+      // Preserve existing user profile fields if user already exists; only use defaults for brand-new users
       profile = await saveUserProfileToFirestore({
         id: result.user.uid,
         email: result.user.email,
         name: result.user.displayName,
-        tier: 'Silver',
-        points: 150,
       });
     }
     return { user: result.user, profile };
@@ -267,6 +276,7 @@ export async function signInWithGoogle(): Promise<{ user: User | null; isMock?: 
 const LOCAL_ACCOUNTS_KEY = 'printcore_registered_accounts';
 
 export interface StoredUserAccount {
+  uid?: string;
   email: string;
   passwordHash: string;
   name: string;
@@ -284,12 +294,16 @@ export const DEFAULT_USER_CREDENTIALS = {
 function getLocalAccounts(): StoredUserAccount[] {
   try {
     const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
   } catch (e) {
     console.error(e);
   }
   return [
     {
+      uid: 'user-goddog-master',
       email: 'goddog',
       passwordHash: 'King8787@',
       name: 'goddog (店長)',
@@ -297,6 +311,7 @@ function getLocalAccounts(): StoredUserAccount[] {
       points: 1680,
     },
     {
+      uid: 'user-goddog-master',
       email: 'goddog@gmail.com',
       passwordHash: 'King8787@',
       name: 'goddog (店長)',
@@ -304,6 +319,7 @@ function getLocalAccounts(): StoredUserAccount[] {
       points: 1680,
     },
     {
+      uid: 'user_babe0615_gmail_com',
       email: 'babe0615@gmail.com',
       passwordHash: 'King8787@',
       name: 'goddog',
@@ -316,29 +332,45 @@ function getLocalAccounts(): StoredUserAccount[] {
 function saveLocalAccount(account: StoredUserAccount) {
   const current = getLocalAccounts();
   const existingIdx = current.findIndex((a) => a.email.toLowerCase() === account.email.toLowerCase());
+  const resolvedUid = account.uid || (existingIdx >= 0 ? current[existingIdx].uid : undefined) || getDeterministicUserId(account.email);
+  const record: StoredUserAccount = {
+    ...account,
+    uid: resolvedUid,
+  };
   if (existingIdx >= 0) {
-    current[existingIdx] = account;
+    current[existingIdx] = record;
   } else {
-    current.push(account);
+    current.push(record);
   }
   localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(current));
 }
 
 // Email + Password Sign In
 export async function signInWithEmail(email: string, pass: string): Promise<{ user: User | null; error?: string; profile?: any }> {
+  const normalizedInput = email.trim().toLowerCase();
+  const effectiveEmail = normalizedInput.includes('@') ? normalizedInput : `${normalizedInput}@gmail.com`;
+
   try {
-    const effectiveEmail = email.includes('@') ? email : `${email}@gmail.com`;
     const result = await signInWithEmailAndPassword(auth, effectiveEmail, pass);
+    if (result.user) {
+      saveLocalAccount({
+        uid: result.user.uid,
+        email: effectiveEmail,
+        passwordHash: pass,
+        name: result.user.displayName || effectiveEmail.split('@')[0],
+        tier: 'Bronze',
+        points: 120,
+      });
+    }
     return { user: result.user };
   } catch (error: any) {
-    // If account exists in local database or master password
+    // Check if account exists in local database or master password
     const accounts = getLocalAccounts();
-    const normalizedInput = email.trim().toLowerCase();
     const matched = accounts.find(
       (a) =>
         a.email.toLowerCase() === normalizedInput ||
-        a.email.toLowerCase() === `${normalizedInput}@gmail.com` ||
-        (normalizedInput.startsWith('goddog') && a.email.toLowerCase().includes('goddog'))
+        a.email.toLowerCase() === effectiveEmail ||
+        (normalizedInput === 'goddog' && a.email.toLowerCase() === 'goddog@gmail.com')
     );
 
     const isMasterPass =
@@ -349,10 +381,11 @@ export async function signInWithEmail(email: string, pass: string): Promise<{ us
 
     if (matched) {
       if (matched.passwordHash === pass || isMasterPass) {
+        const stableUid = matched.uid || getDeterministicUserId(matched.email);
         const demoUser: any = {
-          uid: 'user-goddog-master',
-          displayName: matched.name || 'goddog',
-          email: matched.email.includes('@') ? matched.email : `${matched.email}@printcore.com`,
+          uid: stableUid,
+          displayName: matched.name || effectiveEmail.split('@')[0],
+          email: matched.email.includes('@') ? matched.email : effectiveEmail,
           photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=faces',
         };
         return { user: demoUser };
@@ -362,16 +395,18 @@ export async function signInWithEmail(email: string, pass: string): Promise<{ us
     }
 
     if (isMasterPass) {
+      const stableUid = getDeterministicUserId(effectiveEmail);
       const demoUser: any = {
-        uid: 'user-' + Math.random().toString(36).substring(2, 9),
-        displayName: email.split('@')[0],
-        email: email.includes('@') ? email : `${email}@gmail.com`,
+        uid: stableUid,
+        displayName: effectiveEmail.split('@')[0],
+        email: effectiveEmail,
         photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=faces',
       };
       saveLocalAccount({
-        email: email,
+        uid: stableUid,
+        email: effectiveEmail,
         passwordHash: pass,
-        name: email.split('@')[0],
+        name: effectiveEmail.split('@')[0],
         tier: 'Bronze',
         points: 120,
       });
@@ -388,46 +423,57 @@ export async function registerWithEmail(
   pass: string,
   name: string
 ): Promise<{ user: User | null; error?: string; profile?: any }> {
+  const normalizedInput = email.trim().toLowerCase();
+  const effectiveEmail = normalizedInput.includes('@') ? normalizedInput : `${normalizedInput}@gmail.com`;
+
   try {
-    const result = await createUserWithEmailAndPassword(auth, email, pass);
+    const result = await createUserWithEmailAndPassword(auth, effectiveEmail, pass);
     let profile = null;
-    if (result.user && name) {
-      await updateProfile(result.user, { displayName: name });
+    if (result.user) {
+      const displayName = name || effectiveEmail.split('@')[0];
+      if (name) {
+        await updateProfile(result.user, { displayName: name }).catch(() => {});
+      }
       profile = await saveUserProfileToFirestore({
         id: result.user.uid,
-        email: result.user.email,
-        name: name,
+        email: result.user.email || effectiveEmail,
+        name: displayName,
         tier: 'Bronze',
         points: 120,
       });
-    } else if(result.user) {
-      profile = await saveUserProfileToFirestore({
-        id: result.user.uid,
-        email: result.user.email,
-        name: email.split('@')[0],
+      saveLocalAccount({
+        uid: result.user.uid,
+        email: effectiveEmail,
+        passwordHash: pass,
+        name: displayName,
         tier: 'Bronze',
         points: 120,
       });
     }
-    saveLocalAccount({
-      email: email,
-      passwordHash: pass,
-      name: name || email.split('@')[0],
-      tier: 'Bronze',
-      points: 120,
-    });
-    return { user: result.user };
+    return { user: result.user, profile };
   } catch (error: any) {
+    // If already registered in Firebase Auth, try signing in with the provided password
+    if (error?.code === 'auth/email-already-in-use') {
+      try {
+        const signInRes = await signInWithEmailAndPassword(auth, effectiveEmail, pass);
+        return { user: signInRes.user };
+      } catch {
+        return { user: null, error: '此電子信箱已註冊過會員，請切換至「會員登入」並輸入正確密碼。' };
+      }
+    }
+
+    const stableUid = getDeterministicUserId(effectiveEmail);
     const demoUser: any = {
-      uid: 'user-' + Math.random().toString(36).substring(2, 9),
-      displayName: name || email.split('@')[0],
-      email: email,
+      uid: stableUid,
+      displayName: name || effectiveEmail.split('@')[0],
+      email: effectiveEmail,
       photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=faces',
     };
     saveLocalAccount({
-      email: email,
+      uid: stableUid,
+      email: effectiveEmail,
       passwordHash: pass,
-      name: name || email.split('@')[0],
+      name: name || effectiveEmail.split('@')[0],
       tier: 'Bronze',
       points: 120,
     });
@@ -456,7 +502,6 @@ export function subscribeToAuth(callback: (user: User | null) => void): () => vo
 
 // Firestore Order Persistence Helper
 export async function saveOrderToFirestore(order: any, userId?: string) {
-  const path = `orders/${order.id}`;
   try {
     const uid = userId || auth.currentUser?.uid || 'guest_maker';
     const orderDoc = {
@@ -477,82 +522,97 @@ export async function saveOrderToFirestore(order: any, userId?: string) {
     return orderDoc;
   } catch (error) {
     console.warn('Firestore order sync fallback:', error);
-    // Non-blocking for UI checkout experience
   }
 }
 
-// Firestore User Profile Persistence Helper
+// Firestore User Profile Persistence Helper (Never overwrites existing points/tier/coupons with initial defaults)
 export async function saveUserProfileToFirestore(profile: any) {
   if (!profile?.id) return;
   try {
+    // Also check local user cache in case Firestore is offline
+    let localExisting: any = null;
+    try {
+      const raw = localStorage.getItem(`printcore_user_profile_${profile.id}`);
+      if (raw) localExisting = JSON.parse(raw);
+    } catch {}
+
     const userRef = doc(db, 'users', profile.id);
     const snap = await getDoc(userRef);
-    const isNew = !snap.exists();
+    const isNew = !snap.exists() && !localExisting;
+    const existingData = snap.exists() ? snap.data() : (localExisting || {});
 
     const userDoc: any = {
+      ...existingData,
       ...profile,
       id: profile.id,
-      email: profile.email || 'maker@gmail.com',
-      name: profile.name || '創客會員',
-      tier: profile.tier || 'Bronze',
-      points: Number(profile.points) || 0,
-      createdAt: isNew ? new Date().toISOString() : (snap.data()?.createdAt || new Date().toISOString()),
+      email: profile.email || existingData.email || 'maker@gmail.com',
+      name: profile.name || existingData.name || '創客會員',
+      tier: profile.tier || existingData.tier || 'Bronze',
+      points:
+        typeof profile.points === 'number'
+          ? profile.points
+          : typeof existingData.points === 'number'
+          ? existingData.points
+          : 120,
+      createdAt: isNew ? new Date().toISOString() : (existingData.createdAt || new Date().toISOString()),
     };
 
     // Keep existing referral code or generate a new one
-    if (isNew || !snap.data()?.referralCode) {
-      userDoc.referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    if (isNew || !existingData.referralCode) {
+      userDoc.referralCode =
+        profile.referralCode ||
+        existingData.referralCode ||
+        Math.random().toString(36).substring(2, 8).toUpperCase();
     } else {
-      userDoc.referralCode = snap.data().referralCode;
+      userDoc.referralCode = existingData.referralCode;
     }
-    
-    // Process referral reward only if new
+
+    // Process referral reward only if brand new user
     if (isNew) {
       const refCode = localStorage.getItem('printcore_referral_code');
       if (refCode && refCode !== userDoc.referralCode) {
-        // Query for referrer
         const q = query(collection(db, 'users'), where('referralCode', '==', refCode));
         let refSnap = await getDocs(q);
         if (refSnap.empty) {
-            const q2 = query(collection(db, 'users'), where('id', '==', refCode));
-            refSnap = await getDocs(q2);
+          const q2 = query(collection(db, 'users'), where('id', '==', refCode));
+          refSnap = await getDocs(q2);
         }
         if (!refSnap.empty) {
-           const referrerDoc = refSnap.docs[0];
-           userDoc.referredBy = referrerDoc.id;
-           userDoc.points = (userDoc.points || 0) + 300; // Reward for referee
-           
-           // Reward referrer
-           await updateDoc(referrerDoc.ref, {
-              points: (referrerDoc.data().points || 0) + 300,
-              referralEarnings: (referrerDoc.data().referralEarnings || 0) + 300,
-              referrals: (referrerDoc.data().referrals || 0) + 1
-           });
-           
-           // Notify referrer
-           await addDoc(collection(db, 'users', referrerDoc.id, 'notifications'), {
-               title: '邀請成功獎勵！',
-               message: `有新朋友使用了您的專屬推薦碼，您已獲得 $300 推廣收益與 300 點狗勾幣！`,
-               read: false,
-               createdAt: new Date().toISOString(),
-               type: 'reward'
-           });
-           
-           // Notify referee (new user)
-           await addDoc(collection(db, 'users', profile.id, 'notifications'), {
-               title: '新人推薦碼獎勵！',
-               message: `歡迎加入！由於您使用了推薦碼，系統已發放 300 點狗勾幣至您的帳戶！`,
-               read: false,
-               createdAt: new Date().toISOString(),
-               type: 'reward'
-           });
+          const referrerDoc = refSnap.docs[0];
+          userDoc.referredBy = referrerDoc.id;
+          userDoc.points = (userDoc.points || 0) + 300;
 
-           // Clear after successful use
-           localStorage.removeItem('printcore_referral_code');
+          await updateDoc(referrerDoc.ref, {
+            points: (referrerDoc.data().points || 0) + 300,
+            referralEarnings: (referrerDoc.data().referralEarnings || 0) + 300,
+            referrals: (referrerDoc.data().referrals || 0) + 1,
+          });
+
+          await addDoc(collection(db, 'users', referrerDoc.id, 'notifications'), {
+            title: '邀請成功獎勵！',
+            message: `有新朋友使用了您的專屬推薦碼，您已獲得 $300 推廣收益與 300 點狗勾幣！`,
+            read: false,
+            createdAt: new Date().toISOString(),
+            type: 'reward',
+          });
+
+          await addDoc(collection(db, 'users', profile.id, 'notifications'), {
+            title: '新人推薦碼獎勵！',
+            message: `歡迎加入！由於您使用了推薦碼，系統已發放 300 點狗勾幣至您的帳戶！`,
+            read: false,
+            createdAt: new Date().toISOString(),
+            type: 'reward',
+          });
+
+          localStorage.removeItem('printcore_referral_code');
         }
       }
     }
-    
+
+    try {
+      localStorage.setItem(`printcore_user_profile_${profile.id}`, JSON.stringify(userDoc));
+    } catch {}
+
     await setDoc(userRef, userDoc, { merge: true });
     console.log('✅ User profile synced to Firestore:', profile.id);
     return userDoc;

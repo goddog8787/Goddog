@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db, auth, OperationType, handleFirestoreError } from './firebase';
+import { db, auth } from './firebase';
 import { CartItem, Order, MemberProfile } from '../types';
 import { isMockOrder } from './orderVerification';
 
@@ -7,7 +7,9 @@ import { isMockOrder } from './orderVerification';
 const ACTIVE_USER_KEY = 'printcore_active_customer_session';
 const GUEST_CART_KEY = 'printcore_guest_cart_items';
 const GUEST_WISHLIST_KEY = 'printcore_wishlist_ids';
+const GUEST_COMPARISON_KEY = 'printcore_guest_comparison_ids';
 const GUEST_TRACKING_KEY = 'printcore_saved_tracking_numbers';
+const GUEST_CHAT_KEY = 'printcore_guest_chat_history';
 
 export interface CustomerSession {
   id: string;
@@ -21,6 +23,15 @@ export interface CustomerSession {
   isLoggedIn: boolean;
 }
 
+export function normalizeCustomerId(userId?: string | null): string | null {
+  if (!userId || typeof userId !== 'string') return null;
+  const trimmed = userId.trim();
+  if (!trimmed || trimmed === 'guest' || trimmed === 'guest_maker' || trimmed.startsWith('guest_')) {
+    return null;
+  }
+  return trimmed;
+}
+
 // -------------------------------------------------------------
 // 1. Customer Auth Session
 // -------------------------------------------------------------
@@ -30,7 +41,9 @@ export function getStoredCustomerSession(): CustomerSession | null {
     const raw = localStorage.getItem(ACTIVE_USER_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.id) return parsed;
+      if (parsed && parsed.id && normalizeCustomerId(parsed.id)) {
+        return parsed;
+      }
     }
   } catch (e) {
     console.warn('Failed to parse customer session:', e);
@@ -39,8 +52,16 @@ export function getStoredCustomerSession(): CustomerSession | null {
 }
 
 export function saveStoredCustomerSession(session: CustomerSession): void {
+  const cleanId = normalizeCustomerId(session?.id);
+  if (!cleanId) return;
   try {
-    localStorage.setItem(ACTIVE_USER_KEY, JSON.stringify(session));
+    localStorage.setItem(
+      ACTIVE_USER_KEY,
+      JSON.stringify({
+        ...session,
+        id: cleanId,
+      })
+    );
   } catch (e) {
     console.warn('Failed to persist customer session:', e);
   }
@@ -55,160 +76,467 @@ export function clearStoredCustomerSession(): void {
 }
 
 // -------------------------------------------------------------
-// 2. 購物車 (Cart Items) Persistence
+// 2. 購物車 (Cart Items) Persistence & Isolation
 // -------------------------------------------------------------
 
-export async function saveCustomerCart(userId: string | null | undefined, cart: CartItem[]): Promise<void> {
-  if (!userId) {
-    // Guest cart in localStorage
+function isValidCartArray(arr: any): arr is CartItem[] {
+  if (!Array.isArray(arr)) return false;
+  return arr.every(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      item.product &&
+      typeof item.product.id === 'string' &&
+      item.selectedColor &&
+      typeof item.quantity === 'number' &&
+      item.quantity > 0
+  );
+}
+
+/**
+ * Merges two carts (e.g. saved member cart + items added while browsing as guest)
+ * without duplicating identical product+color+diameter combinations.
+ */
+export function mergeCartItems(primaryCart: CartItem[], guestOrSecondaryCart: CartItem[]): CartItem[] {
+  const safePrimary = isValidCartArray(primaryCart) ? primaryCart : [];
+  const safeSecondary = isValidCartArray(guestOrSecondaryCart) ? guestOrSecondaryCart : [];
+
+  if (safeSecondary.length === 0) return [...safePrimary];
+  if (safePrimary.length === 0) return [...safeSecondary];
+
+  const merged: CartItem[] = safePrimary.map((item) => ({ ...item }));
+
+  for (const secItem of safeSecondary) {
+    const existingIdx = merged.findIndex(
+      (m) =>
+        m.product.id === secItem.product.id &&
+        m.selectedColor?.name === secItem.selectedColor?.name &&
+        m.selectedDiameter === secItem.selectedDiameter
+    );
+    if (existingIdx > -1) {
+      // Keep the higher or combined quantity if added during guest session
+      merged[existingIdx] = {
+        ...merged[existingIdx],
+        quantity: merged[existingIdx].quantity + secItem.quantity,
+      };
+    } else {
+      merged.push({ ...secItem });
+    }
+  }
+
+  return merged;
+}
+
+export function getStoredCustomerCartSync(userId?: string | null): CartItem[] {
+  const cleanUid = normalizeCustomerId(userId);
+  const key = cleanUid ? `printcore_user_cart_${cleanUid}` : GUEST_CART_KEY;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (isValidCartArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading cart cache:', e);
+  }
+  return [];
+}
+
+export function clearGuestCartStorage(): void {
+  try {
+    localStorage.removeItem(GUEST_CART_KEY);
+  } catch {}
+}
+
+export async function saveCustomerCart(
+  userId: string | null | undefined,
+  cart: CartItem[],
+  options?: { explicitClear?: boolean }
+): Promise<void> {
+  const safeCart = isValidCartArray(cart) ? cart : [];
+  const cleanUid = normalizeCustomerId(userId);
+
+  if (!cleanUid) {
+    // Guest cart in isolated guest key only
     try {
-      localStorage.setItem(GUEST_CART_KEY, JSON.stringify(cart));
+      localStorage.setItem(GUEST_CART_KEY, JSON.stringify(safeCart));
     } catch {}
     return;
   }
 
-  // 1. Mirror locally for instant UI recovery
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+
+  // Safety guard: Never accidentally overwrite a non-empty saved customer cart with an empty array
+  // unless explicitClear is true (e.g., user clicked "Clear Cart", removed the last item, or completed checkout).
+  if (safeCart.length === 0 && !options?.explicitClear) {
+    const existingLocal = getStoredCustomerCartSync(cleanUid);
+    if (existingLocal.length > 0) {
+      return;
+    }
+  }
+
+  // 1. Mirror locally for instant UI recovery across page reloads & logins
   try {
-    localStorage.setItem(`printcore_user_cart_${userId}`, JSON.stringify(cart));
+    // Ensure guest cart is always empty when a logged-in user saves their cart
+    localStorage.removeItem(GUEST_CART_KEY);
+    localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify(safeCart));
+    localStorage.setItem(
+      `printcore_user_cart_meta_${cleanUid}`,
+      JSON.stringify({
+        updatedAt: nowIso,
+        updatedAtMs: nowMs,
+        explicitClear: Boolean(options?.explicitClear && safeCart.length === 0),
+        count: safeCart.length,
+      })
+    );
   } catch {}
 
   // 2. Persist to Firestore subcollection
   try {
-    const cartRef = doc(db, 'users', userId, 'userData', 'cart');
+    const cartRef = doc(db, 'users', cleanUid, 'userData', 'cart');
     await setDoc(cartRef, {
       id: 'cart',
-      userId,
+      userId: cleanUid,
       type: 'cart',
-      data: JSON.stringify(cart),
-      updatedAt: new Date().toISOString(),
+      data: JSON.stringify(safeCart),
+      updatedAt: nowIso,
+      updatedAtMs: nowMs,
+      explicitClear: Boolean(options?.explicitClear && safeCart.length === 0),
     });
-    console.log(`🛒 Cart successfully saved to Firestore for user: ${userId} (${cart.length} items)`);
   } catch (error) {
     console.warn('Firestore cart sync fallback:', error);
   }
 }
 
-export async function loadCustomerCart(userId: string | null | undefined): Promise<CartItem[] | null> {
-  if (!userId) {
-    try {
-      const guestRaw = localStorage.getItem(GUEST_CART_KEY);
-      if (guestRaw) return JSON.parse(guestRaw);
-    } catch {}
-    return null;
+function repairDoubledCartOnce(cleanUid: string, cart: CartItem[]): { cart: CartItem[]; repaired: boolean } {
+  if (!cleanUid || !Array.isArray(cart) || cart.length === 0) {
+    return { cart, repaired: false };
+  }
+  const fixFlagKey = `printcore_cart_dedup_fix_v1_${cleanUid}`;
+  try {
+    if (localStorage.getItem(fixFlagKey) === '1') {
+      return { cart, repaired: false };
+    }
+    localStorage.setItem(fixFlagKey, '1');
+    // If all items in the stored cart were doubled by the previous self-merge bug (all quantities >= 2 and even)
+    const allEvenAndAtLeastTwo = cart.every((item) => item.quantity >= 2 && item.quantity % 2 === 0);
+    if (allEvenAndAtLeastTwo) {
+      const fixedCart = cart.map((item) => ({
+        ...item,
+        quantity: Math.max(1, Math.floor(item.quantity / 2)),
+      }));
+      return { cart: fixedCart, repaired: true };
+    }
+  } catch {}
+  return { cart, repaired: false };
+}
+
+export async function loadCustomerCart(userId: string | null | undefined): Promise<CartItem[]> {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) {
+    return getStoredCustomerCartSync(null);
   }
 
-  // Try Firestore first
+  let localCart = getStoredCustomerCartSync(cleanUid);
+  let localMeta: { updatedAtMs?: number; explicitClear?: boolean } = {};
   try {
-    const cartRef = doc(db, 'users', userId, 'userData', 'cart');
+    const metaRaw = localStorage.getItem(`printcore_user_cart_meta_${cleanUid}`);
+    if (metaRaw) localMeta = JSON.parse(metaRaw);
+  } catch {}
+
+  // Try Firestore and reconcile with local cache so items are never lost or doubled
+  try {
+    const cartRef = doc(db, 'users', cleanUid, 'userData', 'cart');
     const snap = await getDoc(cartRef);
     if (snap.exists()) {
       const data = snap.data();
       if (data?.data) {
         const parsed = JSON.parse(data.data);
-        if (Array.isArray(parsed)) {
-          // Cache locally
-          localStorage.setItem(`printcore_user_cart_${userId}`, data.data);
+        if (isValidCartArray(parsed)) {
+          const cloudMs = Number(data.updatedAtMs) || (data.updatedAt ? new Date(data.updatedAt).getTime() : 0);
+          const localMs = Number(localMeta.updatedAtMs) || 0;
+
+          // Case 1: Cloud has items, local has items -> pick the newer snapshot (NEVER sum quantities of two replicas)
+          if (parsed.length > 0 && localCart.length > 0) {
+            const rawBest = localMs >= cloudMs ? localCart : parsed;
+            const { cart: best, repaired } = repairDoubledCartOnce(cleanUid, rawBest);
+            localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify(best));
+            if (repaired || localMs > cloudMs) {
+              saveCustomerCart(cleanUid, best).catch(() => {});
+            }
+            return best;
+          }
+
+          // Case 2: Cloud has items, local is empty
+          if (parsed.length > 0 && localCart.length === 0) {
+            if (localMeta.explicitClear && localMs > cloudMs) {
+              saveCustomerCart(cleanUid, [], { explicitClear: true }).catch(() => {});
+              return [];
+            }
+            const { cart: best, repaired } = repairDoubledCartOnce(cleanUid, parsed);
+            localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify(best));
+            if (repaired) {
+              saveCustomerCart(cleanUid, best).catch(() => {});
+            }
+            return best;
+          }
+
+          // Case 3: Cloud is empty, but local has items
+          if (parsed.length === 0 && localCart.length > 0) {
+            if (data.explicitClear && cloudMs > localMs) {
+              localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify([]));
+              return [];
+            }
+            const { cart: best } = repairDoubledCartOnce(cleanUid, localCart);
+            saveCustomerCart(cleanUid, best).catch(() => {});
+            return best;
+          }
+
           return parsed;
         }
       }
+    } else if (localCart.length > 0) {
+      const { cart: best } = repairDoubledCartOnce(cleanUid, localCart);
+      saveCustomerCart(cleanUid, best).catch(() => {});
+      return best;
     }
   } catch (error) {
     console.warn('Firestore cart load fallback to local:', error);
   }
 
-  // Local cache fallback
-  try {
-    const localRaw = localStorage.getItem(`printcore_user_cart_${userId}`);
-    if (localRaw) return JSON.parse(localRaw);
-  } catch {}
-
-  return null;
+  const { cart: repairedLocal, repaired } = repairDoubledCartOnce(cleanUid, localCart);
+  if (repaired) {
+    saveCustomerCart(cleanUid, repairedLocal).catch(() => {});
+  }
+  return repairedLocal;
 }
 
 // -------------------------------------------------------------
-// 3. 收藏清單 (Wishlist) Persistence
+// 3. 收藏清單 (Wishlist) Persistence & Isolation
 // -------------------------------------------------------------
 
-export async function saveCustomerWishlist(userId: string | null | undefined, wishlistIds: string[]): Promise<void> {
-  if (!userId) {
+export function getStoredCustomerWishlistSync(userId?: string | null): string[] {
+  const cleanUid = normalizeCustomerId(userId);
+  const key = cleanUid ? `printcore_user_wishlist_${cleanUid}` : GUEST_WISHLIST_KEY;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((id) => typeof id === 'string' && id.trim().length > 0);
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function clearGuestWishlistStorage(): void {
+  try {
+    localStorage.removeItem(GUEST_WISHLIST_KEY);
+  } catch {}
+}
+
+export async function saveCustomerWishlist(
+  userId: string | null | undefined,
+  wishlistIds: string[],
+  options?: { explicitClear?: boolean }
+): Promise<void> {
+  const safeIds = Array.isArray(wishlistIds)
+    ? Array.from(new Set(wishlistIds.filter((id) => typeof id === 'string' && id.trim().length > 0)))
+    : [];
+  const cleanUid = normalizeCustomerId(userId);
+
+  if (!cleanUid) {
     try {
-      localStorage.setItem(GUEST_WISHLIST_KEY, JSON.stringify(wishlistIds));
+      localStorage.setItem(GUEST_WISHLIST_KEY, JSON.stringify(safeIds));
     } catch {}
     return;
   }
 
-  // Mirror locally
+  if (safeIds.length === 0 && !options?.explicitClear) {
+    const existingLocal = getStoredCustomerWishlistSync(cleanUid);
+    if (existingLocal.length > 0) {
+      return;
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+
   try {
-    localStorage.setItem(`printcore_user_wishlist_${userId}`, JSON.stringify(wishlistIds));
+    localStorage.setItem(`printcore_user_wishlist_${cleanUid}`, JSON.stringify(safeIds));
+    localStorage.setItem(
+      `printcore_user_wishlist_meta_${cleanUid}`,
+      JSON.stringify({
+        updatedAtMs: nowMs,
+        explicitClear: Boolean(options?.explicitClear && safeIds.length === 0),
+      })
+    );
   } catch {}
 
-  // Save to Firestore
   try {
-    const wishRef = doc(db, 'users', userId, 'userData', 'wishlist');
+    const wishRef = doc(db, 'users', cleanUid, 'userData', 'wishlist');
     await setDoc(wishRef, {
       id: 'wishlist',
-      userId,
+      userId: cleanUid,
       type: 'wishlist',
-      data: JSON.stringify(wishlistIds),
-      updatedAt: new Date().toISOString(),
+      data: JSON.stringify(safeIds),
+      updatedAt: nowIso,
+      updatedAtMs: nowMs,
+      explicitClear: Boolean(options?.explicitClear && safeIds.length === 0),
     });
-    console.log(`❤️ Wishlist successfully saved to Firestore for user: ${userId} (${wishlistIds.length} items)`);
   } catch (error) {
     console.warn('Firestore wishlist sync fallback:', error);
   }
 }
 
-export async function loadCustomerWishlist(userId: string | null | undefined): Promise<string[] | null> {
-  if (!userId) {
-    try {
-      const raw = localStorage.getItem(GUEST_WISHLIST_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return null;
+export async function loadCustomerWishlist(userId: string | null | undefined): Promise<string[]> {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) {
+    return getStoredCustomerWishlistSync(null);
   }
 
-  // Try Firestore
+  const localIds = getStoredCustomerWishlistSync(cleanUid);
+
   try {
-    const wishRef = doc(db, 'users', userId, 'userData', 'wishlist');
+    const wishRef = doc(db, 'users', cleanUid, 'userData', 'wishlist');
     const snap = await getDoc(wishRef);
     if (snap.exists()) {
       const data = snap.data();
       if (data?.data) {
         const parsed = JSON.parse(data.data);
         if (Array.isArray(parsed)) {
-          localStorage.setItem(`printcore_user_wishlist_${userId}`, data.data);
-          return parsed;
+          const cleanCloud = parsed.filter((id) => typeof id === 'string' && id.trim().length > 0);
+          if (cleanCloud.length === 0 && localIds.length > 0 && !data.explicitClear) {
+            saveCustomerWishlist(cleanUid, localIds).catch(() => {});
+            return localIds;
+          }
+          const merged = Array.from(new Set([...cleanCloud, ...localIds]));
+          localStorage.setItem(`printcore_user_wishlist_${cleanUid}`, JSON.stringify(merged));
+          return merged;
         }
       }
+    } else if (localIds.length > 0) {
+      saveCustomerWishlist(cleanUid, localIds).catch(() => {});
+      return localIds;
     }
   } catch (error) {
     console.warn('Firestore wishlist load fallback to local:', error);
   }
 
-  // Local cache fallback
+  return localIds;
+}
+
+// -------------------------------------------------------------
+// 3B. 規格對比清單 (Comparison IDs) Persistence & Isolation
+// -------------------------------------------------------------
+
+export function getStoredCustomerComparisonSync(userId?: string | null): string[] {
+  const cleanUid = normalizeCustomerId(userId);
+  const key = cleanUid ? `printcore_user_comparison_${cleanUid}` : GUEST_COMPARISON_KEY;
   try {
-    const localRaw = localStorage.getItem(`printcore_user_wishlist_${userId}`);
-    if (localRaw) return JSON.parse(localRaw);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((id) => typeof id === 'string' && id.trim().length > 0).slice(0, 4);
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export async function saveCustomerComparison(
+  userId: string | null | undefined,
+  comparisonIds: string[]
+): Promise<void> {
+  const safeIds = Array.isArray(comparisonIds)
+    ? Array.from(new Set(comparisonIds.filter((id) => typeof id === 'string'))).slice(0, 4)
+    : [];
+  const cleanUid = normalizeCustomerId(userId);
+
+  if (!cleanUid) {
+    try {
+      localStorage.setItem(GUEST_COMPARISON_KEY, JSON.stringify(safeIds));
+    } catch {}
+    return;
+  }
+
+  try {
+    localStorage.setItem(`printcore_user_comparison_${cleanUid}`, JSON.stringify(safeIds));
   } catch {}
 
-  return null;
+  try {
+    const compRef = doc(db, 'users', cleanUid, 'userData', 'comparison');
+    await setDoc(compRef, {
+      id: 'comparison',
+      userId: cleanUid,
+      type: 'comparison',
+      data: JSON.stringify(safeIds),
+      updatedAt: new Date().toISOString(),
+    });
+  } catch {}
+}
+
+export async function loadCustomerComparison(userId: string | null | undefined): Promise<string[]> {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) return getStoredCustomerComparisonSync(null);
+
+  const localIds = getStoredCustomerComparisonSync(cleanUid);
+  try {
+    const compRef = doc(db, 'users', cleanUid, 'userData', 'comparison');
+    const snap = await getDoc(compRef);
+    if (snap.exists()) {
+      const d = snap.data();
+      if (d?.data) {
+        const parsed = JSON.parse(d.data);
+        if (Array.isArray(parsed)) {
+          const valid = parsed.filter((id) => typeof id === 'string').slice(0, 4);
+          localStorage.setItem(`printcore_user_comparison_${cleanUid}`, JSON.stringify(valid));
+          return valid;
+        }
+      }
+    }
+  } catch {}
+  return localIds;
 }
 
 // -------------------------------------------------------------
 // 4. 購買紀錄與訂單 (Purchase History / Orders)
 // -------------------------------------------------------------
 
+export function getStoredCustomerOrdersSync(userId?: string | null): Order[] {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) return [];
+  try {
+    const raw = localStorage.getItem(`printcore_user_orders_${cleanUid}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((o) => !isMockOrder(o));
+      }
+    }
+  } catch {}
+  return [];
+}
+
 export async function saveCustomerOrderRecord(order: Order, userId: string | null | undefined): Promise<void> {
-  const effectiveUid = userId || auth.currentUser?.uid || 'guest_maker';
+  const effectiveUid = normalizeCustomerId(userId) || normalizeCustomerId(auth.currentUser?.uid) || 'guest_maker';
 
   // 1. Cache in customer orders list locally
-  try {
-    const localKey = `printcore_user_orders_${effectiveUid}`;
-    const raw = localStorage.getItem(localKey);
-    const existing: Order[] = raw ? JSON.parse(raw) : [];
-    const updated = [order, ...existing.filter((o) => o.id !== order.id)];
-    localStorage.setItem(localKey, JSON.stringify(updated));
-  } catch {}
+  if (effectiveUid !== 'guest_maker') {
+    try {
+      const localKey = `printcore_user_orders_${effectiveUid}`;
+      const raw = localStorage.getItem(localKey);
+      const existing: Order[] = raw ? JSON.parse(raw) : [];
+      const orderWithUid = { ...order, userId: effectiveUid };
+      const updated = [orderWithUid, ...existing.filter((o) => o.id !== order.id && o.orderNumber !== order.orderNumber)];
+      localStorage.setItem(localKey, JSON.stringify(updated));
+    } catch {}
+  }
 
   // 2. Persist to Firestore /orders/{order.id}
   try {
@@ -238,20 +566,22 @@ export async function saveCustomerOrderRecord(order: Order, userId: string | nul
       notes: order.notes || '',
     };
     await setDoc(doc(db, 'orders', order.id), orderDoc);
-    console.log(`📦 Order ${order.id} persisted to Firestore for user: ${effectiveUid}`);
   } catch (error) {
     console.warn('Firestore order save fallback:', error);
   }
 }
 
 export async function loadCustomerOrders(userId: string | null | undefined): Promise<Order[]> {
-  if (!userId) {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) {
     return [];
   }
 
+  const localOrders = getStoredCustomerOrdersSync(cleanUid);
+
   // 1. Query Firestore for this customer's orders
   try {
-    const q = query(collection(db, 'orders'), where('userId', '==', userId));
+    const q = query(collection(db, 'orders'), where('userId', '==', cleanUid));
     const snapshot = await getDocs(q);
     if (!snapshot.empty) {
       const ordersList: Order[] = [];
@@ -281,35 +611,32 @@ export async function loadCustomerOrders(userId: string | null | undefined): Pro
           invoiceType: d.invoiceType || 'cloud',
           invoiceCarrierValue: d.invoiceCarrierValue,
           notes: d.notes,
+          userId: d.userId || cleanUid,
         });
       });
-      // Strictly exclude any mock orders (TW20260906-0812, 77391829310, etc.)
-      const genuineOrders = ordersList.filter(o => !isMockOrder(o));
-      // Sort newest first
+
+      // Merge with any local orders for this user
+      const byOrderNo = new Map<string, Order>();
+      for (const lo of localOrders) {
+        if (!isMockOrder(lo)) byOrderNo.set(lo.orderNumber || lo.id, { ...lo, userId: cleanUid });
+      }
+      for (const co of ordersList) {
+        if (!isMockOrder(co)) byOrderNo.set(co.orderNumber || co.id, { ...co, userId: cleanUid });
+      }
+
+      const genuineOrders = Array.from(byOrderNo.values());
       genuineOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      // Mirror to local cache
+
       try {
-        localStorage.setItem(`printcore_user_orders_${userId}`, JSON.stringify(genuineOrders));
+        localStorage.setItem(`printcore_user_orders_${cleanUid}`, JSON.stringify(genuineOrders));
       } catch {}
-      console.log(`📦 Loaded ${genuineOrders.length} genuine orders from Firestore for user ${userId}`);
       return genuineOrders;
     }
   } catch (error) {
     console.warn('Firestore orders query fallback to local cache:', error);
   }
 
-  // 2. Fallback to local cache
-  try {
-    const raw = localStorage.getItem(`printcore_user_orders_${userId}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(o => !isMockOrder(o));
-      }
-    }
-  } catch {}
-
-  return [];
+  return localOrders;
 }
 
 // -------------------------------------------------------------
@@ -318,7 +645,7 @@ export async function loadCustomerOrders(userId: string | null | undefined): Pro
 
 function sanitizeTrackingNumbers(numbers: string[]): string[] {
   if (!Array.isArray(numbers)) return [];
-  return numbers.filter(n => {
+  return numbers.filter((n) => {
     if (!n || typeof n !== 'string') return false;
     const clean = n.trim();
     if (clean === '77391829310' || clean.includes('77391829310')) return false;
@@ -327,9 +654,13 @@ function sanitizeTrackingNumbers(numbers: string[]): string[] {
   });
 }
 
-export async function saveCustomerTrackingNumbers(userId: string | null | undefined, trackingNumbers: string[]): Promise<void> {
+export async function saveCustomerTrackingNumbers(
+  userId: string | null | undefined,
+  trackingNumbers: string[]
+): Promise<void> {
   const sanitized = sanitizeTrackingNumbers(trackingNumbers);
-  if (!userId) {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) {
     try {
       localStorage.setItem(GUEST_TRACKING_KEY, JSON.stringify(sanitized));
     } catch {}
@@ -337,42 +668,38 @@ export async function saveCustomerTrackingNumbers(userId: string | null | undefi
   }
 
   try {
-    localStorage.setItem(`printcore_user_tracking_${userId}`, JSON.stringify(sanitized));
+    localStorage.setItem(`printcore_user_tracking_${cleanUid}`, JSON.stringify(sanitized));
   } catch {}
 
   try {
-    const trackRef = doc(db, 'users', userId, 'userData', 'tracking');
+    const trackRef = doc(db, 'users', cleanUid, 'userData', 'tracking');
     await setDoc(trackRef, {
       id: 'tracking',
-      userId,
+      userId: cleanUid,
       type: 'tracking',
       data: JSON.stringify(sanitized),
       updatedAt: new Date().toISOString(),
     });
-    console.log(`🚚 Logistics tracking numbers saved to Firestore for user: ${userId}`);
   } catch (error) {
     console.warn('Firestore tracking save fallback:', error);
   }
 }
 
 export async function loadCustomerTrackingNumbers(userId: string | null | undefined): Promise<string[]> {
-  if (!userId) {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) {
     try {
       const raw = localStorage.getItem(GUEST_TRACKING_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        const cleaned = sanitizeTrackingNumbers(parsed);
-        if (cleaned.length !== parsed.length) {
-          localStorage.setItem(GUEST_TRACKING_KEY, JSON.stringify(cleaned));
-        }
-        return cleaned;
+        return sanitizeTrackingNumbers(parsed);
       }
     } catch {}
     return [];
   }
 
   try {
-    const trackRef = doc(db, 'users', userId, 'userData', 'tracking');
+    const trackRef = doc(db, 'users', cleanUid, 'userData', 'tracking');
     const snap = await getDoc(trackRef);
     if (snap.exists()) {
       const data = snap.data();
@@ -380,7 +707,7 @@ export async function loadCustomerTrackingNumbers(userId: string | null | undefi
         const parsed = JSON.parse(data.data);
         if (Array.isArray(parsed)) {
           const cleaned = sanitizeTrackingNumbers(parsed);
-          localStorage.setItem(`printcore_user_tracking_${userId}`, JSON.stringify(cleaned));
+          localStorage.setItem(`printcore_user_tracking_${cleanUid}`, JSON.stringify(cleaned));
           return cleaned;
         }
       }
@@ -390,14 +717,10 @@ export async function loadCustomerTrackingNumbers(userId: string | null | undefi
   }
 
   try {
-    const localRaw = localStorage.getItem(`printcore_user_tracking_${userId}`);
+    const localRaw = localStorage.getItem(`printcore_user_tracking_${cleanUid}`);
     if (localRaw) {
       const parsed = JSON.parse(localRaw);
-      const cleaned = sanitizeTrackingNumbers(parsed);
-      if (cleaned.length !== parsed.length) {
-        localStorage.setItem(`printcore_user_tracking_${userId}`, JSON.stringify(cleaned));
-      }
-      return cleaned;
+      return sanitizeTrackingNumbers(parsed);
     }
   } catch {}
 
@@ -405,7 +728,7 @@ export async function loadCustomerTrackingNumbers(userId: string | null | undefi
 }
 
 // -------------------------------------------------------------
-// 6. 客服與 AI 技術對話 (Chat Messages)
+// 6. 客服與 AI 技術對話 (Chat Messages - Strict Per-User Isolation)
 // -------------------------------------------------------------
 
 export interface DiagnosticSolution {
@@ -449,55 +772,63 @@ function cleanStoredMessages(msgs: ChatMessage[]): ChatMessage[] {
   });
 }
 
-export async function saveCustomerChatMessages(userId: string | null | undefined, messages: ChatMessage[]): Promise<void> {
-  const effectiveUid = userId || 'guest_chat';
-  const sanitized = cleanStoredMessages(messages);
-
-  // Always cache locally to both user key and global storage key for zero-loss recovery
+export function getStoredCustomerChatSync(userId?: string | null): ChatMessage[] {
+  const cleanUid = normalizeCustomerId(userId);
+  const storageKey = cleanUid ? `printcore_user_chat_${cleanUid}` : GUEST_CHAT_KEY;
   try {
-    const serialized = JSON.stringify(sanitized);
-    localStorage.setItem(`printcore_user_chat_${effectiveUid}`, serialized);
-    localStorage.setItem('goddog_ai_chat_history_v2', serialized);
+    const raw = localStorage.getItem(storageKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return cleanStoredMessages(parsed);
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export async function saveCustomerChatMessages(
+  userId: string | null | undefined,
+  messages: ChatMessage[]
+): Promise<void> {
+  const cleanUid = normalizeCustomerId(userId);
+  const sanitized = cleanStoredMessages(messages);
+  const storageKey = cleanUid ? `printcore_user_chat_${cleanUid}` : GUEST_CHAT_KEY;
+
+  // Strictly save only to this user's isolated key (never to a global shared key)
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(sanitized));
+    // Purge legacy global shared key so accounts never mix chat histories
+    localStorage.removeItem('goddog_ai_chat_history_v2');
   } catch {}
 
-  if (!userId) return;
+  if (!cleanUid) return;
 
-  // Persist to Firestore
+  // Persist to Firestore for logged-in user
   try {
-    const chatRef = doc(db, 'users', userId, 'userData', 'chat');
-    // Keep up to last 100 messages for storage quota efficiency
+    const chatRef = doc(db, 'users', cleanUid, 'userData', 'chat');
     const trimmed = sanitized.slice(-100);
     await setDoc(chatRef, {
       id: 'chat',
-      userId,
+      userId: cleanUid,
       type: 'chat',
       data: JSON.stringify(trimmed),
       updatedAt: new Date().toISOString(),
     });
-    console.log(`💬 Chat conversation saved to Firestore for user: ${userId} (${trimmed.length} msgs)`);
   } catch (error) {
     console.warn('Firestore chat save fallback:', error);
   }
 }
 
-export async function loadCustomerChatMessages(userId: string | null | undefined): Promise<ChatMessage[] | null> {
-  // 1. Try local cache first for instant synchronous/near-instant return
-  try {
-    const localUserKey = userId ? `printcore_user_chat_${userId}` : null;
-    const localRaw = (localUserKey ? localStorage.getItem(localUserKey) : null) || localStorage.getItem('goddog_ai_chat_history_v2');
-    if (localRaw) {
-      const parsed = JSON.parse(localRaw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const cleaned = cleanStoredMessages(parsed);
-        if (cleaned.length > 0) return cleaned;
-      }
-    }
-  } catch {}
+export async function loadCustomerChatMessages(
+  userId: string | null | undefined
+): Promise<ChatMessage[] | null> {
+  const cleanUid = normalizeCustomerId(userId);
+  const localMessages = getStoredCustomerChatSync(cleanUid);
 
-  // 2. If user is logged in, attempt Firestore load
-  if (userId) {
+  if (cleanUid) {
     try {
-      const chatRef = doc(db, 'users', userId, 'userData', 'chat');
+      const chatRef = doc(db, 'users', cleanUid, 'userData', 'chat');
       const snap = await getDoc(chatRef);
       if (snap.exists()) {
         const data = snap.data();
@@ -505,9 +836,8 @@ export async function loadCustomerChatMessages(userId: string | null | undefined
           const parsed = JSON.parse(data.data);
           if (Array.isArray(parsed) && parsed.length > 0) {
             const cleaned = cleanStoredMessages(parsed);
-            if (cleaned.length > 0) {
-              localStorage.setItem(`printcore_user_chat_${userId}`, JSON.stringify(cleaned));
-              localStorage.setItem('goddog_ai_chat_history_v2', JSON.stringify(cleaned));
+            if (cleaned.length >= localMessages.length && cleaned.length > 0) {
+              localStorage.setItem(`printcore_user_chat_${cleanUid}`, JSON.stringify(cleaned));
               return cleaned;
             }
           }
@@ -518,29 +848,34 @@ export async function loadCustomerChatMessages(userId: string | null | undefined
     }
   }
 
-  return null;
+  return localMessages.length > 0 ? localMessages : null;
 }
 
+// -------------------------------------------------------------
+// 7. 擴充會員數據 (Printers, Addresses, Coupons, Settings, Profile)
+// -------------------------------------------------------------
 
-// -------------------------------------------------------------
-// 7. 擴充會員數據 (Printers, Addresses, Coupons, Stats)
-// -------------------------------------------------------------
-export async function saveCustomerUserData(userId: string | null | undefined, collectionName: string, data: any): Promise<void> {
-  if (!userId) {
+export async function saveCustomerUserData(
+  userId: string | null | undefined,
+  collectionName: string,
+  data: any
+): Promise<void> {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) {
     try {
       localStorage.setItem(`printcore_user_${collectionName}_guest`, JSON.stringify(data));
     } catch {}
     return;
   }
   try {
-    localStorage.setItem(`printcore_user_${collectionName}_${userId}`, JSON.stringify(data));
+    localStorage.setItem(`printcore_user_${collectionName}_${cleanUid}`, JSON.stringify(data));
   } catch {}
-  
+
   try {
-    const ref = doc(db, 'users', userId, 'userData', collectionName);
+    const ref = doc(db, 'users', cleanUid, 'userData', collectionName);
     await setDoc(ref, {
       id: collectionName,
-      userId,
+      userId: cleanUid,
       type: collectionName,
       data: JSON.stringify(data),
       updatedAt: new Date().toISOString(),
@@ -550,48 +885,56 @@ export async function saveCustomerUserData(userId: string | null | undefined, co
   }
 }
 
-export async function loadCustomerUserData(userId: string | null | undefined, collectionName: string): Promise<any | null> {
-  const effectiveUid = userId || 'guest';
-  if (userId) {
+export async function loadCustomerUserData(
+  userId: string | null | undefined,
+  collectionName: string
+): Promise<any | null> {
+  const cleanUid = normalizeCustomerId(userId);
+  const effectiveKey = cleanUid
+    ? `printcore_user_${collectionName}_${cleanUid}`
+    : `printcore_user_${collectionName}_guest`;
+
+  let localData: any = null;
+  try {
+    const raw = localStorage.getItem(effectiveKey);
+    if (raw) localData = JSON.parse(raw);
+  } catch {}
+
+  if (cleanUid) {
     try {
-      const ref = doc(db, 'users', userId, 'userData', collectionName);
+      const ref = doc(db, 'users', cleanUid, 'userData', collectionName);
       const snap = await getDoc(ref);
       if (snap.exists()) {
         const data = snap.data();
         if (data?.data) {
           const parsed = JSON.parse(data.data);
-          localStorage.setItem(`printcore_user_${collectionName}_${effectiveUid}`, data.data);
+          localStorage.setItem(effectiveKey, data.data);
           return parsed;
         }
+      } else if (localData !== null) {
+        // Sync existing local data to Firestore
+        saveCustomerUserData(cleanUid, collectionName, localData).catch(() => {});
       }
     } catch (error) {
       console.warn(`Firestore ${collectionName} load fallback:`, error);
     }
   }
-  
-  try {
-    const raw = localStorage.getItem(`printcore_user_${collectionName}_${effectiveUid}`);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return null;
+
+  return localData;
 }
 
-/**
- * Persist and load customer profile document directly to /users/{userId}
- */
 /**
  * Strictly sanitizes customer profiles to purge any legacy mock/simulated subscription and delegation data
  */
 export function sanitizeCustomerProfile(profile: any): any {
   if (!profile || typeof profile !== 'object') return profile;
-  
+
   const cleaned = { ...profile };
 
-  // If user does not have an active subscription or plan is None, purge fake subscription info
   const hasGenuinePlan = Boolean(
-    cleaned.subscriptionPlan && 
-    cleaned.subscriptionPlan !== 'None' && 
-    cleaned.subscriptionStatus === 'active'
+    cleaned.subscriptionPlan &&
+      cleaned.subscriptionPlan !== 'None' &&
+      cleaned.subscriptionStatus === 'active'
   );
 
   if (!hasGenuinePlan) {
@@ -606,12 +949,16 @@ export function sanitizeCustomerProfile(profile: any): any {
     cleaned.autoRenew = false;
     cleaned.subscriptionHistory = [];
   } else if (Array.isArray(cleaned.subscriptionHistory)) {
-    // Purge known mock items from history even if plan is supposedly active
     cleaned.subscriptionHistory = cleaned.subscriptionHistory.filter((item: any) => {
       if (!item) return false;
       if (item.periodNo === 'P2609160012' || item.periodNo === 'P8839201948') return false;
-      if (typeof item.authCode === 'string' && (item.authCode === 'AUTH-524176' || item.authCode.startsWith('AUTH-MOCK'))) return false;
-      if (typeof item.invoiceNumber === 'string' && item.invoiceNumber === 'TW-202609-91971652') return false;
+      if (
+        typeof item.authCode === 'string' &&
+        (item.authCode === 'AUTH-524176' || item.authCode.startsWith('AUTH-MOCK'))
+      )
+        return false;
+      if (typeof item.invoiceNumber === 'string' && item.invoiceNumber === 'TW-202609-91971652')
+        return false;
       return true;
     });
   }
@@ -619,77 +966,168 @@ export function sanitizeCustomerProfile(profile: any): any {
   return cleaned;
 }
 
-export async function saveCustomerProfileDoc(userId: string, profile: any): Promise<void> {
-  if (!userId) return;
-  const sanitized = sanitizeCustomerProfile(profile);
+export function getStoredCustomerProfileSync(userId?: string | null): MemberProfile | null {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) return null;
+
+  // Check user-specific profile keys first
   try {
-    localStorage.setItem(`printcore_user_profile_${userId}`, JSON.stringify(sanitized));
+    const rawSpecific =
+      localStorage.getItem(`printcore_user_profile_${cleanUid}`) ||
+      localStorage.getItem(`printcore_user_profile_${cleanUid}_doc`);
+    if (rawSpecific) {
+      const parsed = JSON.parse(rawSpecific);
+      if (parsed && typeof parsed === 'object' && parsed.id === cleanUid) {
+        return sanitizeCustomerProfile(parsed);
+      }
+    }
+  } catch {}
+
+  // Fallback to active member key ONLY if its ID strictly matches cleanUid
+  try {
+    const rawActive = localStorage.getItem('printcore_member');
+    if (rawActive) {
+      const parsed = JSON.parse(rawActive);
+      if (parsed && typeof parsed === 'object' && parsed.id === cleanUid) {
+        return sanitizeCustomerProfile(parsed);
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+export async function saveCustomerProfileDoc(userId: string, profile: any): Promise<void> {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid || !profile) return;
+  const sanitized = sanitizeCustomerProfile({
+    ...profile,
+    id: cleanUid,
+  });
+
+  try {
+    localStorage.setItem(`printcore_user_profile_${cleanUid}`, JSON.stringify(sanitized));
   } catch {}
 
   try {
-    const userDocRef = doc(db, 'users', userId);
-    await setDoc(userDocRef, {
-      ...sanitized,
-      id: userId,
-      updatedAt: new Date().toISOString()
-    }, { merge: true });
+    const userDocRef = doc(db, 'users', cleanUid);
+    await setDoc(
+      userDocRef,
+      {
+        ...sanitized,
+        id: cleanUid,
+        email: sanitized.email || 'maker@gmail.com',
+        name: sanitized.name || '創客會員',
+        tier: sanitized.tier || 'Bronze',
+        points: typeof sanitized.points === 'number' && sanitized.points >= 0 ? sanitized.points : 0,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   } catch (error) {
     console.warn('Firestore profile save fallback:', error);
   }
 }
 
-export async function loadCustomerProfileDoc(userId: string, fallbackUser?: { email?: string | null; displayName?: string | null }): Promise<any> {
-  if (!userId) return null;
+export async function loadCustomerProfileDoc(
+  userId: string,
+  fallbackUser?: { email?: string | null; displayName?: string | null; points?: number; tier?: string }
+): Promise<MemberProfile | null> {
+  const cleanUid = normalizeCustomerId(userId);
+  if (!cleanUid) return null;
+
+  const localCached = getStoredCustomerProfileSync(cleanUid);
 
   try {
-    const userDocRef = doc(db, 'users', userId);
+    const userDocRef = doc(db, 'users', cleanUid);
     const snap = await getDoc(userDocRef);
-    if (snap.exists()) {
-      const data = sanitizeCustomerProfile(snap.data());
-      localStorage.setItem(`printcore_user_profile_${userId}`, JSON.stringify(data));
-      return data;
+
+    // Also check subcollection userData/profile in case extra fields were saved there
+    let subProfile: any = null;
+    try {
+      const subSnap = await getDoc(doc(db, 'users', cleanUid, 'userData', 'profile'));
+      if (subSnap.exists() && subSnap.data()?.data) {
+        subProfile = JSON.parse(subSnap.data().data);
+      }
+    } catch {}
+
+    if (snap.exists() || subProfile) {
+      const rootData = snap.exists() ? snap.data() : {};
+      const merged = sanitizeCustomerProfile({
+        ...(localCached || {}),
+        ...(subProfile || {}),
+        ...rootData,
+        id: cleanUid,
+        email: rootData.email || subProfile?.email || localCached?.email || fallbackUser?.email || '',
+        name:
+          rootData.name ||
+          subProfile?.name ||
+          localCached?.name ||
+          fallbackUser?.displayName ||
+          fallbackUser?.email?.split('@')[0] ||
+          '創客會員',
+        tier: rootData.tier || subProfile?.tier || localCached?.tier || fallbackUser?.tier || 'Bronze',
+        points:
+          typeof rootData.points === 'number'
+            ? Math.max(rootData.points, subProfile?.points || 0)
+            : typeof subProfile?.points === 'number'
+            ? subProfile.points
+            : typeof localCached?.points === 'number'
+            ? localCached.points
+            : 120,
+        coupons:
+          Array.isArray(subProfile?.coupons) && subProfile.coupons.length > 0
+            ? subProfile.coupons
+            : Array.isArray(rootData.coupons) && rootData.coupons.length > 0
+            ? rootData.coupons
+            : Array.isArray(localCached?.coupons)
+            ? localCached.coupons
+            : [],
+      });
+
+      localStorage.setItem(`printcore_user_profile_${cleanUid}`, JSON.stringify(merged));
+      return merged;
+    } else if (localCached) {
+      // Push local cached profile to Firestore
+      await saveCustomerProfileDoc(cleanUid, localCached);
+      return localCached;
     } else {
-      // Initialize a clean non-VIP profile for new user
-      const initialProfile = {
-        id: userId,
+      // Brand new user — initialize clean profile once
+      const initialProfile: MemberProfile = {
+        id: cleanUid,
         name: fallbackUser?.displayName || fallbackUser?.email?.split('@')[0] || '創客會員',
         email: fallbackUser?.email || '',
         phone: '',
-        tier: 'Bronze',
-        points: 0,
+        tier: (fallbackUser?.tier as any) || 'Bronze',
+        points: typeof fallbackUser?.points === 'number' ? fallbackUser.points : 120,
         totalSpent: 0,
         ordersCount: 0,
-        referralCode: `MAKER-${userId.substring(0, 6).toUpperCase()}`,
+        referralCode: `MAKER-${cleanUid.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()}`,
         birthday: '',
         subscriptionPlan: 'None',
         subscriptionStatus: 'inactive',
         autoRenew: false,
         subscriptionFrequency: '',
         subscriptionHistory: [],
-        createdAt: new Date().toISOString()
+        coupons: [],
       };
-      await setDoc(userDocRef, initialProfile);
-      localStorage.setItem(`printcore_user_profile_${userId}`, JSON.stringify(initialProfile));
+      await saveCustomerProfileDoc(cleanUid, initialProfile);
       return initialProfile;
     }
   } catch (error) {
     console.warn('Firestore load profile fallback:', error);
-    try {
-      const cached = localStorage.getItem(`printcore_user_profile_${userId}`);
-      if (cached) return sanitizeCustomerProfile(JSON.parse(cached));
-    } catch {}
+    if (localCached) return localCached;
   }
   return null;
 }
 
-/**
- * Persist, load, and clear recently viewed products with strict per-user isolation & cloud backup.
- * Guarantees that records are preserved, never mixed between users, and can be deleted individually or all at once.
- */
-export function getStoredRecentlyViewedSync(userId?: string | null): any[] {
-  const cleanUid = (userId && typeof userId === 'string' && userId.trim() !== '') ? userId.trim() : null;
+// -------------------------------------------------------------
+// 8. 最近瀏覽紀錄 (Recently Viewed - Strict Per-User Isolation)
+// -------------------------------------------------------------
 
-  // 1. Authenticated User: Read STRICTLY from the user's isolated storage
+export function getStoredRecentlyViewedSync(userId?: string | null): any[] {
+  const cleanUid = normalizeCustomerId(userId);
+
   if (cleanUid) {
     try {
       const rawUser = localStorage.getItem(`printcore_user_recent_${cleanUid}`);
@@ -705,7 +1143,6 @@ export function getStoredRecentlyViewedSync(userId?: string | null): any[] {
     return [];
   }
 
-  // 2. Guest User: Read STRICTLY from isolated guest storage (never contaminates member accounts)
   try {
     const rawGuest = localStorage.getItem('printcore_guest_recent');
     if (rawGuest) {
@@ -720,7 +1157,10 @@ export function getStoredRecentlyViewedSync(userId?: string | null): any[] {
   return [];
 }
 
-export async function saveCustomerRecentlyViewed(userId: string | null | undefined, product: any): Promise<void> {
+export async function saveCustomerRecentlyViewed(
+  userId: string | null | undefined,
+  product: any
+): Promise<void> {
   if (!product || !product.id) return;
 
   const viewItem = {
@@ -740,7 +1180,7 @@ export async function saveCustomerRecentlyViewed(userId: string | null | undefin
     viewedAt: new Date().toISOString(),
   };
 
-  const cleanUid = (userId && typeof userId === 'string' && userId.trim() !== '') ? userId.trim() : null;
+  const cleanUid = normalizeCustomerId(userId);
   const targetStorageKey = cleanUid ? `printcore_user_recent_${cleanUid}` : 'printcore_guest_recent';
 
   let currentList: any[] = [];
@@ -752,7 +1192,6 @@ export async function saveCustomerRecentlyViewed(userId: string | null | undefin
     }
   } catch {}
 
-  // Filter out the same product to move it to the very front (deduplicated)
   currentList = currentList.filter((p: any) => p && p.id !== viewItem.id);
   currentList.unshift(viewItem);
   if (currentList.length > 50) currentList = currentList.slice(0, 50);
@@ -763,48 +1202,43 @@ export async function saveCustomerRecentlyViewed(userId: string | null | undefin
     console.warn('Failed to update local recently viewed:', e);
   }
 
-  // Reactive event for instantaneous UI reflection
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('printcore_recently_viewed_updated', {
-      detail: { item: viewItem, list: currentList, userId: cleanUid }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('printcore_recently_viewed_updated', {
+        detail: { item: viewItem, list: currentList, userId: cleanUid },
+      })
+    );
   }
 
-  // Cloud Persistence to Firestore if logged in
   if (cleanUid) {
     try {
-      // 1. Save full history payload to users/{userId}/userData/recentlyViewed
       const ref = doc(db, 'users', cleanUid, 'userData', 'recentlyViewed');
-      setDoc(ref, {
-        id: 'recentlyViewed',
-        userId: cleanUid,
-        type: 'recentlyViewed',
-        data: JSON.stringify(currentList),
-        count: currentList.length,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch((e) => {
+      setDoc(
+        ref,
+        {
+          id: 'recentlyViewed',
+          userId: cleanUid,
+          type: 'recentlyViewed',
+          data: JSON.stringify(currentList),
+          count: currentList.length,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).catch((e) => {
         console.warn('Firestore recentlyViewed sync notice:', e);
       });
-
-      // 2. Also register count and last activity on root user profile doc
-      const userRef = doc(db, 'users', cleanUid);
-      setDoc(userRef, {
-        recentlyViewedCount: currentList.length,
-        lastViewedAt: viewItem.viewedAt,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch(() => {});
     } catch (e) {
       console.warn('Error syncing recently viewed to Firestore:', e);
     }
   }
 }
 
-/**
- * Delete a single item from the customer's browsing history
- */
-export async function deleteSingleCustomerRecentlyViewed(userId: string | null | undefined, productId: string): Promise<any[]> {
+export async function deleteSingleCustomerRecentlyViewed(
+  userId: string | null | undefined,
+  productId: string
+): Promise<any[]> {
   if (!productId) return [];
-  const cleanUid = (userId && typeof userId === 'string' && userId.trim() !== '') ? userId.trim() : null;
+  const cleanUid = normalizeCustomerId(userId);
   const targetStorageKey = cleanUid ? `printcore_user_recent_${cleanUid}` : 'printcore_guest_recent';
 
   let currentList: any[] = [];
@@ -822,48 +1256,45 @@ export async function deleteSingleCustomerRecentlyViewed(userId: string | null |
     localStorage.setItem(targetStorageKey, JSON.stringify(updatedList));
   } catch {}
 
-  // Sync to Firestore for authenticated user
   if (cleanUid) {
     try {
       const ref = doc(db, 'users', cleanUid, 'userData', 'recentlyViewed');
-      setDoc(ref, {
-        id: 'recentlyViewed',
-        userId: cleanUid,
-        type: 'recentlyViewed',
-        data: JSON.stringify(updatedList),
-        count: updatedList.length,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch(() => {});
-
-      const userRef = doc(db, 'users', cleanUid);
-      setDoc(userRef, {
-        recentlyViewedCount: updatedList.length,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch(() => {});
+      setDoc(
+        ref,
+        {
+          id: 'recentlyViewed',
+          userId: cleanUid,
+          type: 'recentlyViewed',
+          data: JSON.stringify(updatedList),
+          count: updatedList.length,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).catch(() => {});
     } catch (e) {
       console.warn('Failed to update Firestore after item deletion:', e);
     }
   }
 
-  // Dispatch global event for instant UI removal
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('printcore_recently_viewed_updated', {
-      detail: { removedId: productId, list: updatedList, userId: cleanUid }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('printcore_recently_viewed_updated', {
+        detail: { removedId: productId, list: updatedList, userId: cleanUid },
+      })
+    );
   }
 
   return updatedList;
 }
 
 export async function loadCustomerRecentlyViewed(userId: string | null | undefined): Promise<any[]> {
-  const cleanUid = (userId && typeof userId === 'string' && userId.trim() !== '') ? userId.trim() : null;
+  const cleanUid = normalizeCustomerId(userId);
   const localList = getStoredRecentlyViewedSync(cleanUid);
 
   if (!cleanUid) {
     return localList;
   }
 
-  // Fetch from Firestore
   try {
     const ref = doc(db, 'users', cleanUid, 'userData', 'recentlyViewed');
     const snap = await getDoc(ref);
@@ -872,13 +1303,14 @@ export async function loadCustomerRecentlyViewed(userId: string | null | undefin
       if (d?.data) {
         const parsed = JSON.parse(d.data);
         if (Array.isArray(parsed)) {
-          // If Firestore has newer or more complete data, update local storage
+          if (parsed.length === 0 && localList.length > 0) {
+            return localList;
+          }
           localStorage.setItem(`printcore_user_recent_${cleanUid}`, JSON.stringify(parsed));
           return parsed;
         }
       }
     } else if (localList.length > 0) {
-      // Local exists but Firestore empty: backup local to Firestore now
       await setDoc(ref, {
         id: 'recentlyViewed',
         userId: cleanUid,
@@ -896,11 +1328,10 @@ export async function loadCustomerRecentlyViewed(userId: string | null | undefin
 }
 
 export async function clearCustomerRecentlyViewed(userId: string | null | undefined): Promise<void> {
-  const cleanUid = (userId && typeof userId === 'string' && userId.trim() !== '') ? userId.trim() : null;
+  const cleanUid = normalizeCustomerId(userId);
   try {
     if (cleanUid) {
       localStorage.removeItem(`printcore_user_recent_${cleanUid}`);
-      // Clear in Firestore
       const ref = doc(db, 'users', cleanUid, 'userData', 'recentlyViewed');
       setDoc(ref, {
         id: 'recentlyViewed',
@@ -910,24 +1341,19 @@ export async function clearCustomerRecentlyViewed(userId: string | null | undefi
         count: 0,
         updatedAt: new Date().toISOString(),
       }).catch(() => {});
-
-      const userRef = doc(db, 'users', cleanUid);
-      setDoc(userRef, {
-        recentlyViewedCount: 0,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true }).catch(() => {});
     } else {
       localStorage.removeItem('printcore_guest_recent');
     }
-    // Clean up any legacy shared storage key to eliminate cross-account leakage
     localStorage.removeItem('printcore_recent_views_all');
   } catch (e) {
     console.warn('Failed to clear recently viewed:', e);
   }
 
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('printcore_recently_viewed_cleared', {
-      detail: { userId: cleanUid }
-    }));
+    window.dispatchEvent(
+      new CustomEvent('printcore_recently_viewed_cleared', {
+        detail: { userId: cleanUid },
+      })
+    );
   }
 }

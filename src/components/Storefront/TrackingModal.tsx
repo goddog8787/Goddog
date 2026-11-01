@@ -40,10 +40,12 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
   lang: propLang,
 }) => {
   const lang: LanguageCode = propLang || (typeof window !== 'undefined' ? (localStorage.getItem('printcore_lang') as LanguageCode) : null) || 'zh-TW';
-  // Strictly filter out any mock/simulated orders
+  // Strictly filter out any mock/simulated orders and isolate to the current userId
   const genuineOrders = useMemo(() => {
+    if (!userId || userId.startsWith('guest')) return [];
     return (orders || []).filter(o => 
       !isMockOrder(o) && 
+      ((o as any).userId === userId || !((o as any).userId)) &&
       (o.paymentStatus === 'paid' || o.isVerifiedByNewebPay) && 
       o.trackingNumber && 
       o.trackingNumber !== '77391829310' && 
@@ -51,7 +53,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
       !o.trackingNumber.startsWith('TEST') &&
       !o.trackingNumber.startsWith('MOCK')
     );
-  }, [orders]);
+  }, [orders, userId]);
 
   const cleanDefaultCode = (defaultTrackingNumber && defaultTrackingNumber !== '77391829310' && !defaultTrackingNumber.includes('77391829310'))
     ? defaultTrackingNumber
@@ -63,6 +65,12 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [savedNumbers, setSavedNumbers] = useState<string[]>([]);
+
+  useEffect(() => {
+    setInputCode(cleanDefaultCode);
+    setTrackingData(null);
+    setErrorMessage(null);
+  }, [userId, cleanDefaultCode]);
 
   // Load saved tracking numbers on open, purges any mock test numbers
   useEffect(() => {

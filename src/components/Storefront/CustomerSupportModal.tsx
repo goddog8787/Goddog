@@ -23,6 +23,8 @@ import {
 import { generateClientGeminiChat } from '../../lib/geminiClient';
 import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 
+  normalizeCustomerId,
+  getStoredCustomerChatSync,
   saveCustomerChatMessages, 
   loadCustomerChatMessages,
   ChatMessage,
@@ -191,26 +193,27 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   const [copiedParamId, setCopiedParamId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize messages from persistent storage or default
+  // Track which user ID's chat history is currently loaded so account switches never leak messages
+  const activeChatUserId = normalizeCustomerId(member?.id);
+  const loadedChatUserIdRef = useRef<string | null>(activeChatUserId);
+
+  // Initialize messages from isolated user-scoped storage or default welcome message
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const cleaned = parsed.filter((m: any) => {
-            if (!m || !m.text) return false;
-            const text = String(m.text);
-            return !(
-              text.includes('【Gemini 模型調度指示】') ||
-              text.includes('【Gemini 模型調度異常】') ||
-              text.includes('【Gemini 調度異常】') ||
-              text.includes('尚未偵測到 Google Gemini API Key') ||
-              text.includes('針對您詢問的')
-            );
-          });
-          if (cleaned.length > 0) return sanitizeChatOrder(cleaned);
-        }
+      const cached = getStoredCustomerChatSync(activeChatUserId);
+      if (Array.isArray(cached) && cached.length > 0) {
+        const cleaned = cached.filter((m: any) => {
+          if (!m || !m.text) return false;
+          const text = String(m.text);
+          return !(
+            text.includes('【Gemini 模型調度指示】') ||
+            text.includes('【Gemini 模型調度異常】') ||
+            text.includes('【Gemini 調度異常】') ||
+            text.includes('尚未偵測到 Google Gemini API Key') ||
+            text.includes('針對您詢問的')
+          );
+        });
+        if (cleaned.length > 0) return sanitizeChatOrder(cleaned);
       }
     } catch {
       // ignore JSON parse error
@@ -244,38 +247,51 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
   const currentModelObj = SUPPORTED_AI_MODELS.find((m) => m.id === selectedModel) || SUPPORTED_AI_MODELS[0];
 
-  // Load customer chat history once on mount or when member ID changes
+  // Immediately switch chat history when customer logs in, logs out, or switches account
+  useEffect(() => {
+    if (loadedChatUserIdRef.current !== activeChatUserId) {
+      loadedChatUserIdRef.current = activeChatUserId;
+      const syncCached = getStoredCustomerChatSync(activeChatUserId);
+      setMessages(syncCached.length > 0 ? sanitizeChatOrder(syncCached) : [DEFAULT_WELCOME_MESSAGE]);
+
+      loadCustomerChatMessages(activeChatUserId).then((loaded) => {
+        if (loadedChatUserIdRef.current === activeChatUserId) {
+          setMessages(loaded && loaded.length > 0 ? sanitizeChatOrder(loaded) : [DEFAULT_WELCOME_MESSAGE]);
+        }
+      });
+    }
+  }, [activeChatUserId]);
+
+  // Load customer chat history when modal opens or initialPrompt is provided
   const initialLoadedRef = useRef(false);
   useEffect(() => {
     if (isOpen && !initialLoadedRef.current) {
       initialLoadedRef.current = true;
-      loadCustomerChatMessages(member?.id).then((loaded) => {
-        if (loaded && loaded.length > 0) {
-          setMessages(sanitizeChatOrder(loaded));
+      loadCustomerChatMessages(activeChatUserId).then((loaded) => {
+        const baseMessages = (loaded && loaded.length > 0) ? sanitizeChatOrder(loaded) : [DEFAULT_WELCOME_MESSAGE];
+        if (loadedChatUserIdRef.current === activeChatUserId) {
+          setMessages(baseMessages);
         }
         
         // If there is an initial prompt from another modal (e.g. AI Advisor)
         if (initialPrompt && initialPrompt.trim()) {
-          // We pass messages state to triggerPromptExecution to ensure it uses the latest loaded ones
-          const baseMessages = (loaded && loaded.length > 0) ? sanitizeChatOrder(loaded) : [DEFAULT_WELCOME_MESSAGE];
           triggerPromptExecution(initialPrompt.trim(), baseMessages);
         }
       });
     }
-    // We don't reset initialLoadedRef.current on !isOpen anymore to keep the history during the session
-  }, [isOpen, member?.id]);
+  }, [isOpen, activeChatUserId, initialPrompt]);
 
-  // Handle member ID changes - if user logs in/out, we should allow a reload
+  // Handle member ID changes - if user logs in/out, allow a reload on next open
   useEffect(() => {
     initialLoadedRef.current = false;
-  }, [member?.id]);
+  }, [activeChatUserId]);
 
-  // Persist messages whenever they change
+  // Persist messages ONLY to the currently loaded customer's isolated storage
   useEffect(() => {
-    if (messages && messages.length > 0) {
-      saveCustomerChatMessages(member?.id, messages);
+    if (messages && messages.length > 0 && loadedChatUserIdRef.current === activeChatUserId) {
+      saveCustomerChatMessages(activeChatUserId, messages);
     }
-  }, [messages, member?.id]);
+  }, [messages, activeChatUserId]);
 
   // Keep viewing product updated if opened with one
   useEffect(() => {

@@ -103,6 +103,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [shippingAddress, setShippingAddress] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Sync recipient fields when customer switches account or logs out so previous customer info never leaks
+  useEffect(() => {
+    setCustomerName(member?.name && isValidCustomerName(member.name) ? member.name : '');
+    setCustomerEmail(member?.email || '');
+    setCustomerPhone(member?.phone && isValidPhone(member.phone) ? member.phone : '');
+  }, [member?.id, member?.name, member?.email, member?.phone]);
+
   // Invoice
   const [invoiceType, setInvoiceType] = useState<'cloud' | 'mobile_barcode' | 'tax_id'>('cloud');
   const [invoiceCarrierValue, setInvoiceCarrierValue] = useState('');
@@ -229,6 +236,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     try {
       // 儲存待付款訂單資訊，供藍新跳轉回來時完成建立訂單與清空購物車
       const pendingOrderInfo = {
+        userId: (member?.id && !member.id.startsWith('guest')) ? member.id : (auth.currentUser?.uid || 'guest'),
         customerName,
         customerEmail,
         customerPhone,
@@ -239,6 +247,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         shippingFee,
         paymentFee,
         discount,
+        couponCode: appliedCoupon?.code || '',
+        pointsToUse,
         total,
         paymentGateway: methodToUse,
         invoiceType,

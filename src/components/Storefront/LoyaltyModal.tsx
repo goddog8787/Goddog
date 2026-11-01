@@ -59,11 +59,21 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
   const nextTierNeeded = 20000;
   const progressToNextTier = Math.min(100, Math.round(((member?.totalSpent || 0) / nextTierNeeded) * 100));
 
-  // Filter orders for this customer if user ID exists
-  const customerOrders = orders.filter(
-    (o) => !o.customerEmail || o.customerEmail.toLowerCase() === (member?.email || "").toLowerCase() || (o as any).userId === member?.id
-  );
-  const displayOrders = customerOrders.length > 0 ? customerOrders : orders;
+  // Strictly filter orders for this customer only — never fall back to other customers' orders
+  const displayOrders = orders.filter((o) => {
+    const memberId = (member?.id || '').trim();
+    const memberEmail = (member?.email || '').trim().toLowerCase();
+    const orderUid = String((o as any).userId || '').trim();
+    const orderEmail = (o.customerEmail || '').trim().toLowerCase();
+
+    if (memberId && !memberId.startsWith('guest') && orderUid && orderUid === memberId) {
+      return true;
+    }
+    if (memberEmail && orderEmail && orderEmail === memberEmail) {
+      return true;
+    }
+    return false;
+  });
 
   if (!isOpen) return null;
 

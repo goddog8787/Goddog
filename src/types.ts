@@ -343,6 +343,25 @@ export interface MemberProfile {
     type: 'initial' | 'recurring';
     pointsAwarded: number;
   }[];
+  coupons?: {
+    id: number | string;
+    name: string;
+    discount: number;
+    expiry: string;
+    code?: string;
+  }[];
+  referrals?: number;
+  referralEarnings?: number;
+  referredBy?: string;
+  settings?: {
+    orderNotif?: boolean;
+    promoNotif?: boolean;
+  };
+  reviewsCount?: number;
+  earlyBird?: boolean;
+  referralsCount?: number;
+  loyalFan?: boolean;
+  sharedParamsCount?: number;
 }
 
 export interface AnalyticsData {

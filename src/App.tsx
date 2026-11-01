@@ -92,19 +92,32 @@ import {
   auth
 } from './lib/firebase';
 import {
+  normalizeCustomerId,
   getStoredCustomerSession,
   saveStoredCustomerSession,
   clearStoredCustomerSession,
+  getStoredCustomerCartSync,
+  getStoredCustomerWishlistSync,
+  getStoredCustomerComparisonSync,
+  getStoredCustomerProfileSync,
+  getStoredCustomerOrdersSync,
+  mergeCartItems,
+  clearGuestCartStorage,
+  clearGuestWishlistStorage,
   saveCustomerCart,
   loadCustomerCart,
   saveCustomerWishlist,
   loadCustomerWishlist,
+  saveCustomerComparison,
+  loadCustomerComparison,
   saveCustomerOrderRecord,
   loadCustomerOrders,
   saveCustomerTrackingNumbers,
   loadCustomerTrackingNumbers,
   saveCustomerUserData,
   loadCustomerUserData,
+  loadCustomerProfileDoc,
+  saveCustomerProfileDoc,
   sanitizeCustomerProfile,
   saveCustomerRecentlyViewed,
   loadCustomerRecentlyViewed,
@@ -429,28 +442,56 @@ export default function App() {
   const [member, setMember] = useState<MemberProfile>(() => {
     try {
       const session = getStoredCustomerSession();
-      if (!session || !session.isLoggedIn || !session.id || session.id.startsWith('guest_')) {
+      const cleanSessionId = normalizeCustomerId(session?.id);
+      if (!session || !session.isLoggedIn || !cleanSessionId) {
         return INITIAL_MEMBER;
       }
-      const saved = localStorage.getItem('printcore_member');
-      if (saved && saved !== 'null' && saved !== 'undefined') {
-         const parsed = JSON.parse(saved);
-         if (parsed && typeof parsed === 'object' && parsed.id && !parsed.id.startsWith('guest_')) {
-           return sanitizeCustomerProfile(parsed);
-         }
+      const userScopedProfile = getStoredCustomerProfileSync(cleanSessionId);
+      if (userScopedProfile && userScopedProfile.id === cleanSessionId) {
+        return userScopedProfile;
       }
+      return sanitizeCustomerProfile({
+        ...INITIAL_MEMBER,
+        id: cleanSessionId,
+        name: session.name || '',
+        email: session.email || '',
+        tier: session.tier || 'Silver',
+        points: typeof session.points === 'number' ? session.points : 100,
+        totalSpent: typeof session.totalSpent === 'number' ? session.totalSpent : 0,
+      });
     } catch {}
     return INITIAL_MEMBER;
   });
 
-  
+  // Track which customer ID has completed hydration so login/logout transitions never overwrite saved profile/cart
+  const hydratedUserIdRef = React.useRef<string | null>(
+    (() => {
+      const session = getStoredCustomerSession();
+      return session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
+    })()
+  );
+
   useEffect(() => {
+    const cleanId = normalizeCustomerId(member?.id);
+    if (!cleanId) return;
+    // Only persist member profile changes when this exact user is the active hydrated user
+    if (hydratedUserIdRef.current !== cleanId) return;
+
     const sanitized = sanitizeCustomerProfile(member);
-    localStorage.setItem('printcore_member', JSON.stringify(sanitized));
-    if (sanitized?.id) {
-      // Sync member profile back to Firestore using saveCustomerUserData
-      saveCustomerUserData(sanitized.id, 'profile', sanitized).catch(console.warn);
-    }
+    try {
+      localStorage.setItem('printcore_member', JSON.stringify(sanitized));
+      localStorage.setItem(`printcore_user_profile_${cleanId}`, JSON.stringify(sanitized));
+    } catch {}
+    saveStoredCustomerSession({
+      id: cleanId,
+      name: sanitized.name,
+      email: sanitized.email,
+      tier: sanitized.tier,
+      points: sanitized.points,
+      totalSpent: sanitized.totalSpent || 0,
+      isLoggedIn: true,
+    });
+    saveCustomerProfileDoc(cleanId, sanitized).catch(console.warn);
   }, [member]);
 
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -477,8 +518,16 @@ export default function App() {
 
   const analytics = useMemo(() => computeRealAnalytics(orders, products), [orders, products]);
 
-  // Cart State
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  // Cart State: Synchronously initialize from active customer's isolated storage so items never vanish on refresh/re-login
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    try {
+      const session = getStoredCustomerSession();
+      const cleanSessionId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
+      return getStoredCustomerCartSync(cleanSessionId);
+    } catch {
+      return [];
+    }
+  });
 
 
   // Product Filter and Search in Storefront
@@ -537,26 +586,38 @@ export default function App() {
   const [isRecycleOpen, setIsRecycleOpen] = useState(false);
   const [comparisonIds, setComparisonIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('printcore_comparison_ids');
-      return saved ? JSON.parse(saved) : [];
+      const session = getStoredCustomerSession();
+      const cleanSessionId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
+      return getStoredCustomerComparisonSync(cleanSessionId);
     } catch {
       return [];
     }
   });
-  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
+  const [wishlistIds, setWishlistIds] = useState<string[]>(() => {
+    try {
+      const session = getStoredCustomerSession();
+      const cleanSessionId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
+      return getStoredCustomerWishlistSync(cleanSessionId);
+    } catch {
+      return [];
+    }
+  });
 
   const handleToggleWishlist = (id: string) => {
     setWishlistIds((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+      saveCustomerWishlist(activeUid, next, { explicitClear: next.length === 0 }).catch(console.warn);
       return next;
     });
   };
 
   const handleToggleCompare = (id: string) => {
     setComparisonIds((prev) => {
+      const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
       if (prev.includes(id)) {
         const next = prev.filter((x) => x !== id);
-        localStorage.setItem('printcore_comparison_ids', JSON.stringify(next));
+        saveCustomerComparison(activeUid, next).catch(console.warn);
         return next;
       }
       if (prev.length >= 4) {
@@ -564,7 +625,7 @@ export default function App() {
         return prev;
       }
       const next = [...prev, id];
-      localStorage.setItem('printcore_comparison_ids', JSON.stringify(next));
+      saveCustomerComparison(activeUid, next).catch(console.warn);
       return next;
     });
   };
@@ -799,29 +860,32 @@ export default function App() {
               invoiceNumber: `TW-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${String(orderId).replace(/\D/g, '').slice(-8) || '00000001'}`,
               invoiceType: pending?.invoiceType || 'cloud',
               invoiceCarrierValue: pending?.invoiceCarrierValue || '',
-              userId: member?.id || 'guest',
+              userId: pending?.userId || normalizeCustomerId(member?.id) || 'guest',
               isVerifiedByNewebPay: true,
               tradeNo: verifiedTradeNo,
               payTime: verifiedPayTime,
             };
 
+            const ownerUid = normalizeCustomerId(newOrder.userId);
             setOrders(prev => {
               // Avoid duplicates
               if (prev.some(o => o.orderNumber === orderId)) return prev;
               return [newOrder, ...prev];
             });
+            saveCustomerOrderRecord(newOrder, ownerUid).catch(console.warn);
 
             // 成功入帳後才扣除購物車
             setCartItems([]);
+            saveCustomerCart(ownerUid, [], { explicitClear: true }).catch(console.warn);
             localStorage.removeItem('printcore_pending_order');
 
             // 會員更新累計點數與消費
-            if (member && member.id) {
+            if (ownerUid) {
               setMember(prev => ({
                 ...prev,
-                points: prev.points + newOrder.pointsEarned,
-                totalSpent: prev.totalSpent + newOrder.total,
-                ordersCount: prev.ordersCount + 1,
+                points: (prev?.points || 0) + newOrder.pointsEarned - (newOrder.pointsDeduction || 0),
+                totalSpent: (prev?.totalSpent || 0) + newOrder.total,
+                ordersCount: (prev?.ordersCount || 0) + 1,
               }));
             }
 
@@ -926,58 +990,130 @@ export default function App() {
     }
   }, [location.search, navigate, member?.id]);
 
-  // Synchronize user cart, wishlist, orders, and tracking from Firestore
-  const syncUserData = async (userId: string, profile?: any) => {
-    if (!userId) return;
+  // Guard against concurrent/duplicate syncUserData invocations for the same customer
+  const syncingUserIdRef = React.useRef<string | null>(null);
+
+  const resolveActiveCustomerId = (): string | null => {
+    if (!isLoggedIn) return null;
+    return (
+      normalizeCustomerId(member?.id) ||
+      normalizeCustomerId(hydratedUserIdRef.current) ||
+      normalizeCustomerId(auth.currentUser?.uid) ||
+      normalizeCustomerId(getStoredCustomerSession()?.id)
+    );
+  };
+
+  // Synchronize user cart, wishlist, comparison, orders, tracking, and profile from user-scoped cache + Firestore
+  const syncUserData = async (rawUserId: string, fallbackProfile?: any) => {
+    const cleanUserId = normalizeCustomerId(rawUserId);
+    if (!cleanUserId) return;
+
+    // Prevent concurrent duplicate hydration (e.g., AuthModal.onLoginSuccess + Firebase subscribeToAuth firing together)
+    if (syncingUserIdRef.current === cleanUserId) {
+      return;
+    }
+    syncingUserIdRef.current = cleanUserId;
+    hydratedUserIdRef.current = cleanUserId;
+
     setIsSyncingUserData(true);
     try {
-      // 1. Cloud Cart
-      const cloudCart = await loadCustomerCart(userId);
-      if (cloudCart && cloudCart.length > 0) {
-        setCartItems(cloudCart);
+      // Capture and IMMEDIATELY clear any items added while browsing as a guest before login
+      // so they can only ever be merged into the customer's cart ONCE.
+      const guestCartBeforeLogin = getStoredCustomerCartSync(null);
+      if (guestCartBeforeLogin.length > 0) {
+        clearGuestCartStorage();
       }
-      // 2. Cloud Wishlist
-      const cloudWishlist = await loadCustomerWishlist(userId);
-      if (cloudWishlist && cloudWishlist.length > 0) {
-        setWishlistIds(cloudWishlist);
-      }
-      // 3. Cloud Orders / Purchase records
-      const cloudOrders = await loadCustomerOrders(userId);
-      if (cloudOrders && cloudOrders.length > 0) {
-        setOrders(cloudOrders);
-      }
-      // 4. Logistics tracking
-      const cloudTracking = await loadCustomerTrackingNumbers(userId);
-      if (cloudTracking && cloudTracking.length > 0) {
-        const cleanTrack = cloudTracking.find(t => t && t !== '77391829310' && !t.includes('77391829310') && !t.startsWith('TEST') && !t.startsWith('MOCK'));
-        if (cleanTrack) {
-          setTrackingNumberInput(cleanTrack);
-        }
-      }
-      
-      // 5. Cloud Profile (Coupons, Points, Referrals)
-      const cloudProfile = await loadCustomerUserData(userId, 'profile');
-      
-      // Also fetch the root user document for referrals and latest points
-      let rootProfile: any = {};
-      try {
-        const { getDoc, doc } = await import('firebase/firestore');
-        const { db } = await import('./lib/firebase');
-        const rootSnap = await getDoc(doc(db, 'users', userId));
-        if(rootSnap.exists()) {
-           rootProfile = rootSnap.data();
-        }
-      } catch(e) {}
-      
-      const merged = { ...cloudProfile, ...rootProfile, id: userId };
-      
-      if (cloudProfile || rootProfile.id) {
-        setMember(prev => ({ ...prev, ...merged }));
+      const guestWishlistBeforeLogin = getStoredCustomerWishlistSync(null);
+      if (guestWishlistBeforeLogin.length > 0) {
+        clearGuestWishlistStorage();
       }
 
-      // 6. Cloud Recently Viewed (Restore user-isolated browsing history)
+      // Instant synchronous hydration from user-scoped localStorage so UI updates in 0ms
+      const cachedCart = getStoredCustomerCartSync(cleanUserId);
+      const previewCart =
+        guestCartBeforeLogin.length > 0 ? mergeCartItems(cachedCart, guestCartBeforeLogin) : cachedCart;
+      setCartItems(previewCart);
+
+      const cachedWishlist = getStoredCustomerWishlistSync(cleanUserId);
+      const initialMergedWishlist = Array.from(new Set([...cachedWishlist, ...guestWishlistBeforeLogin]));
+      setWishlistIds(initialMergedWishlist);
+
+      const cachedComparison = getStoredCustomerComparisonSync(cleanUserId);
+      setComparisonIds(cachedComparison);
+
+      const cachedProfile = getStoredCustomerProfileSync(cleanUserId);
+      if (cachedProfile) {
+        setMember(cachedProfile);
+      }
+
+      // 1. Reconcile Cloud & Local Cart
+      // IMPORTANT: loadCustomerCart(cleanUserId) already reconciles Firestore and localUserCart by timestamp.
+      // NEVER merge cloudOrLocalCart with cachedCart (they are the same user's cart, which would double quantities!).
+      // Only merge with guestCartBeforeLogin if the user actually had guest items before logging in.
+      const authoritativeUserCart = await loadCustomerCart(cleanUserId);
+      const finalCart =
+        guestCartBeforeLogin.length > 0
+          ? mergeCartItems(authoritativeUserCart, guestCartBeforeLogin)
+          : authoritativeUserCart;
+      setCartItems(finalCart);
+      if (guestCartBeforeLogin.length > 0 && finalCart.length > 0) {
+        await saveCustomerCart(cleanUserId, finalCart);
+      }
+
+      // 2. Reconcile Cloud & Local Wishlist
+      const cloudOrLocalWishlist = await loadCustomerWishlist(cleanUserId);
+      const finalWishlist = Array.from(new Set([...cloudOrLocalWishlist, ...initialMergedWishlist]));
+      setWishlistIds(finalWishlist);
+      if (finalWishlist.length > 0) {
+        await saveCustomerWishlist(cleanUserId, finalWishlist);
+      }
+
+      // 3. Reconcile Cloud & Local Comparison List
+      const cloudOrLocalCompare = await loadCustomerComparison(cleanUserId);
+      setComparisonIds(cloudOrLocalCompare);
+
+      // 4. Reconcile Cloud & Local Orders for this Customer
+      const customerOrders = await loadCustomerOrders(cleanUserId);
+      if (customerOrders && customerOrders.length > 0) {
+        setOrders((prev) => {
+          const map = new Map<string, Order>();
+          customerOrders.forEach((o) => map.set(o.orderNumber || o.id, o));
+          prev.forEach((o) => {
+            const key = o.orderNumber || o.id;
+            if (!map.has(key)) map.set(key, o);
+          });
+          return Array.from(map.values());
+        });
+      }
+
+      // 5. Logistics tracking numbers for this Customer
+      const cloudTracking = await loadCustomerTrackingNumbers(cleanUserId);
+      if (cloudTracking && cloudTracking.length > 0) {
+        const cleanTrack = cloudTracking.find(
+          (t) => t && t !== '77391829310' && !t.includes('77391829310') && !t.startsWith('TEST') && !t.startsWith('MOCK')
+        );
+        setTrackingNumberInput(cleanTrack || '');
+      } else {
+        setTrackingNumberInput('');
+      }
+
+      // 6. Reconcile Full Customer Profile (Points, Tier, Coupons, Referrals, Settings)
+      const fullProfile = await loadCustomerProfileDoc(cleanUserId, fallbackProfile);
+      hydratedUserIdRef.current = cleanUserId;
+      setMember(fullProfile);
+      saveStoredCustomerSession({
+        id: cleanUserId,
+        name: fullProfile.name,
+        email: fullProfile.email,
+        tier: fullProfile.tier,
+        points: fullProfile.points,
+        totalSpent: fullProfile.totalSpent || 0,
+        isLoggedIn: true,
+      });
+
+      // 7. Cloud Recently Viewed (Restore user-isolated browsing history)
       try {
-        const cloudViews = await loadCustomerRecentlyViewed(userId);
+        const cloudViews = await loadCustomerRecentlyViewed(cleanUserId);
         if (cloudViews && Array.isArray(cloudViews)) {
           setRecentlyViewedCount(cloudViews.length);
         }
@@ -987,11 +1123,13 @@ export default function App() {
 
       setToastNotification({
         type: 'success',
-        message: `☁️ 歡迎回來！已為您同步【${profile?.name || '會員'}】的雲端購物車、收藏與訂單紀錄！`,
+        message: `☁️ 歡迎回來！已為您同步【${fullProfile.name || fallbackProfile?.name || '會員'}】的專屬購物車、收藏與會員資料！`,
       });
     } catch (e) {
       console.warn('Customer cloud data sync fallback:', e);
+      hydratedUserIdRef.current = cleanUserId;
     } finally {
+      syncingUserIdRef.current = null;
       setIsSyncingUserData(false);
     }
   };
@@ -999,50 +1137,46 @@ export default function App() {
   // Restore stored session on mount or load guest state
   useEffect(() => {
     const session = getStoredCustomerSession();
-    if (session && session.id && session.isLoggedIn) {
+    const cleanId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
+    if (session && cleanId) {
       setIsLoggedIn(true);
-      setMember((prev) => ({
-        ...(prev || {}),
-        id: session.id,
-        name: session.name || prev?.name || '',
-        email: session.email || prev?.email || '',
-        tier: session.tier || prev?.tier || 'Silver',
-        points: session.points !== undefined ? session.points : (prev?.points || 0),
-        totalSpent: session.totalSpent !== undefined ? session.totalSpent : (prev?.totalSpent || 0),
-      }));
-      syncUserData(session.id, session);
+      syncUserData(cleanId, session);
     } else {
-      // 純淨訪客體驗：未登入時，購物車與收藏列表僅依賴暫時性的 memory state，不從 localStorage 載入
-      setCartItems([]);
-      setWishlistIds([]);
+      hydratedUserIdRef.current = null;
+      syncingUserIdRef.current = null;
+      setIsLoggedIn(false);
+      setCartItems(getStoredCustomerCartSync(null));
+      setWishlistIds(getStoredCustomerWishlistSync(null));
+      setComparisonIds(getStoredCustomerComparisonSync(null));
     }
   }, []);
 
-  // Sync cart changes to Firestore & local storage
-  useEffect(() => {
-    saveCustomerCart(isLoggedIn ? member?.id : null, cartItems);
-  }, [cartItems, isLoggedIn, member?.id]);
-
-  // Sync wishlist changes to Firestore & local storage
-  useEffect(() => {
-    saveCustomerWishlist(isLoggedIn ? member?.id : null, wishlistIds);
-  }, [wishlistIds, isLoggedIn, member?.id]);
-
-  // Handle customer logout
+  // Handle customer logout: strictly detach active customer ID BEFORE clearing in-memory UI state so user data is never wiped
   const handleLogout = async () => {
+    // 1. Detach hydrated user reference immediately so no effect writes empty state to the user's storage
+    hydratedUserIdRef.current = null;
+    syncingUserIdRef.current = null;
+
     try {
       await logOut();
     } catch {}
+
     clearStoredCustomerSession();
-    setIsLoggedIn(false);
-    setMember(INITIAL_MEMBER);
+    clearGuestCartStorage();
+    clearGuestWishlistStorage();
     try {
       localStorage.removeItem('printcore_member');
       localStorage.removeItem('printcore_active_customer');
     } catch {}
-    // 純淨訪客體驗：登出時清空購物車與收藏列表，並切換至訪客獨立瀏覽歷史
+
+    // 2. Reset UI state to clean guest view (customer's saved cart/wishlist/profile remain safely stored under their UID)
+    setIsLoggedIn(false);
+    setMember(INITIAL_MEMBER);
     setCartItems([]);
     setWishlistIds([]);
+    setComparisonIds([]);
+    setTrackingNumberInput('');
+
     const guestViews = getStoredRecentlyViewedSync(null);
     setRecentlyViewedCount(guestViews.length);
     if (typeof window !== 'undefined') {
@@ -1052,35 +1186,32 @@ export default function App() {
     }
     setToastNotification({
       type: 'info',
-      message: '您已安全登出會員帳號。',
+      message: '您已安全登出會員帳號，您的購物車與個人資料已安全保存，下次登入將自動恢復。',
     });
   };
 
   // Sync auth state with Firebase
   useEffect(() => {
     const unsubscribe = subscribeToAuth((firebaseUser) => {
-      if (firebaseUser) {
+      const cleanUid = normalizeCustomerId(firebaseUser?.uid);
+      if (firebaseUser && cleanUid) {
         setIsLoggedIn(true);
-        const updatedMember = {
-          ...member,
-          id: firebaseUser.uid,
-          name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || member?.name || '',
-          email: firebaseUser.email || member?.email || '',
+        const existingProfile = getStoredCustomerProfileSync(cleanUid);
+        const fallbackProfile = {
+          ...(existingProfile || {}),
+          id: cleanUid,
+          name: firebaseUser.displayName || existingProfile?.name || firebaseUser.email?.split('@')[0] || '',
+          email: firebaseUser.email || existingProfile?.email || '',
         };
-        setMember(updatedMember);
-        saveStoredCustomerSession({
-          id: firebaseUser.uid,
-          name: updatedMember.name,
-          email: updatedMember.email,
-          tier: updatedMember.tier,
-          points: updatedMember.points,
-          totalSpent: updatedMember.totalSpent,
-          isLoggedIn: true,
-        });
-        syncUserData(firebaseUser.uid, updatedMember);
+        if (hydratedUserIdRef.current !== cleanUid && syncingUserIdRef.current !== cleanUid) {
+          syncUserData(cleanUid, fallbackProfile);
+        }
       } else {
         const session = getStoredCustomerSession();
-        if (!session || !session.isLoggedIn || !session.id || session.id.startsWith('guest_')) {
+        const cleanSessionId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
+        if (!cleanSessionId) {
+          hydratedUserIdRef.current = null;
+          syncingUserIdRef.current = null;
           setIsLoggedIn(false);
           setMember(INITIAL_MEMBER);
         }
@@ -1093,6 +1224,10 @@ export default function App() {
 
   // Cart operations
   const [toastMsg, setToastMsg] = useState<{ id: number, text: string } | null>(null);
+  const cartItemsRef = React.useRef<CartItem[]>(cartItems);
+  useEffect(() => {
+    cartItemsRef.current = cartItems;
+  }, [cartItems]);
 
   const handleAddToCart = (
     product: FilamentProduct,
@@ -1100,21 +1235,27 @@ export default function App() {
     diameter: '1.75mm' | '2.85mm',
     quantity: number = 1
   ) => {
-    setCartItems((prev) => {
-      const existingIdx = prev.findIndex(
-        (item) =>
-          item.product.id === product.id &&
-          item.selectedColor.name === color.name &&
-          item.selectedDiameter === diameter
-      );
+    const baseCart = cartItemsRef.current;
+    const existingIdx = baseCart.findIndex(
+      (item) =>
+        item.product.id === product.id &&
+        item.selectedColor.name === color.name &&
+        item.selectedDiameter === diameter
+    );
 
-      if (existingIdx > -1) {
-        const updated = [...prev];
-        updated[existingIdx].quantity += quantity;
-        return updated;
-      }
-      return [...prev, { product, selectedColor: color, selectedDiameter: diameter, quantity }];
-    });
+    let updated: CartItem[];
+    if (existingIdx > -1) {
+      updated = baseCart.map((item, idx) =>
+        idx === existingIdx ? { ...item, quantity: item.quantity + quantity } : item
+      );
+    } else {
+      updated = [...baseCart, { product, selectedColor: color, selectedDiameter: diameter, quantity }];
+    }
+
+    cartItemsRef.current = updated;
+    setCartItems(updated);
+    const activeUid = resolveActiveCustomerId();
+    saveCustomerCart(activeUid, updated).catch(console.warn);
     
     // Telemetry: record genuine add-to-cart metric
     recordRealAddToCart();
@@ -1132,15 +1273,21 @@ export default function App() {
       handleRemoveCartItem(index);
       return;
     }
-    setCartItems((prev) => {
-      const updated = [...prev];
-      updated[index].quantity = newQty;
-      return updated;
-    });
+    const updated = cartItemsRef.current.map((item, idx) =>
+      idx === index ? { ...item, quantity: newQty } : item
+    );
+    cartItemsRef.current = updated;
+    setCartItems(updated);
+    const activeUid = resolveActiveCustomerId();
+    saveCustomerCart(activeUid, updated).catch(console.warn);
   };
 
   const handleRemoveCartItem = (index: number) => {
-    setCartItems((prev) => prev.filter((_, idx) => idx !== index));
+    const updated = cartItemsRef.current.filter((_, idx) => idx !== index);
+    cartItemsRef.current = updated;
+    setCartItems(updated);
+    const activeUid = resolveActiveCustomerId();
+    saveCustomerCart(activeUid, updated, { explicitClear: updated.length === 0 }).catch(console.warn);
   };
 
   const handleProceedCheckout = (pointsUsed: number) => {
@@ -1162,12 +1309,34 @@ export default function App() {
     setIsCheckoutOpen(true);
   };
 
+  // Strictly isolated orders belonging ONLY to the currently logged-in customer
+  const currentCustomerOrders = useMemo(() => {
+    if (!isLoggedIn) return [];
+    const cleanUid = normalizeCustomerId(member?.id);
+    const cleanEmail = (member?.email || '').trim().toLowerCase();
+    if (!cleanUid && !cleanEmail) return [];
+
+    return orders.filter((o) => {
+      if (isMockOrder(o)) return false;
+      const orderUid = normalizeCustomerId((o as any).userId);
+      const orderEmail = (o.customerEmail || '').trim().toLowerCase();
+      if (cleanUid && orderUid && orderUid === cleanUid) return true;
+      if (cleanEmail && orderEmail && orderEmail === cleanEmail) return true;
+      return false;
+    });
+  }, [orders, isLoggedIn, member?.id, member?.email]);
+
   // When an order is completed:
   const handleOrderCompleted = (newOrder: Order) => {
-    const updatedOrders = [newOrder, ...orders];
+    const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+    const orderWithOwner: Order = {
+      ...newOrder,
+      userId: activeUid || 'guest',
+    };
+    const updatedOrders = [orderWithOwner, ...orders];
     setOrders(updatedOrders);
-    saveCustomerOrderRecord(newOrder, isLoggedIn ? member?.id : null);
-    saveCustomerCart(isLoggedIn ? member?.id : null, []);
+    saveCustomerOrderRecord(orderWithOwner, activeUid);
+    saveCustomerCart(activeUid, [], { explicitClear: true });
     setCartItems([]);
     // Deduct stock
     setProducts((prev) =>
@@ -1183,22 +1352,24 @@ export default function App() {
       })
     );
     // Add loyalty points to member profile
-    const updatedMember = {
-      ...member,
-      points: (member?.points || 0) - newOrder.pointsDeduction + newOrder.pointsEarned,
-      totalSpent: (member?.totalSpent || 0) + newOrder.total,
-      ordersCount: (member?.ordersCount || 0) + 1,
-    };
-    setMember(updatedMember);
-    if (isLoggedIn) {
+    if (isLoggedIn && activeUid) {
+      const updatedMember = sanitizeCustomerProfile({
+        ...member,
+        id: activeUid,
+        points: Math.max(0, (member?.points || 0) - newOrder.pointsDeduction + newOrder.pointsEarned),
+        totalSpent: (member?.totalSpent || 0) + newOrder.total,
+        ordersCount: (member?.ordersCount || 0) + 1,
+      });
+      setMember(updatedMember);
       saveUserProfileToFirestore(updatedMember);
+      saveCustomerProfileDoc(activeUid, updatedMember).catch(console.warn);
       saveStoredCustomerSession({
         id: updatedMember.id,
         name: updatedMember.name,
         email: updatedMember.email,
         tier: updatedMember.tier,
         points: updatedMember.points,
-        totalSpent: updatedMember.totalSpent,
+        totalSpent: updatedMember.totalSpent || 0,
         isLoggedIn: true,
       });
     }
@@ -1248,7 +1419,7 @@ export default function App() {
         onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
         onOpenSupport={() => setIsCustomerSupportOpen(true)}
         onOpenTracking={() => {
-          const genuineOrder = orders.find(o => 
+          const genuineOrder = currentCustomerOrders.find(o => 
             !isMockOrder(o) && 
             (o.paymentStatus === 'paid' || o.isVerifiedByNewebPay) && 
             o.trackingNumber && 
@@ -1293,7 +1464,7 @@ export default function App() {
           <Route path="/r/:code" element={<ReferralHandler />} />
           <Route path="/profile" element={<><SEO title={lang === 'en' ? 'Member Center - GodDog 3D' : lang === 'ja' ? 'マイページ - 神狗勾 3D' : '會員中心 - 神狗勾 3D'} description={lang === 'en' ? 'GodDog 3D Maker Member Center' : lang === 'ja' ? '神狗勾3Dフィラメント公式 会員マイページ' : '神狗勾耗材商城會員中心'} url="/profile" /><ProfilePage 
             member={member} 
-            orders={orders} 
+            orders={currentCustomerOrders} 
             setOrders={setOrders} 
             setMember={setMember} 
             isLoggedIn={isLoggedIn}
@@ -1897,7 +2068,11 @@ export default function App() {
           cartItems={cartItems}
           onUpdateQuantity={handleUpdateCartQuantity}
           onRemoveItem={handleRemoveCartItem}
-          onClearCart={() => setCartItems([])}
+          onClearCart={() => {
+            const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+            saveCustomerCart(activeUid, [], { explicitClear: true }).catch(console.warn);
+            setCartItems([]);
+          }}
           onAddQuickItem={(p, color, diameter, qty) => handleAddToCart(p, color, diameter, qty)}
           onProceedCheckout={handleProceedCheckout}
           currency={currency}
@@ -1941,7 +2116,7 @@ export default function App() {
           isOpen={isTrackingOpen}
           onClose={() => setIsTrackingOpen(false)}
           defaultTrackingNumber={trackingNumberInput}
-          orders={orders}
+          orders={currentCustomerOrders}
           userId={isLoggedIn ? member?.id : undefined}
           lang={lang}
         />
@@ -1962,7 +2137,7 @@ export default function App() {
           onClose={() => setIsLoyaltyOpen(false)}
           member={member}
           currency={currency}
-          orders={orders}
+          orders={currentCustomerOrders}
           onOpenTrackingWithCode={(trackingCode) => {
             setTrackingNumberInput(trackingCode);
             setIsTrackingOpen(true);
@@ -1979,7 +2154,7 @@ export default function App() {
         }}
         viewingProduct={viewingProduct}
         cartItems={cartItems}
-        member={member}
+        member={isLoggedIn ? member : undefined}
         initialPrompt={supportInitialPrompt}
       />
 
@@ -1988,26 +2163,9 @@ export default function App() {
           isOpen={isAuthOpen}
           onClose={() => setIsAuthOpen(false)}
           onLoginSuccess={(user) => {
+            const cleanUid = normalizeCustomerId(user.id) || 'usr_' + Date.now();
             setIsLoggedIn(true);
-            const updated = {
-              ...(member || {}),
-              id: user.id || member?.id || 'usr_' + Date.now(),
-              name: user.name || (user as any).displayName || user.email?.split('@')[0] || '神狗勾 會員',
-              email: user.email || member?.email || '',
-              points: (user.points !== undefined ? user.points : (member?.points || 0)) + 120, // New member reward bonus points
-            };
-            setMember(updated);
-            saveStoredCustomerSession({
-              id: updated.id,
-              name: updated.name,
-              email: updated.email,
-              tier: updated.tier,
-              points: updated.points,
-              totalSpent: updated.totalSpent,
-              isLoggedIn: true,
-            });
-            saveUserProfileToFirestore(updated);
-            syncUserData(updated.id, updated);
+            syncUserData(cleanUid, user);
           }}
         />
       )}
@@ -2055,12 +2213,14 @@ export default function App() {
           onToggleCompare={handleToggleCompare}
           onSetComparisonIds={(ids) => {
             setComparisonIds(ids);
-            localStorage.setItem('printcore_comparison_ids', JSON.stringify(ids));
+            const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+            saveCustomerComparison(activeUid, ids).catch(console.warn);
           }}
           onRemoveComparison={(id) => handleToggleCompare(id)}
           onClearComparison={() => {
             setComparisonIds([]);
-            localStorage.removeItem('printcore_comparison_ids');
+            const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+            saveCustomerComparison(activeUid, []).catch(console.warn);
           }}
           onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
           currency={currency}
@@ -2136,7 +2296,8 @@ export default function App() {
             <button
               onClick={() => {
                 setComparisonIds([]);
-                localStorage.removeItem('printcore_comparison_ids');
+                const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+                saveCustomerComparison(activeUid, []).catch(console.warn);
               }}
               className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               title={lang === 'en' ? 'Clear selection' : lang === 'ja' ? '選択解除' : '清空選取'}
