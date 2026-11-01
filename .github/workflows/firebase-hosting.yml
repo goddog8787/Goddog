@@ -26,9 +26,12 @@ jobs:
         run: npm run build
 
       - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GODDOG_SHOP }}'
-          channelId: live
-          projectId: goddog-shop
+        env:
+          SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GODDOG_SHOP }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "$SERVICE_ACCOUNT_KEY" ]; then
+            echo "$SERVICE_ACCOUNT_KEY" > /tmp/gcp-key.json
+            export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
+          fi
+          npx --yes firebase-tools deploy --only hosting --project goddog-shop --non-interactive
