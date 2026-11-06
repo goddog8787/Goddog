@@ -186,8 +186,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className={`sticky top-0 z-50 transition-all duration-300 ${
       isScrolled 
-        ? 'bg-white/98 backdrop-blur-xl shadow-md shadow-slate-900/8 border-b border-slate-200' 
-        : 'bg-white/95 backdrop-blur-md border-b border-slate-200'
+        ? 'bg-white/98 dark:bg-slate-900/98 backdrop-blur-md shadow-md shadow-slate-900/5 border-b border-slate-200/80 dark:border-slate-800' 
+        : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800'
     }`}>
       {/* Top Announcement Bar - Collapses smoothly on mobile when scrolled to let the main nav row pop right to the top */}
       <div className={`bg-slate-900 text-white text-xs font-medium flex items-center transition-all duration-300 relative overflow-hidden ${
@@ -211,34 +211,34 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {announcement.linkUrl && (
                       <a
                         href={announcement.linkUrl}
-                        className="text-cyan-300 hover:text-cyan-200 underline font-bold text-[10px] ml-1"
+                        className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
                       >
                         前往查看
                       </a>
                     )}
                   </div>
-                  <span className="text-indigo-400 font-black px-2">•</span>
+                  <span className="text-slate-600 font-black px-2">•</span>
                 </>
               )}
-              <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase shrink-0">
+              <span className="bg-sky-500 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase shrink-0">
                 {t.promoBadge || 'Promo'}
               </span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText1}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs font-bold text-amber-300">
                 {t.promoText2}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText3}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs text-emerald-300">
                 {t.promoText4}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
             </div>
             
             {/* Second Set (Identical duplicate for seamless continuous infinite loop) */}
@@ -255,34 +255,34 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {announcement.linkUrl && (
                       <a
                         href={announcement.linkUrl}
-                        className="text-cyan-300 hover:text-cyan-200 underline font-bold text-[10px] ml-1"
+                        className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
                       >
                         前往查看
                       </a>
                     )}
                   </div>
-                  <span className="text-indigo-400 font-black px-2">•</span>
+                  <span className="text-slate-600 font-black px-2">•</span>
                 </>
               )}
-              <span className="bg-amber-400 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase shrink-0">
+              <span className="bg-sky-500 text-slate-950 font-bold px-1.5 py-0.5 rounded text-[10px] tracking-wide uppercase shrink-0">
                 {t.promoBadge || 'Promo'}
               </span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText1}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs font-bold text-amber-300">
                 {t.promoText2}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs">
                 {t.promoText3}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
               <span className="text-slate-200 text-[11px] sm:text-xs text-emerald-300">
                 {t.promoText4}
               </span>
-              <span className="text-indigo-400 font-black px-2">•</span>
+              <span className="text-slate-600 font-black px-2">•</span>
             </div>
           </div>
           
@@ -303,16 +303,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{t.spoolRecycleBtn || "空盤換幣"}</span>
             </button>
           )}
-          <span>|</span>
+          <span className="text-slate-700">|</span>
           <span className="flex items-center gap-1 whitespace-nowrap">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             {t.sslEncrypted || '藍新 SSL 安全加密'}
           </span>
-          <span>|</span>
+          <span className="text-slate-700">|</span>
           <button 
             id="nav-quick-member-link"
             onClick={effectiveMemberOpen}
-            className="hover:text-amber-300 transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
+            className="hover:text-sky-300 transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
           >
             <Coins className="w-3.5 h-3.5 text-amber-400" />
             <span>{(member?.points || 0)} {t.navPointsSuffix || '積分'}</span>
@@ -329,7 +329,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => handleNavClick('store')}
             title={lang === 'en' ? 'Back to Home' : lang === 'ja' ? 'ホームに戻る' : '返回首頁'}
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shrink-0 shadow-md shadow-sky-500/20 bg-slate-900 flex items-center justify-center">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-md shadow-sky-500/20 shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-900 flex items-center justify-center">
               <img 
                 src="/wolf-logo.jpg" 
                 alt={t.brandName || "神狗勾耗材商城 Logo"} 
@@ -344,14 +344,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div className="shrink-0 min-w-0">
               <div className="flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
-                <span className="font-extrabold text-sm sm:text-lg text-slate-900 tracking-tight whitespace-nowrap truncate max-w-[85px] xs:max-w-none">
+                <span className="font-extrabold text-sm sm:text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap truncate max-w-[85px] xs:max-w-none">
                   {t.brandName || '神狗勾耗材'}
                 </span>
-                <span className="text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 bg-sky-100 text-sky-800 rounded whitespace-nowrap shrink-0 hidden md:inline-block">
+                <span className="text-[9px] sm:text-[10px] font-mono bg-sky-100 dark:bg-sky-900/50 text-sky-800 dark:text-sky-300 px-1 sm:px-1.5 py-0.5 rounded font-bold whitespace-nowrap shrink-0">
                   {t.flagshipStore || '旗艦館'}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 hidden lg:block font-medium whitespace-nowrap">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden lg:block font-medium whitespace-nowrap">
                 {t.brandSub || '高速 3D 列印線材專營'}
               </p>
             </div>
@@ -380,15 +380,17 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className={`relative flex items-center space-x-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      ? 'bg-slate-900 dark:bg-sky-500 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-500'}`} />
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-400 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`} />
                   <span className="whitespace-nowrap">{item.label}</span>
                   {item.badge && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold leading-tight whitespace-nowrap shrink-0 ${
-                      isActive ? 'bg-sky-400 text-slate-900' : 'bg-rose-100 text-rose-700'
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold whitespace-nowrap shrink-0 ${
+                      item.badge === 'AI' 
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white' 
+                        : 'bg-rose-500 text-white'
                     }`}>
                       {item.badge}
                     </span>

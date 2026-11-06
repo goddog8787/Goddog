@@ -34,19 +34,16 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center">
-          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl space-y-5">
-            <div className="w-16 h-16 mx-auto bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center justify-center text-3xl">
-              🐕
-            </div>
-            <h1 className="text-xl font-bold text-slate-100">神狗勾商城系統載入中</h1>
-            <p className="text-sm text-slate-400 leading-relaxed">
-              檢測到暫時性資源連線問題，系統正在切換至備援線路。請點擊下方按鈕重新載入頁面。
+        <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col items-center justify-center p-6 text-center">
+          <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl p-8 shadow-lg space-y-5">
+            <h1 className="text-xl font-bold text-slate-900">神狗勾商城系統</h1>
+            <p className="text-sm text-slate-500 leading-relaxed">
+              檢測到暫時性資源連線問題，請點擊下方按鈕重新載入頁面。
             </p>
             <div className="pt-2 flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => window.location.reload()}
-                className="w-full py-3 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl transition shadow-lg shadow-amber-500/20"
+                className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition"
               >
                 重新載入頁面
               </button>
@@ -58,17 +55,11 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
                   } catch {}
                   window.location.href = '/';
                 }}
-                className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl transition"
+                className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition"
               >
                 清除暫存並重啟
               </button>
             </div>
-            {this.state.error && (
-              <details className="text-left text-xs text-slate-500 bg-slate-950/60 p-3 rounded-lg overflow-x-auto mt-4">
-                <summary className="cursor-pointer text-slate-400 font-mono mb-1">診斷詳情 (Diagnostic Info)</summary>
-                <p className="font-mono text-red-400 break-all">{this.state.error.message}</p>
-              </details>
-            )}
           </div>
         </div>
       );
@@ -79,30 +70,16 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  try {
-    createRoot(rootElement).render(
-      <StrictMode>
-        <GlobalErrorBoundary>
-          <HelmetProvider>
-            <BrowserRouter>
-              <App />
-            </BrowserRouter>
-          </HelmetProvider>
-        </GlobalErrorBoundary>
-      </StrictMode>,
-    );
-  } catch (mountErr: any) {
-    console.error('Fatal React createRoot mount error:', mountErr);
-    rootElement.innerHTML = `
-      <div style="min-height:100vh;background:#020617;color:#f8fafc;display:flex;align-items:center;justify-content:center;padding:24px;font-family:sans-serif;text-align:center;">
-        <div style="max-width:440px;background:#0f172a;border:1px solid #334155;border-radius:16px;padding:32px;">
-          <div style="font-size:36px;margin-bottom:12px;">🐕</div>
-          <h2 style="font-size:18px;font-weight:700;margin:0 0 8px 0;color:#f1f5f9;">神狗勾商城載入遇到問題</h2>
-          <p style="font-size:13px;color:#94a3b8;line-height:1.6;margin:0 0 20px 0;">瀏覽器未能正常初始化介面，請點擊下方按鈕重新整理。</p>
-          <button onclick="window.location.reload(true)" style="width:100%;padding:12px;background:#f59e0b;color:#0f172a;border:none;border-radius:10px;font-weight:700;cursor:pointer;">重新載入頁面</button>
-        </div>
-      </div>
-    `;
-  }
+  createRoot(rootElement).render(
+    <StrictMode>
+      <GlobalErrorBoundary>
+        <HelmetProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </HelmetProvider>
+      </GlobalErrorBoundary>
+    </StrictMode>,
+  );
 }
 
