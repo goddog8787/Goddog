@@ -10,38 +10,58 @@ export function getClientGeminiApiKey(): string {
   return '';
 }
 
+export function getBackendApiBase(): string {
+  const envBase = (import.meta as any).env?.VITE_API_BASE_URL;
+  if (typeof envBase === 'string' && envBase.trim()) {
+    return envBase.trim().replace(/\/+$/, '');
+  }
+  if (
+    typeof window !== 'undefined' &&
+    (window.location.hostname.includes('goddog.space') ||
+      window.location.hostname.includes('web.app') ||
+      window.location.hostname.includes('firebaseapp.com'))
+  ) {
+    return 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app';
+  }
+  return '';
+}
+
 export async function generateClientGeminiChat(
   userMessage: string,
-  history: Array<{ sender: string; text: string }> = []
+  history: Array<{ sender: string; text: string }> = [],
+  model?: string
 ): Promise<string> {
-  try {
-    const response = await fetch('/api/ai/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: userMessage,
-        messages: history.map((m) => ({
-          sender: m.sender,
-          text: m.text,
-        })),
-      }),
-    });
+  const apiBase = getBackendApiBase();
+  const response = await fetch(`${apiBase}/api/ai/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      message: userMessage,
+      model: model || 'gemini-3.8-flash',
+      messages: history.map((m) => ({
+        sender: m.sender,
+        text: m.text,
+      })),
+    }),
+  });
 
-    if (!response.ok) {
-      throw new Error(`Server returned ${response.status}`);
-    }
-
-    const data = await response.json();
-    if (data?.reply && typeof data.reply === 'string') {
-      return data.reply.trim();
-    }
-  } catch (err: any) {
-    console.warn('[AI Service] 後端對話請求異常，啟用安全離線降級:', err?.message || err);
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('後端 API 伺服器未啟動或未連線（靜態託管環境未轉發 /api/ai/chat）');
   }
 
-  return '您好！我是神狗勾 3D 耗材智能顧問。目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？';
+  const data = await response.json();
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || data?.reply || `API 請求失敗 (${response.status})`);
+  }
+
+  if (data?.reply && typeof data.reply === 'string') {
+    return data.reply.trim();
+  }
+
+  throw new Error('API 未回傳有效內容');
 }
 
 export interface GenerateEcommerceCopyParams {

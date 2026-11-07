@@ -460,21 +460,26 @@ async function* generateGeminiChatStreamSafely(
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
 
+  // Use gemini-3.1-flash-lite for ultra-fast ~1s response time
+  const fastModel = targetModel === 'gemini-3.1-pro-preview' ? 'gemini-3.1-pro-preview' : 'gemini-3.1-flash-lite';
+
   try {
-    const stream = await ai.models.generateContentStream({
-      model: targetModel,
-      contents: rawContents,
-      config: {
-        systemInstruction,
-        maxOutputTokens: 2048,
-        temperature: 0.7,
-      },
-    });
+    const stream = await callWithTimeout(
+      ai.models.generateContentStream({
+        model: fastModel,
+        contents: rawContents,
+        config: {
+          systemInstruction,
+          maxOutputTokens: 500,
+          temperature: 0.4,
+        },
+      }),
+      6000
+    );
 
     for await (const chunk of stream) {
       if (abortSignal?.aborted) {
-        console.log('[SSE Stream] 偵測到 AbortSignal 觸發，立即中斷生成迴圈以防止 Token 幽靈消耗');
-        break;
+        return;
       }
       const text = chunk.text;
       if (text) {
@@ -485,8 +490,7 @@ async function* generateGeminiChatStreamSafely(
     if (abortSignal?.aborted) {
       return;
     }
-    console.warn(`[SSE Stream] 模型 ${targetModel} 串流中斷或異常:`, String(err?.message || '').slice(0, 100));
-    yield `\n[連線提示：串流中斷或受限]`;
+    console.warn(`[SSE Stream] 模型 ${fastModel} 串流異常:`, String(err?.message || '').slice(0, 100));
   }
 }
 
@@ -501,12 +505,9 @@ async function generateGeminiChatSafely(
   const ai = getAIClient(customApiKey);
   if (!ai) return { reply: '', modelUsed: '', error: '尚未配置有效的 Google Gemini API Key' };
 
-  let models: string[] = [];
-  if (preferredModel && ALL_SUPPORTED_GEMINI_MODELS.includes(preferredModel)) {
-    models = [preferredModel, ...ALL_SUPPORTED_GEMINI_MODELS.filter((m) => m !== preferredModel)];
-  } else {
-    models = ALL_SUPPORTED_GEMINI_MODELS;
-  }
+  const models = preferredModel === 'gemini-3.1-pro-preview'
+    ? ['gemini-3.1-pro-preview', 'gemini-3.1-flash-lite']
+    : ['gemini-3.1-flash-lite'];
 
   // Construct properly alternating multi-turn contents array
   const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
@@ -537,15 +538,15 @@ async function generateGeminiChatSafely(
 
   for (const model of models) {
     try {
-      const timeoutMs = model.includes('pro') ? 16000 : 10000;
+      const timeoutMs = model.includes('pro') ? 8000 : 6000;
       const response = await callWithTimeout(
         ai.models.generateContent({
           model,
           contents: rawContents,
           config: {
             systemInstruction,
-            maxOutputTokens: 2048,
-            temperature: 0.7,
+            maxOutputTokens: 500,
+            temperature: 0.4,
           },
         }),
         timeoutMs
@@ -1060,14 +1061,16 @@ app.post('/api/ai/chat/stream', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
 
-  // 綁定 AbortController，一旦前端中斷連線立即掐斷上游 API 防止 Token 幽靈消耗
+  // 綁定 AbortController，注意必須監聽 res.on('close') 且判斷 !res.writableEnded，避免 POST body 讀取完畢時誤觸 req.on('close') 導致串流永遠不呼叫 res.end() 而卡死 2 分鐘！
   const abortController = new AbortController();
   let clientDisconnected = false;
 
-  req.on('close', () => {
-    clientDisconnected = true;
-    abortController.abort();
-    console.log('[SSE Stream] 客戶端連線中斷，已立即掐斷上游 API 串流，杜絕 Token 幽靈消耗');
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      clientDisconnected = true;
+      abortController.abort();
+      console.log('[SSE Stream] 客戶端連線中斷，已立即掐斷上游 API 串流');
+    }
   });
 
   try {
@@ -1093,7 +1096,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
       : rawMessages;
 
     const history: Array<{ role: 'user' | 'model'; text: string }> = historyPool
-      .slice(-12)
+      .slice(-8)
       .map((m) => ({
         role: (m.sender === 'user' || m.role === 'user' ? 'user' : 'model') as 'user' | 'model',
         text: m.text?.trim() || '',
@@ -1103,15 +1106,9 @@ app.post('/api/ai/chat/stream', async (req, res) => {
     const clientApiKey = (req.body?.apiKey || '').trim();
     const effectiveApiKey = (clientApiKey || runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 
-    // 2. 記憶壓縮管線 (Memory Compression Pipeline)
-    const { summary: compressedSummary, recentHistory } = await compressConversationMemorySafely(history, effectiveApiKey);
-
     let contextNotes = '';
     if (storeContext?.viewingProduct) {
       contextNotes += `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
-    }
-    if (compressedSummary) {
-      contextNotes += `\n【前置歷史對話語意壓縮摘要（200字核心）】：\n${compressedSummary}\n`;
     }
 
     const systemPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。
@@ -1126,15 +1123,21 @@ app.post('/api/ai/chat/stream', async (req, res) => {
 3. 精簡俐落，每段 2 至 4 句高含金量內容，必要時使用 • 列點。
 ${contextNotes}`;
 
-    if (requestedModel === 'local-expert' || !effectiveApiKey) {
+    if (requestedModel === 'local-expert') {
       const offlineReply = '神狗勾全系列耗材皆相容 Bambu Lab AMS 與主流高速 3D 列印機，滿 NT$999 即享免運並於 24H 內急速出貨。如需進一步諮詢，請告訴我您的機種與列印需求！';
       res.write(`data: ${JSON.stringify({ text: offlineReply })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
     }
 
+    if (!effectiveApiKey) {
+      res.write(`data: ${JSON.stringify({ error: '後端伺服器尚未設定 GEMINI_API_KEY，因此未實際呼叫 Gemini API。' })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+
     const generator = generateGeminiChatStreamSafely(
-      recentHistory,
+      history,
       systemPrompt,
       latestUserMessage,
       requestedModel,
@@ -1149,14 +1152,18 @@ ${contextNotes}`;
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     }
 
-    if (!clientDisconnected) {
+    if (!res.writableEnded) {
       res.write('data: [DONE]\n\n');
       res.end();
     }
   } catch (streamErr: any) {
-    if (!clientDisconnected) {
+    if (!res.writableEnded) {
       res.write(`data: ${JSON.stringify({ error: '串流生成發生異常，請稍後再試。' })}\n\n`);
       res.write('data: [DONE]\n\n');
+      res.end();
+    }
+  } finally {
+    if (!res.writableEnded) {
       res.end();
     }
   }
@@ -1224,36 +1231,14 @@ app.post('/api/ai/chat', async (req, res) => {
       savePersistedOwnerApiKey(clientApiKey);
     }
 
-    // 2. 記憶壓縮管線 (Memory Compression Pipeline)
-    // 當對話超過 5 輪時，舊對話強制調用平價模型提煉 200 字摘要
-    const { summary: compressedSummary, recentHistory } = await compressConversationMemorySafely(history, effectiveApiKey);
-
     // Contextual information from store state
     let storeContextNotes = '';
-    if (storeContext) {
-      const notes: string[] = [];
-      if (storeContext.viewingProduct) {
-        notes.push(`用戶目前正在查看商品：【${storeContext.viewingProduct.name}】(${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})`);
-      }
-      if (typeof storeContext.cartCount === 'number') {
-        notes.push(`用戶購物車現有 ${storeContext.cartCount} 件商品`);
-      }
-      if (storeContext.member) {
-        notes.push(`用戶已登入會員【${storeContext.member.name || '創客夥伴'}】，現有紅利點數 ${storeContext.member.points || 0} 點`);
-      }
-      if (notes.length > 0) {
-        storeContextNotes = `\n【當前商城瀏覽動態記憶】\n${notes.join('\n')}\n`;
-      }
-    }
-
-    if (compressedSummary) {
-      storeContextNotes += `\n【前置歷史對話語意壓縮摘要（200字核心）】\n${compressedSummary}\n`;
+    if (storeContext?.viewingProduct) {
+      storeContextNotes = `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
     }
 
     const targetModel = requestedModel || 'gemini-3.8-flash';
     const targetDisplayName = MODEL_DISPLAY_NAMES[targetModel] || targetModel;
-
-    // 0. Only check instant cache for local-expert mode or exact identical prompts
     const lower = latestUserMessage.toLowerCase();
     const cacheKey = `${targetModel}_${lower}_${history.length > 0 ? history[history.length - 1].text : ''}`;
     
@@ -1269,113 +1254,27 @@ app.post('/api/ai/chat', async (req, res) => {
           cached: true,
         });
       }
-
-      if (/滿.*免運|免運|運費|多久出貨|出庫|發貨|多久到/i.test(lower)) {
-        const fastReply = '全館滿 NT$999 即享超商與黑貓宅配免運費！工作日 15:00 前下單保證 24H 快速出貨。每卷耗材皆經雙層鋁箔真空封裝並附變色乾燥劑，出廠到手即開即印！';
-        chatResponseCache.set(cacheKey, { reply: fastReply, timestamp: Date.now() });
-        return res.json({
-          success: true,
-          reply: fastReply,
-          modelUsed: '神狗勾 3D 專家工程模式 (離線)',
-          contextualMemoryActive: true,
-          fastPath: true,
-        });
-      }
-
-      if (/優惠|折扣|代碼|coupon|新會員|折扣碼/i.test(lower)) {
-        const fastReply = '神狗勾官方優惠活動：\n1. 輸入折扣碼【PRINTCORE10】結帳立享全館 9 折！\n2. 新會員註冊即領 120 點紅利（結帳無門檻現抵 NT$120）。\n3. 每筆訂單完成自動回饋 5% 購物金紅利點數！';
-        chatResponseCache.set(cacheKey, { reply: fastReply, timestamp: Date.now() });
-        return res.json({
-          success: true,
-          reply: fastReply,
-          modelUsed: '神狗勾 3D 專家工程模式 (離線)',
-          contextualMemoryActive: true,
-          fastPath: true,
-        });
-      }
-
-      if (/空線盤|線盤回收|回收/i.test(lower)) {
-        const fastReply = '神狗勾綠色永續回收專案：回收任何品牌之空線盤，每盤直接回饋 NT$20 紅利購物金（不限數量，無使用期限）！點擊導航欄「空線盤回收」即可預約郵寄或超商回傳！';
-        chatResponseCache.set(cacheKey, { reply: fastReply, timestamp: Date.now() });
-        return res.json({
-          success: true,
-          reply: fastReply,
-          modelUsed: '神狗勾 3D 專家工程模式 (離線)',
-          contextualMemoryActive: true,
-          fastPath: true,
-        });
-      }
-
-      if (/ams|拓竹|bambu/i.test(lower) && !lower.includes('設幾度') && !lower.includes('溫度')) {
-        const fastReply = '神狗勾全系列線材皆相容 Bambu Lab AMS 與 AMS Lite 多色供料系統！線盤標準外徑 200mm、寬度 65mm，進退料順暢不卡料。若使用 PLA-CF/PETG-CF 碳纖維材質，建議搭配原廠硬化鋼噴嘴與硬化鋼擠出輪！';
-        chatResponseCache.set(cacheKey, { reply: fastReply, timestamp: Date.now() });
-        return res.json({
-          success: true,
-          reply: fastReply,
-          modelUsed: '神狗勾 3D 專家工程模式 (離線)',
-          contextualMemoryActive: true,
-          fastPath: true,
-        });
-      }
     }
 
-    // Comprehensive store system prompt with strict contextual memory instructions
-    const systemPrompt = `你是一位繁體中文的專業 3D 列印耗材專家與神狗勾官方商城智能客服顧問。
-你具備卓越且持續的「多輪上下文對話記憶能力」。
-語氣親切、專業、客氣、有條理。
-
-【身分定位與金鑰保密（最高優先級）】：
-- 你是神狗勾 3D 耗材商城的官方智能客服顧問，為全體創客與顧客提供即時、專業的材質推薦與切片參數。
-- 嚴禁提及任何有關 API Key、金鑰配置、配額額度、授權帳號或「由誰提供」等內部技術字眼。
-- 顧客無須提供任何金鑰即可隨時免費諮詢。
-
-【對話方式與排版規範（非常嚴格，最高優先級）】：
-1. 嚴格減少與禁用雙星號「**」：
-   - 絕不要在短語或數字前後包裹 ** 星號（例如不要寫 **全館免運門檻**、**NT$ 999**、**24小時** 等），星號會破壞手機介面閱讀體驗，請完全使用純文字。
-   - 若需突顯關鍵詞，請直接陳述或用「」或【】包覆，絕不使用 **。
-2. 禁絕 Markdown 生硬語法：
-   - 絕不要輸出 ###、## 標題符號或 --- 分割線。
-3. 精簡回答（比一般客服對話量再減少一至兩句話）：
-   - 拒絕多餘套話：不要說「針對您詢問的...為您整理如下：」或「感謝您的提問！」，開門見山直切重點。
-   - 拒絕結尾冗餘：不要在句尾加上「希望以上說明對您有幫助，如有其他問題歡迎隨時詢問」等無效官腔。
-   - 篇幅控制在 2 至 4 句高含金量內容，或 2 至 3 個清晰列點，俐落親切、恰到好處，不長篇大論，也不流於過分簡短。
-4. 靈活列點（自主判斷，不生搬硬套）：
-   - 當回答涉及「多項政策、規格參數、排查步驟或對比要點」時，採用清晰的「• 」符號分點條理呈現。
-   - 當回答屬於「單一問題、直接確認或簡短說明」時（例如詢問某款是否有現貨、能否相容），直接以 1 至 2 句自然連貫的語句回答，不需要強行湊成列點。
-
-【核心回答原則】：
-1. 完整詳細對比（絕不截斷）：若顧客詢問多種線材比較或差別（如「PETG 與 PLA 差別在哪裡？」、「ABS 與 PETG 差別」、「碳纖維 CF 與一般線材比較」等），務必給予完整、客觀且結構化的橫向深度對比！詳細列出各自的：
-   - 耐溫性能（熱變形溫度 HDT）
-   - 機械韌性與抗衝擊強度、耐摔度
-   - 耐候與防水抗 UV 能力
-   - 切片列印參數（噴嘴與熱床推薦溫度、列印速度、冷卻風扇）
-   - 拓竹 AMS 相容性與列印難易度
-   - 實用選材推薦與決策指引（如：展示公仔 vs 戶外受力結構件）
-   ⚠️ 嚴禁只介紹其中一種線材而遺漏另一種！請完整對比兩者並給出清晰選材指南。
-2. 參數與排查：若詢問切片參數或列印問題（如拉絲、翹邊、堵嘴），請列出具體數值（溫度、速度、回抽、風扇）與步驟清單。
-3. 對話記憶：嚴格結合先前對話中提及的機型或材料，當顧客使用代名詞（「那這個呢？」、「要設幾度？」）時直接對應，絕不失憶。
-${storeContextNotes}
-【神狗勾 3D 全市場耗材規格與庫存】
-- PLA 系列：High-Speed PLA (極速 500-600mm/s)、標準高韌 PLA+、PLA Matte (消光莫蘭迪)、PLA Silk (雙色絲綢炫光)、PLA-CF (碳纖維高剛性)、PLA Wood (天然原木粉)、PLA Glow (長效蓄光夜光)、LW-PLA (主動微發泡航模減重50%)
-- PETG 系列：PETG-HF (高抗衝擊)、PETG Translucent (水晶高透光)、PETG-CF (碳纖耐候)、PETG-ESD (半導體工業防靜電)
-- ABS/ASA 系列：ABS-GF (玻璃纖維耐熱100°C)、ASA (超強抗紫外線10年戶外)、PC-ABS (航太級合金抗衝擊)
-- TPU 柔性系列：TPU 95A (高回彈)、TPU 85A (超柔橡膠手感)、TPU 64D (高硬度耐磨齒輪)
-- PA 尼龍系列：PA6-CF (耐溫150°C替代金屬)、PA12-CF (超低吸水台灣防潮)、PA-GF (高絕緣)、純尼龍 PA6/PA12 (自潤滑耐磨)
-- 特種與光固化：PC 聚碳酸酯 (耐熱115°C防彈級)、PP 聚丙烯 (耐酸鹼活動鉸鏈)、PVA (冷水自溶支撐)、PEEK/PEI Ultem (耐溫220°C航空級)、8K 高精度光敏樹脂、類 ABS 高韌性樹脂、乾燥盒與 PEI 鋼板
-
-【物流、優惠與專屬政策】
-- 線盤綠色永續回收：任何品牌的空耗材線盤回收，每盤返還 NT$20 紅利購物金（不限數量，愛護地球）！
-- 會員購物點數回饋：每筆訂單完成後一律贈送 5% 紅利點數（1點折抵 NT$1元，下次結帳直接折抵）。
-- 全館滿額免運：消費滿 NT$999 即享超商與宅配免運費！工作日 15:00 前下單，享有 24 小時快速出貨。
-- 專屬優惠碼：輸入【PRINTCORE10】全館享 9 折。新會員註冊即贈 120 點紅利。
-- 印表機相容性：神狗勾全系列線材全面相容 Bambu Lab AMS 多色系統、Creality K1 以及 Prusa 等主流設備。`;
+    const systemPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。使用台灣正體中文回答，嚴禁中國大陸用語與簡體字。
+【排版與回答規範】：
+1. 嚴禁使用雙星號 ** 或 ### 標題符號，請使用純文字、• 列點或【】標示重點。
+2. 開門見山直切重點，控制在 2 至 4 句高含金量內容或清晰列點，不說多餘客套話。
+3. 神狗勾全系列 1kg 線材（外徑 200mm、寬 65mm，公差 ±0.02mm）全面相容拓竹 Bambu Lab AMS 與主流高速機（TPU 軟膠除外，需外掛直供；PLA-CF/PETG-CF 建議搭配硬化鋼噴嘴）。
+4. 全館滿 NT$999 免運、24H 出貨；優惠碼【PRINTCORE10】享 9 折；空線盤回收每盤回饋 NT$20 紅利。${storeContextNotes}`;
 
     // 1. Dispatch to Gemini if targetModel is a Gemini model
-    // 1. Dispatch to Gemini if targetModel is a Gemini model and effectiveApiKey is present
-    if (targetModel !== 'local-expert' && effectiveApiKey) {
+    if (targetModel !== 'local-expert') {
+      if (!effectiveApiKey) {
+        return res.status(503).json({
+          success: false,
+          error: '後端伺服器尚未設定 GEMINI_API_KEY，因此未實際呼叫 Gemini API。',
+        });
+      }
+
       try {
         const geminiReply = await generateGeminiChatSafely(
-          recentHistory,
+          history.slice(-8),
           systemPrompt,
           latestUserMessage,
           targetModel,
@@ -1392,8 +1291,16 @@ ${storeContextNotes}
             contextualMemoryActive: true,
           });
         }
+        return res.status(502).json({
+          success: false,
+          error: 'Gemini API 未回傳有效內容。',
+        });
       } catch (geminiErr: any) {
-        console.warn('[Gemini Notice] Falling back to 3D printing expert engine:', geminiErr?.message?.slice(0, 80));
+        console.warn('[Gemini Error]:', geminiErr?.message?.slice(0, 120));
+        return res.status(502).json({
+          success: false,
+          error: `Gemini API 呼叫失敗：${geminiErr?.message || '連線異常'}`,
+        });
       }
     }
 

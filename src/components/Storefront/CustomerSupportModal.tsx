@@ -20,7 +20,7 @@ import {
   ChevronDown,
   Zap,
 } from 'lucide-react';
-import { generateClientGeminiChat } from '../../lib/geminiClient';
+import { generateClientGeminiChat, getBackendApiBase } from '../../lib/geminiClient';
 import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 
   normalizeCustomerId,
@@ -166,10 +166,19 @@ function generateClientExpertReply(text: string): { reply: string; modelUsed: st
 function sanitizeChatOrder(msgs: ChatMessage[]): ChatMessage[] {
   if (!Array.isArray(msgs) || msgs.length === 0) return [DEFAULT_WELCOME_MESSAGE];
   
-  // Ensure every message has clean text and a unique ID
-  return msgs.map((m, idx) => ({
+  const filtered = msgs.filter((m) => {
+    if (!m || !m.text) return false;
+    const text = String(m.text);
+    return !text.includes('目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？');
+  });
+
+  if (filtered.length === 0) return [DEFAULT_WELCOME_MESSAGE];
+
+  // Ensure every message has clean text, isLoading reset to false, and a unique ID
+  return filtered.map((m, idx) => ({
     ...m,
     id: m.id || `${m.sender}-${idx}-${m.timestamp || Date.now()}`,
+    isLoading: false,
     text: m.sender === 'ai' ? cleanChatText(m.text) : m.text,
   }));
 }
@@ -210,6 +219,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
             text.includes('【Gemini 模型調度異常】') ||
             text.includes('【Gemini 調度異常】') ||
             text.includes('尚未偵測到 Google Gemini API Key') ||
+            text.includes('目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？') ||
             text.includes('針對您詢問的')
           );
         });
@@ -441,35 +451,11 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     setIsLoading(true);
 
     const userTier = member?.membershipTier || (member?.tier === 'Diamond' ? 'PLUS' : member?.tier === 'Gold' ? 'GO' : member?.subscriptionPlan && member.subscriptionPlan !== 'None' ? 'PLUS' : 'FREE');
+    const apiBase = getBackendApiBase();
 
-    // On static hosting (goddog.space), invoke client Gemini AI directly for instant response without server timeout delays
-    const isStaticHost = typeof window !== 'undefined' && (window.location.hostname.includes('goddog.space') || (!window.location.hostname.includes('run.app') && !window.location.hostname.includes('localhost')));
-
-    if (isStaticHost) {
-      try {
-        const geminiReply = await generateClientGeminiChat(
-          text,
-          updatedHistory.filter((m) => !m.isLoading).map((m) => ({ sender: m.sender, text: m.text }))
-        );
-
-        if (geminiReply && geminiReply.trim()) {
-          const cleanText = cleanChatText(geminiReply);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === aiMsgId
-                ? {
-                    ...m,
-                    text: cleanText,
-                    isLoading: false,
-                    modelUsed: currentModelObj.name,
-                  }
-                : m
-            )
-          );
-          return;
-        }
-      } catch (clientGenAiErr) {
-        console.warn('[Direct Client Gemini] Fallback to expert reply:', clientGenAiErr);
+    try {
+      // Only use local offline rule engine if user explicitly selected 'local-expert'
+      if (selectedModel === 'local-expert') {
         const fallback = generateClientExpertReply(text);
         setMessages((prev) =>
           prev.map((m) =>
@@ -486,11 +472,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         );
         return;
       }
-    }
 
-    const apiBase = '';
-
-    try {
       // 1. Try SSE Streaming first for instant token-by-token feedback
       const streamRes = await fetch(`${apiBase}/api/ai/chat/stream`, {
         method: 'POST',
@@ -535,10 +517,12 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         return;
       }
 
-      if (streamRes.ok && streamRes.body) {
+      const streamContentType = streamRes.headers.get('content-type') || '';
+      if (streamRes.ok && streamRes.body && streamContentType.includes('text/event-stream')) {
         const reader = streamRes.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let accumulatedText = '';
+        let streamErrorMsg = '';
         let streamDone = false;
 
         while (!streamDone) {
@@ -557,7 +541,9 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
             }
             try {
               const parsed = JSON.parse(dataStr);
-              if (parsed.text) {
+              if (parsed.error) {
+                streamErrorMsg = parsed.error;
+              } else if (parsed.text) {
                 accumulatedText += parsed.text;
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -591,9 +577,13 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
           );
           return;
         }
+
+        if (streamErrorMsg) {
+          throw new Error(streamErrorMsg);
+        }
       }
 
-      // Fallback to standard /api/ai/chat if streaming was empty
+      // 2. Standard JSON /api/ai/chat endpoint
       const res = await fetch(`${apiBase}/api/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -619,31 +609,22 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         }),
       });
 
-      if (res.status === 403) {
-        const fallback = generateClientExpertReply(text);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === aiMsgId
-              ? {
-                  ...m,
-                  text: fallback.reply,
-                  solution: fallback.solution,
-                  isLoading: false,
-                  modelUsed: fallback.modelUsed,
-                }
-              : m
-          )
-        );
-        return;
+      const resContentType = res.headers.get('content-type') || '';
+      if (!resContentType.includes('application/json')) {
+        throw new Error('目前網站部署於純靜態空間 (Firebase Hosting)，尚未連接後端 Node.js API 伺服器 (/api/ai/chat)，因此未實際呼叫到 Gemini API。');
       }
 
       const data = await res.json();
-      const replyText = cleanChatText(
-        data?.reply ||
-        '您好！我是神狗勾 3D 耗材智能顧問，請隨時告訴我您的列印問題或耗材需求！'
-      );
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.error || data?.reply || `API 請求失敗 (HTTP ${res.status})`);
+      }
 
-      // Update ONLY the exact paired AI message with full text, structured solution and model name
+      if (!data?.reply) {
+        throw new Error('Gemini API 未回傳有效內容');
+      }
+
+      const replyText = cleanChatText(data.reply);
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
@@ -661,44 +642,15 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       if (err?.name === 'AbortError') {
         return;
       }
-      console.warn('[AI Support] Streaming endpoint unavailable, invoking direct client Gemini SDK:', err?.message || err);
-      
-      try {
-        const geminiReply = await generateClientGeminiChat(
-          text,
-          updatedHistory.filter((m) => !m.isLoading).map((m) => ({ sender: m.sender, text: m.text }))
-        );
-
-        if (geminiReply && geminiReply.trim()) {
-          const cleanText = cleanChatText(geminiReply);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === aiMsgId
-                ? {
-                    ...m,
-                    text: cleanText,
-                    isLoading: false,
-                    modelUsed: currentModelObj.name,
-                  }
-                : m
-            )
-          );
-          return;
-        }
-      } catch (clientGenAiErr) {
-        console.warn('[Client Gemini API Error]', clientGenAiErr);
-      }
-
-      const fallback = generateClientExpertReply(text);
+      const errMsg = err?.message || '無法連線至後端 Gemini API 服務';
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
             ? {
                 ...m,
-                text: fallback.reply,
-                solution: fallback.solution,
+                text: `⚠️ 【API 未呼叫成功】：${errMsg}`,
                 isLoading: false,
-                modelUsed: fallback.modelUsed,
+                modelUsed: 'API 連線失敗',
               }
             : m
         )
