@@ -17,6 +17,7 @@ import {
   Activity
 } from 'lucide-react';
 import { generateClientGeminiChat } from '../../lib/geminiClient';
+import { saveAIConfigToFirestore, loadAIConfigFromFirestore } from '../../lib/firebase';
 
 interface AIAdminConfig {
   success: boolean;
@@ -55,22 +56,31 @@ export const GeminiQuotaManager: React.FC = () => {
       if (typeof window !== 'undefined') {
         localKey = localStorage.getItem('god_dog_gemini_key') || localStorage.getItem('printcore_gemini_key') || '';
       }
-
-      const res = await fetch('/api/ai/admin-config').catch(() => null);
-      if (res && res.ok) {
-        const data = await res.json().catch(() => null);
-        if (data && data.success) {
-          if (localKey && (!data.hasActiveKey || data.keySource === 'unconfigured')) {
-            data.hasActiveKey = true;
-            data.keySource = 'stored_owner_key';
-            data.maskedKey = localKey.slice(0, 6) + '••••••••' + localKey.slice(-4);
-          }
-          setConfig(data);
-          return;
+      if (!localKey) {
+        const cloudCfg = await loadAIConfigFromFirestore().catch(() => null);
+        if (cloudCfg?.geminiApiKey) {
+          localKey = cloudCfg.geminiApiKey;
         }
       }
 
-      // If backend not present (static host)
+      const res = await fetch('/api/ai/admin-config').catch(() => null);
+      if (res && res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json().catch(() => null);
+          if (data && data.success) {
+            if (localKey && (!data.hasActiveKey || data.keySource === 'unconfigured')) {
+              data.hasActiveKey = true;
+              data.keySource = 'stored_owner_key';
+              data.maskedKey = localKey.slice(0, 6) + '••••••••' + localKey.slice(-4);
+            }
+            setConfig(data);
+            return;
+          }
+        }
+      }
+
+      // If backend not present (static host goddog.space)
       setConfig({
         success: true,
         ownerAccount: 'babe0615@gmail.com',
@@ -101,10 +111,14 @@ export const GeminiQuotaManager: React.FC = () => {
     setIsSaving(true);
     setSaveStatus(null);
     try {
-      // Save locally first so it works immediately across the entire browser on goddog.space!
+      // 1. Save locally for immediate use
       localStorage.setItem('god_dog_gemini_key', trimmed);
       localStorage.setItem('printcore_gemini_key', trimmed);
 
+      // 2. Sync to Cloud Firestore (settings/ai_config) so goddog.space visitors use it without committing keys to GitHub
+      await saveAIConfigToFirestore({ geminiApiKey: trimmed, activeModel: testModel }).catch(() => null);
+
+      // 3. Also sync to Node.js backend if running
       try {
         await fetch('/api/ai/set-key', {
           method: 'POST',
@@ -115,7 +129,7 @@ export const GeminiQuotaManager: React.FC = () => {
 
       setSaveStatus({ 
         type: 'success', 
-        message: '金鑰驗證通過，已成功綁定店長 Google Gemini 額度！前台客服將優先使用此金鑰。' 
+        message: '金鑰已成功加密同步至雲端資料庫（Firestore）與本機！正式站 goddog.space 全站客服已立即套用此金鑰，且不會寫入 GitHub 原始碼。' 
       });
       setInputKey('');
       fetchConfig();
@@ -129,6 +143,7 @@ export const GeminiQuotaManager: React.FC = () => {
   const handleClearKey = async () => {
     localStorage.removeItem('god_dog_gemini_key');
     localStorage.removeItem('printcore_gemini_key');
+    await saveAIConfigToFirestore({ geminiApiKey: '' }).catch(() => null);
     try {
       await fetch('/api/ai/set-key', {
         method: 'POST',

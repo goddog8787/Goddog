@@ -27,6 +27,7 @@ jobs:
       - name: Build Project
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
           VITE_FIREBASE_PROJECT_ID: goddog-shop
           VITE_FIREBASE_APP_ID: 1:470116154074:web:6b5fe2382911d3fc3ec3e3
           VITE_FIREBASE_DATABASE_ID: ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4

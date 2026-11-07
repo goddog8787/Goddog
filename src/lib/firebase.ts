@@ -659,3 +659,49 @@ export async function loadMonetizationConfigFromFirestore(): Promise<any | null>
   return null;
 }
 
+// Firestore Official AI Config Persistence Helper (syncs Admin Gemini Key & Base URL to goddog.space via Firestore without exposing keys in GitHub)
+export async function saveAIConfigToFirestore(config: {
+  geminiApiKey?: string;
+  apiBaseUrl?: string;
+  activeModel?: string;
+}) {
+  try {
+    const payload = {
+      geminiApiKey: (config.geminiApiKey || '').trim(),
+      apiBaseUrl: (config.apiBaseUrl || '').trim(),
+      activeModel: config.activeModel || 'gemini-3.8-flash',
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, 'settings', 'ai_config'), payload, { merge: true });
+    return payload;
+  } catch (error) {
+    console.warn('Firestore AI config sync fallback:', error);
+    return null;
+  }
+}
+
+export async function loadAIConfigFromFirestore(): Promise<{
+  geminiApiKey?: string;
+  apiBaseUrl?: string;
+  activeModel?: string;
+} | null> {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'ai_config'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data?.geminiApiKey && typeof window !== 'undefined') {
+        localStorage.setItem('god_dog_gemini_key', data.geminiApiKey);
+        localStorage.setItem('printcore_gemini_key', data.geminiApiKey);
+      }
+      if (data?.apiBaseUrl && typeof window !== 'undefined') {
+        localStorage.setItem('god_dog_ai_base_url', data.apiBaseUrl);
+      }
+      return data as any;
+    }
+  } catch (error) {
+    // Ignore permission or offline errors silently
+  }
+  return null;
+}
+
+
