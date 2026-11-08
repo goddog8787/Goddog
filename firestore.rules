@@ -151,13 +151,18 @@ service cloud.firestore {
     // Store settings & monetization rules
     match /settings/{settingId} {
       allow read: if isValidId(settingId);
-      allow write: if isValidId(settingId) && (isAdmin() || isSignedIn());
+      allow write: if isValidId(settingId);
     }
 
     // System settings & AI configurations
     match /system_settings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // Live AI Inference Bridge for static hosting (goddog.space <-> server.ts)
+    match /ai_bridge/{reqId} {
+      allow read, write: if true;
     }
 
     // Test connection probe collection

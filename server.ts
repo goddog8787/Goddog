@@ -1,10 +1,24 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import crypto from 'crypto';
+import { initializeApp as initFirebaseClientApp, getApps as getFirebaseClientApps } from 'firebase/app';
+import {
+  initializeFirestore,
+  collection as fsCollection,
+  query as fsQuery,
+  where as fsWhere,
+  onSnapshot as fsOnSnapshot,
+  setDoc as fsSetDoc,
+} from 'firebase/firestore';
+
+try {
+  dns.setDefaultResultOrder?.('ipv4first');
+} catch {}
 
 const getFilename = () => {
   try {
@@ -279,9 +293,9 @@ async function generateGeminiContentSafely(
   const ai = getAIClient(options?.apiKey);
   if (!ai) return null;
 
-  // Prioritize stable, high-throughput models according to Gemini API guidance
+  // Prioritize active Gemini 3 Flash model first, then fallback models
   const allSupportedModels = [
-    'gemini-3.8-flash',
+    'gemini-3-flash-preview',
     'gemini-3.1-flash-lite',
     'gemini-flash-latest',
   ];
@@ -293,14 +307,14 @@ async function generateGeminiContentSafely(
 
   for (const model of models) {
     try {
-      const timeoutMs = 8500;
+      const timeoutMs = 11000;
       const response = await callWithTimeout(
         ai.models.generateContent({
           model,
           contents: prompt,
-          config: options?.json 
-            ? { responseMimeType: 'application/json' } 
-            : { maxOutputTokens: 1400, temperature: 0.7 },
+          config: options?.json
+            ? { responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } }
+            : { maxOutputTokens: 1200, temperature: 0.6, thinkingConfig: { thinkingBudget: 0 } },
         }),
         timeoutMs
       );
@@ -309,11 +323,7 @@ async function generateGeminiContentSafely(
         return response.text;
       }
     } catch (err: any) {
-      if (isTransientGeminiError(err)) {
-        console.log(`[Gemini Engine] Model ${model} is experiencing temporary high demand/transient latency. Trying next model...`);
-      } else {
-        console.warn(`[Gemini Engine] Model ${model} execution notice: ${String(err?.message || '').slice(0, 100)}`);
-      }
+      console.log(`[Gemini Engine] Model ${model} retry notice: ${String(err?.message || '').slice(0, 80)}`);
     }
   }
 
@@ -322,6 +332,7 @@ async function generateGeminiContentSafely(
 
 const ALL_SUPPORTED_GEMINI_MODELS = [
   'gemini-3.8-flash',
+  'gemini-3-flash-preview',
   'gemini-3.1-flash-lite',
   'gemini-flash-latest',
   'gemini-3.1-pro-preview',
@@ -329,6 +340,7 @@ const ALL_SUPPORTED_GEMINI_MODELS = [
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'gemini-3.8-flash': 'Gemini 3.8 Flash (推薦首選)',
+  'gemini-3-flash-preview': 'Gemini 3.8 Flash (推薦首選)',
   'gemini-3.1-flash-lite': 'Gemini 3.1 Flash-Lite (極速輕量)',
   'gemini-flash-latest': 'Gemini Flash (自動分流)',
   'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (深度推理)',
@@ -367,12 +379,10 @@ async function compressConversationMemorySafely(
   history: Array<{ role: 'user' | 'model'; text: string }>,
   customApiKey?: string
 ): Promise<{ summary: string; recentHistory: Array<{ role: 'user' | 'model'; text: string }> }> {
-  // If 5 turns or less, keep all turns without compression
   if (history.length <= 5) {
     return { summary: '', recentHistory: history };
   }
 
-  // Older turns to compress: all except the latest 2 turns
   const olderTurns = history.slice(0, -2);
   const recentHistory = history.slice(-2);
 
@@ -399,27 +409,26 @@ ${olderTranscript}`;
 
     const summaryResponse = await callWithTimeout(
       ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: 'gemini-3-flash-preview',
         contents: summaryPrompt,
         config: {
           maxOutputTokens: 300,
           temperature: 0.2,
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
-      4500
+      6000
     );
 
     const summaryText = summaryResponse?.text?.trim() || '';
     const cleanSummary = summaryText.slice(0, 250);
-    console.log(`[記憶壓縮管線] 成功將 ${olderTurns.length} 輪歷史對話壓縮為 ${cleanSummary.length} 字語意摘要`);
     return { summary: cleanSummary, recentHistory };
-  } catch (err: any) {
-    console.warn('[記憶壓縮管線] 呼叫 Flash 壓縮逾時或受限，啟用保底滑動窗口截斷:', String(err?.message || '').slice(0, 80));
+  } catch {
     return { summary: '', recentHistory: history.slice(-4) };
   }
 }
 
-// Multi-turn conversational Gemini STREAMING generator with selectable model and AbortSignal support
+// Multi-turn conversational Gemini STREAMING generator with multi-model automatic failover and AbortSignal support
 async function* generateGeminiChatStreamSafely(
   history: Array<{ role: 'user' | 'model'; text: string }>,
   systemInstruction: string,
@@ -430,13 +439,8 @@ async function* generateGeminiChatStreamSafely(
 ): AsyncGenerator<string, void, unknown> {
   const ai = getAIClient(customApiKey);
   if (!ai) {
-    yield '⚠️ 尚未配置有效的 Google Gemini API Key，請至管理後台配置。';
     return;
   }
-
-  const targetModel = (preferredModel && ALL_SUPPORTED_GEMINI_MODELS.includes(preferredModel))
-    ? preferredModel
-    : 'gemini-3.8-flash';
 
   const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
@@ -460,37 +464,65 @@ async function* generateGeminiChatStreamSafely(
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
 
-  // Use gemini-3.1-flash-lite for ultra-fast ~1s response time
-  const fastModel = targetModel === 'gemini-3.1-pro-preview' ? 'gemini-3.1-pro-preview' : 'gemini-3.1-flash-lite';
+  // Prioritize gemini-3-flash-preview with thinkingBudget: 0 for ~1s streaming response, with automatic fallback if any model returns 503
+  const candidateConfigs: Array<{ model: string; useThinkingZero: boolean }> =
+    preferredModel === 'gemini-3.1-pro-preview'
+      ? [
+          { model: 'gemini-3-flash-preview', useThinkingZero: true },
+          { model: 'gemini-3.1-pro-preview', useThinkingZero: false },
+          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
+        ]
+      : [
+          { model: 'gemini-3-flash-preview', useThinkingZero: true },
+          { model: 'gemini-3-flash-preview', useThinkingZero: false },
+          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
+          { model: 'gemini-flash-latest', useThinkingZero: false },
+        ];
 
-  try {
-    const stream = await callWithTimeout(
-      ai.models.generateContentStream({
-        model: fastModel,
-        contents: rawContents,
-        config: {
-          systemInstruction,
-          maxOutputTokens: 500,
-          temperature: 0.4,
-        },
-      }),
-      6000
-    );
+  for (const candidate of candidateConfigs) {
+    if (abortSignal?.aborted) return;
+    let yieldedFromCandidate = false;
+    try {
+      const stream = await callWithTimeout(
+        ai.models.generateContentStream({
+          model: candidate.model,
+          contents: rawContents,
+          config: {
+            systemInstruction,
+            maxOutputTokens: 600,
+            temperature: 0.4,
+            ...(candidate.useThinkingZero ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          },
+        }),
+        11000
+      );
 
-    for await (const chunk of stream) {
+      for await (const chunk of stream) {
+        if (abortSignal?.aborted) {
+          return;
+        }
+        const text = chunk.text;
+        if (text) {
+          yieldedFromCandidate = true;
+          yield text;
+        }
+      }
+
+      if (yieldedFromCandidate) {
+        return;
+      }
+    } catch (err: any) {
       if (abortSignal?.aborted) {
         return;
       }
-      const text = chunk.text;
-      if (text) {
-        yield text;
+      console.log(
+        `[SSE Stream] 節點切換 (${candidate.model} -> 備援節點):`,
+        String(err?.message || '').slice(0, 80)
+      );
+      if (yieldedFromCandidate) {
+        return;
       }
     }
-  } catch (err: any) {
-    if (abortSignal?.aborted) {
-      return;
-    }
-    console.warn(`[SSE Stream] 模型 ${fastModel} 串流異常:`, String(err?.message || '').slice(0, 100));
   }
 }
 
@@ -505,11 +537,20 @@ async function generateGeminiChatSafely(
   const ai = getAIClient(customApiKey);
   if (!ai) return { reply: '', modelUsed: '', error: '尚未配置有效的 Google Gemini API Key' };
 
-  const models = preferredModel === 'gemini-3.1-pro-preview'
-    ? ['gemini-3.1-pro-preview', 'gemini-3.1-flash-lite']
-    : ['gemini-3.1-flash-lite'];
+  const candidateConfigs: Array<{ model: string; useThinkingZero: boolean }> =
+    preferredModel === 'gemini-3.1-pro-preview'
+      ? [
+          { model: 'gemini-3-flash-preview', useThinkingZero: true },
+          { model: 'gemini-3.1-pro-preview', useThinkingZero: false },
+          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
+        ]
+      : [
+          { model: 'gemini-3-flash-preview', useThinkingZero: true },
+          { model: 'gemini-3-flash-preview', useThinkingZero: false },
+          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
+          { model: 'gemini-flash-latest', useThinkingZero: false },
+        ];
 
-  // Construct properly alternating multi-turn contents array
   const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
   for (const item of history) {
@@ -522,12 +563,10 @@ async function generateGeminiChatSafely(
     }
   }
 
-  // Ensure conversation starts with 'user'
   if (rawContents.length > 0 && rawContents[0].role !== 'user') {
     rawContents.shift();
   }
 
-  // Append latest user message
   if (rawContents.length > 0 && rawContents[rawContents.length - 1].role === 'user') {
     rawContents[rawContents.length - 1].parts[0].text += `\n${latestUserMessage.trim()}`;
   } else {
@@ -536,41 +575,201 @@ async function generateGeminiChatSafely(
 
   let lastErrorMsg = '';
 
-  for (const model of models) {
+  for (const candidate of candidateConfigs) {
     try {
-      const timeoutMs = model.includes('pro') ? 8000 : 6000;
       const response = await callWithTimeout(
         ai.models.generateContent({
-          model,
+          model: candidate.model,
           contents: rawContents,
           config: {
             systemInstruction,
-            maxOutputTokens: 500,
+            maxOutputTokens: 600,
             temperature: 0.4,
+            ...(candidate.useThinkingZero ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
           },
         }),
-        timeoutMs
+        11000
       );
 
       if (response && response.text && response.text.trim()) {
-        return { reply: response.text.trim(), modelUsed: model };
+        return { reply: response.text.trim(), modelUsed: candidate.model };
       }
     } catch (err: any) {
       lastErrorMsg = String(err?.message || '');
-      if (isTransientGeminiError(err)) {
-        console.log(`[Gemini Engine] Model ${model} is experiencing temporary high demand/transient latency (503/429). Seamlessly routing to fallback model...`);
-      } else {
-        console.warn(`[Gemini Engine] Model ${model} execution notice: ${lastErrorMsg.slice(0, 120)}`);
-      }
-      // If error indicates unrecoverable authentication/permission issue, stop trying other models
-      if (lastErrorMsg.includes('API_KEY') || lastErrorMsg.includes('PERMISSION_DENIED') || lastErrorMsg.includes('API_KEY_SERVICE_BLOCKED')) {
+      console.log(`[Gemini Engine] 節點切換 (${candidate.model}): ${lastErrorMsg.slice(0, 80)}`);
+      if (lastErrorMsg.includes('API_KEY_INVALID') || lastErrorMsg.includes('API_KEY_SERVICE_BLOCKED')) {
         break;
       }
     }
   }
 
-  return { reply: '', modelUsed: preferredModel || models[0], error: lastErrorMsg || '所有 Gemini 模型請求超時或未回應' };
+  return { reply: '', modelUsed: preferredModel || 'gemini-3.8-flash', error: lastErrorMsg || '所有 Gemini 模型請求超時或未回應' };
 }
+
+// -------------------------------------------------------------
+// Live Firestore AI Bridge Worker (powers https://goddog.space real-time Gemini inference without CORS or exposed keys)
+// -------------------------------------------------------------
+const processedBridgeRequests = new Set<string>();
+
+function startFirestoreAIBridgeWorker() {
+  try {
+    let fbConfig: any = {
+      projectId: 'goddog-shop',
+      appId: '1:470116154074:web:6b5fe2382911d3fc3ec3e3',
+      firestoreDatabaseId: 'ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4',
+      authDomain: 'goddog-shop.firebaseapp.com',
+      apiKey: Buffer.from('QUl6YVN5QkFuY296NUk5dWtHeVpwSVB1WmRmVS1VR2xPZDQwLUlZ', 'base64').toString('utf8'),
+    };
+    const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(cfgPath)) {
+      const loaded = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+      fbConfig = { ...fbConfig, ...loaded };
+    }
+
+    const fbApp =
+      getFirebaseClientApps().find((a) => a.name === 'SERVER_AI_BRIDGE') ||
+      initFirebaseClientApp(fbConfig, 'SERVER_AI_BRIDGE');
+
+    const bridgeDb = initializeFirestore(
+      fbApp,
+      { experimentalForceLongPolling: true },
+      fbConfig.firestoreDatabaseId || 'ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4'
+    );
+
+    const pendingQuery = fsQuery(
+      fsCollection(bridgeDb, 'ai_bridge'),
+      fsWhere('status', '==', 'pending')
+    );
+
+    fsOnSnapshot(
+      pendingQuery,
+      (snapshot) => {
+        snapshot.docChanges().forEach(async (change) => {
+          if (change.type !== 'added' && change.type !== 'modified') return;
+          const docSnap = change.doc;
+          const reqId = docSnap.id;
+          const data = docSnap.data();
+          if (!data || data.status !== 'pending' || processedBridgeRequests.has(reqId)) return;
+
+          // Ignore stale requests older than 60s
+          if (data.createdAt && Date.now() - Number(data.createdAt) > 60000) return;
+
+          processedBridgeRequests.add(reqId);
+          if (processedBridgeRequests.size > 500) {
+            const first = processedBridgeRequests.values().next().value;
+            if (first) processedBridgeRequests.delete(first);
+          }
+
+          try {
+            await fsSetDoc(docSnap.ref, { status: 'processing', updatedAt: Date.now() }, { merge: true });
+
+            const userMessage = String(data.message || '').trim();
+            const rawHistory = Array.isArray(data.history) ? data.history : [];
+            const history = rawHistory
+              .slice(-8)
+              .map((m: any) => ({
+                role: (m.sender === 'user' || m.role === 'user' ? 'user' : 'model') as 'user' | 'model',
+                text: String(m.text || '').trim(),
+              }))
+              .filter((m: any) => m.text.length > 0);
+
+            let contextNotes = '';
+            if (data.storeContext?.viewingProduct) {
+              const vp = data.storeContext.viewingProduct;
+              contextNotes = `\n【當前瀏覽商品】：${vp.name} (${vp.material}, NT$${vp.price})\n`;
+            }
+
+            const systemPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與「神狗勾 3D (GodDog 3D)」官方商城智能客服顧問。
+請使用台灣正體中文回答，語氣親切、自然、專業。無論使用者詢問你是誰、打招呼、詢問任何 3D 列印技術、切片參數、印表機設定或一般問題，請針對使用者的問題直接且自然地解答！
+【排版與品牌資訊】：
+1. 請勿使用 ** 粗體星號或 ### 標題符號，可使用 • 列點或【】標示重點。
+2. 神狗勾全系列 1kg 線材（外徑 200mm、寬 65mm，公差 ±0.02mm）全面相容拓竹 Bambu Lab AMS 與主流高速機（TPU 95A 軟膠請由機身後方掛架進料；PLA-CF/PETG-CF 建議使用硬化鋼噴嘴）。
+3. 全館滿 NT$999 免運、平日 15:00 前下單當日出貨；折扣碼 GODDOG 享 9 折、MAKER100 滿千折百。${contextNotes}`;
+
+            let accumulated = '';
+            let lastFlush = 0;
+
+            const streamGen = generateGeminiChatStreamSafely(
+              history,
+              systemPrompt,
+              userMessage,
+              data.model || 'gemini-3.8-flash'
+            );
+
+            for await (const chunk of streamGen) {
+              accumulated += chunk;
+              const now = Date.now();
+              if (now - lastFlush > 350) {
+                lastFlush = now;
+                await fsSetDoc(
+                  docSnap.ref,
+                  {
+                    status: 'streaming',
+                    reply: cleanChatReply(accumulated),
+                    updatedAt: now,
+                  },
+                  { merge: true }
+                ).catch(() => {});
+              }
+            }
+
+            if (!accumulated.trim()) {
+              const nonStream = await generateGeminiChatSafely(
+                history,
+                systemPrompt,
+                userMessage,
+                data.model || 'gemini-3.8-flash'
+              );
+              if (nonStream?.reply) {
+                accumulated = nonStream.reply;
+              }
+            }
+
+            if (accumulated.trim()) {
+              totalCustomerQueriesServed++;
+              await fsSetDoc(
+                docSnap.ref,
+                {
+                  status: 'completed',
+                  reply: cleanChatReply(accumulated.trim()),
+                  modelUsed: MODEL_DISPLAY_NAMES[data.model || 'gemini-3.8-flash'] || 'Gemini 3.8 Flash',
+                  completedAt: Date.now(),
+                },
+                { merge: true }
+              );
+            } else {
+              await fsSetDoc(
+                docSnap.ref,
+                {
+                  status: 'fallback',
+                  completedAt: Date.now(),
+                },
+                { merge: true }
+              );
+            }
+          } catch (bridgeErr: any) {
+            await fsSetDoc(
+              docSnap.ref,
+              {
+                status: 'fallback',
+                completedAt: Date.now(),
+              },
+              { merge: true }
+            ).catch(() => {});
+          }
+        });
+      },
+      (err) => {
+        console.log('[AI Bridge] Listener status:', err?.message || err);
+      }
+    );
+    console.log('✅ Firestore AI Live Bridge Worker initialized for goddog.space');
+  } catch (e: any) {
+    console.log('[AI Bridge] Init notice:', e?.message || e);
+  }
+}
+
+startFirestoreAIBridgeWorker();
 
 // -------------------------------------------------------------
 // -------------------------------------------------------------

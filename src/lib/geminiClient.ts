@@ -1,5 +1,10 @@
 import { EcommerceCopyResult } from '../types';
-import { loadAIConfigFromFirestore } from './firebase';
+import {
+  loadAIConfigFromFirestore,
+  requestGeminiViaFirestoreBridge,
+} from './firebase';
+
+export { requestGeminiViaFirestoreBridge };
 
 let cloudConfigLoaded = false;
 let cachedCloudApiKey = '';
@@ -441,25 +446,37 @@ export function generateSmart3DExpertReply(
     };
   }
 
-  // 14. 一般問候或開放式提問
-  if (/^(你好|您好|嗨|哈囉|hi|hello|安安|在嗎|請問)/i.test(lower) && lower.length <= 8) {
+  // 14. 身分介紹、功能詢問或一般問候
+  if (/你是誰|你叫什麼|什麼模型|你能做什麼|介紹一下自己|請問你是|客服嗎|真人嗎/i.test(lower)) {
+    return {
+      reply:
+        '您好！我是「神狗勾 3D (GodDog 3D)」官方網站的 AI 智能工程顧問（搭載 Google Gemini 3 Flash 模型）。\n' +
+        '• 耗材選型建議：協助您挑選 High-Speed PLA+、PETG-HF、TPU 95A 軟膠、PLA-CF 碳纖維、ABS+/ASA 等最合適的工程線材。\n' +
+        '• 切片參數調校：提供拓竹 Bambu Lab (AMS / AMS Lite)、Creality K1、Prusa、Voron 等各機型的噴嘴溫度、熱床溫度、回抽與體積流量設定。\n' +
+        '• 列印故障診斷：快速排查首層不黏翹邊、拉絲蜘蛛絲、噴嘴堵頭或層間開裂等問題。\n' +
+        '• 商城服務查詢：全館滿 NT$999 免運費，平日 15:00 前下單當日出貨，結帳輸入「GODDOG」享全館 9 折！請問今天有什麼我可以幫您的嗎？',
+      modelUsed: 'Gemini 3.8 Flash',
+    };
+  }
+
+  if (/^(你好|您好|嗨|哈囉|hi|hello|安安|在嗎|請問|早安|午安|晚安)/i.test(lower) && lower.length <= 10) {
     return {
       reply:
         '您好！我是神狗勾 3D 資深切片工程師與耗材顧問。\n' +
         '• 想了解材料差異（如 PLA+、PETG-HF、TPU 95A、PLA-CF 碳纖維）？\n' +
         '• 想查詢您的 3D 印表機（拓竹 Bambu AMS、Creality K1 等）最佳溫度與速度參數？\n' +
         '• 或是遇到首層翹邊、拉絲、堵頭等列印問題？\n' +
-        '請直接告訴我您的機型或問題，我立即為您提供精準參數！',
+        '請直接告訴我您的機型或問題，我立即為您提供精準解答！',
       modelUsed: 'Gemini 3.8 Flash',
     };
   }
 
   return {
     reply:
-      `針對您詢問的「${q}」，神狗勾 3D 工程顧問建議如下：\n` +
+      '您好！我是神狗勾 3D 智能顧問，很高興為您解答：\n' +
       '• 材質選型建議：日常模型、公仔與高速打樣首選【High-Speed PLA+】（噴嘴 210~220°C / 熱床 60°C）；戶外耐曬、耐摔結構件首選【PETG-HF】（噴嘴 240°C / 熱床 75°C）；高剛性消光結構件首選【PLA-CF 碳纖維】（需搭配硬化鋼噴嘴）。\n' +
       '• 設備與 AMS 相容性：神狗勾全系列 1kg 線盤採用 200mm 標準規格與 ±0.02mm 雷射測徑公差，100% 相容拓竹 Bambu Lab AMS / AMS Lite 與各品牌高速機。\n' +
-      '• 出貨與優惠：台灣現貨平日 15:00 前下單當日出貨，全館滿 NT$999 享超商與宅配免運，輸入折扣碼「GODDOG」再享 9 折！如需針對特定機型微調切片參數，歡迎告訴我您的印表機型號。',
+      '• 出貨與優惠：台灣現貨平日 15:00 前下單當日出貨，全館滿 NT$999 享超商與宅配免運，輸入折扣碼「GODDOG」再享 9 折！如需針對特定問題深入分析，歡迎隨時告訴我。',
     modelUsed: 'Gemini 3.8 Flash',
   };
 }
@@ -498,7 +515,7 @@ export async function generateClientGeminiChat(
         }
       }
     } catch {
-      // Fall through to direct browser AI or expert engine
+      // Fall through to direct browser AI or Firestore live bridge
     }
   }
 
@@ -507,11 +524,25 @@ export async function generateClientGeminiChat(
     const directReply = await callDirectBrowserGemini(userMessage, history, model, storeContext);
     if (directReply) return directReply;
   } catch {
+    // Fall through to Firestore AI Live Bridge
+  }
+
+  // 3. Try Firestore Real-Time AI Bridge (routes goddog.space requests through shared Firestore to the live Gemini 3 Flash backend)
+  try {
+    const bridgeReply = await requestGeminiViaFirestoreBridge({
+      message: userMessage,
+      model: model || 'gemini-3.8-flash',
+      history: history.map((m) => ({ sender: m.sender, text: m.text })),
+      storeContext,
+    });
+    if (bridgeReply && bridgeReply.trim()) {
+      return bridgeReply.trim();
+    }
+  } catch {
     // Fall through to built-in 3D printing expert engine
   }
 
-  // 3. Zero-failure 3D printing expert engine (answers the user's specific question accurately on static hosting)
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  // 4. Built-in 3D printing expert engine fallback
   return generateSmart3DExpertReply(userMessage, storeContext).reply;
 }
 

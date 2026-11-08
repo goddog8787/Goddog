@@ -25,6 +25,7 @@ import {
   isStaticHostingEnv,
   callDirectBrowserGemini,
   generateSmart3DExpertReply,
+  requestGeminiViaFirestoreBridge,
 } from '../../lib/geminiClient';
 import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 
@@ -174,7 +175,10 @@ function sanitizeChatOrder(msgs: ChatMessage[]): ChatMessage[] {
   const filtered = msgs.filter((m) => {
     if (!m || !m.text) return false;
     const text = String(m.text);
-    return !text.includes('目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？');
+    return !(
+      text.includes('目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？') ||
+      text.includes('針對您詢問的「')
+    );
   });
 
   if (filtered.length === 0) return [DEFAULT_WELCOME_MESSAGE];
@@ -681,8 +685,49 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         if (directErr?.name === 'AbortError') throw directErr;
       }
 
-      // 3. Built-in 3D Printing Expert Knowledge Engine (guarantees accurate, instant answers on goddog.space static hosting)
-      await new Promise((resolve) => setTimeout(resolve, 320));
+      // 3. Firestore Real-Time AI Live Bridge (connects goddog.space directly to the live Gemini 3 Flash backend via shared Cloud Firestore with streaming chunks)
+      try {
+        const bridgeReply = await requestGeminiViaFirestoreBridge({
+          message: text,
+          model: selectedModel,
+          history: historyPayload,
+          storeContext: storeContextPayload,
+          signal: controller.signal,
+          onChunk: (streamedSoFar) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === aiMsgId
+                  ? {
+                      ...m,
+                      text: streamedSoFar,
+                      isLoading: false,
+                      modelUsed: currentModelObj.name,
+                    }
+                  : m
+              )
+            );
+          },
+        });
+        if (bridgeReply && bridgeReply.trim()) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    text: cleanChatText(bridgeReply),
+                    isLoading: false,
+                    modelUsed: currentModelObj.name,
+                  }
+                : m
+            )
+          );
+          return;
+        }
+      } catch (bridgeErr: any) {
+        if (bridgeErr?.name === 'AbortError') throw bridgeErr;
+      }
+
+      // 4. Built-in 3D Printing Expert Knowledge Engine (offline fallback)
       if (controller.signal.aborted) return;
 
       const expertResult = generateSmart3DExpertReply(text, storeContextPayload);

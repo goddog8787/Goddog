@@ -704,4 +704,104 @@ export async function loadAIConfigFromFirestore(): Promise<{
   return null;
 }
 
+// Real-Time Firestore AI Bridge for goddog.space -> server.ts Gemini 3 Flash Engine
+export async function requestGeminiViaFirestoreBridge(params: {
+  message: string;
+  history: Array<{ sender: string; text: string }>;
+  model?: string;
+  storeContext?: any;
+  onChunk?: (partialReply: string) => void;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const reqId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const reqRef = doc(db, 'ai_bridge', reqId);
 
+  const safeContext = params.storeContext?.viewingProduct
+    ? {
+        viewingProduct: {
+          name: String(params.storeContext.viewingProduct.name || ''),
+          material: String(params.storeContext.viewingProduct.material || ''),
+          price: Number(params.storeContext.viewingProduct.price || 0),
+        },
+      }
+    : {};
+
+  await setDoc(reqRef, {
+    id: reqId,
+    status: 'pending',
+    message: params.message,
+    history: (params.history || []).slice(-6).map((m) => ({
+      sender: m.sender,
+      text: String(m.text || '').slice(0, 600),
+    })),
+    model: params.model || 'gemini-3.8-flash',
+    storeContext: safeContext,
+    createdAt: Date.now(),
+  });
+
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    let unsub: (() => void) | null = null;
+
+    const cleanup = () => {
+      if (unsub) {
+        try {
+          unsub();
+        } catch {}
+        unsub = null;
+      }
+    };
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        reject(new Error('BRIDGE_TIMEOUT'));
+      }
+    }, 12500);
+
+    if (params.signal) {
+      params.signal.addEventListener('abort', () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          cleanup();
+          const abortErr = new Error('Aborted');
+          abortErr.name = 'AbortError';
+          reject(abortErr);
+        }
+      });
+    }
+
+    unsub = onSnapshot(
+      reqRef,
+      (snap) => {
+        if (settled || !snap.exists()) return;
+        const data = snap.data();
+        if (!data) return;
+
+        if (data.status === 'streaming' && data.reply && params.onChunk) {
+          params.onChunk(String(data.reply));
+        } else if (data.status === 'completed' && data.reply) {
+          settled = true;
+          clearTimeout(timer);
+          cleanup();
+          resolve(String(data.reply));
+        } else if (data.status === 'fallback') {
+          settled = true;
+          clearTimeout(timer);
+          cleanup();
+          reject(new Error('BRIDGE_FALLBACK'));
+        }
+      },
+      (err) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          cleanup();
+          reject(err);
+        }
+      }
+    );
+  });
+}
