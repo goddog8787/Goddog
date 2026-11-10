@@ -9,6 +9,7 @@ export type MaterialType =
   | 'PLA Glow'
   | 'LW-PLA'
   | 'PETG'
+  | 'PETG Matte'
   | 'PETG-CF'
   | 'PETG Translucent'
   | 'PETG-ESD'
@@ -61,6 +62,7 @@ export const ALL_MATERIAL_CATEGORIES: MaterialCategoryGroup[] = [
     icon: '🛡️',
     materials: [
       { value: 'PETG', label: 'PETG-HF (高速耐候耐溫 80°C)', description: '結合 PLA 易印與 ABS 耐撞，戶外抗 UV' },
+      { value: 'PETG Matte', label: 'PETG Matte (消光耐候抗衝擊)', description: '消光霧面質感、強韌升級、戶外抗 UV 優選' },
       { value: 'PETG Translucent', label: 'PETG Translucent (水晶高透光)', description: '如玻璃般晶瑩剔透，燈罩與透光導光件專用' },
       { value: 'PETG-CF', label: 'PETG-CF (碳纖維高剛性耐候)', description: '耐候耐化學性 + 碳纖維超高尺寸穩定度' },
       { value: 'PETG-ESD', label: 'PETG-ESD (工業防靜電級)', description: '表面電阻 10⁶~10⁹ Ω，半導體與精密電子載具' },

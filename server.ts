@@ -769,7 +769,49 @@ function startFirestoreAIBridgeWorker() {
   }
 }
 
-startFirestoreAIBridgeWorker();
+setTimeout(() => {
+  startFirestoreAIBridgeWorker();
+}, 1500);
+
+// -------------------------------------------------------------
+// 0. 後台商品目錄持久化同步 API (Admin Product Catalog Persistence)
+// -------------------------------------------------------------
+const CATALOG_DELTA_FILE = path.resolve(process.cwd(), 'data', 'product_catalog_delta.json');
+
+app.get('/api/catalog/sync', (_req, res) => {
+  try {
+    if (fs.existsSync(CATALOG_DELTA_FILE)) {
+      const raw = fs.readFileSync(CATALOG_DELTA_FILE, 'utf8');
+      const delta = JSON.parse(raw);
+      return res.json({ success: true, delta });
+    }
+    return res.json({ success: true, delta: null });
+  } catch (err: any) {
+    return res.json({ success: false, delta: null, error: err?.message });
+  }
+});
+
+app.post('/api/catalog/sync', (req, res) => {
+  try {
+    const dir = path.dirname(CATALOG_DELTA_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const payload = {
+      customProducts: Array.isArray(req.body?.customProducts) ? req.body.customProducts : [],
+      editedProductsMap:
+        req.body?.editedProductsMap && typeof req.body.editedProductsMap === 'object'
+          ? req.body.editedProductsMap
+          : {},
+      deletedProductIds: Array.isArray(req.body?.deletedProductIds) ? req.body.deletedProductIds : [],
+      updatedAt: typeof req.body?.updatedAt === 'number' ? req.body.updatedAt : Date.now(),
+    };
+    fs.writeFileSync(CATALOG_DELTA_FILE, JSON.stringify(payload, null, 2), 'utf8');
+    return res.json({ success: true, updatedAt: payload.updatedAt });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err?.message });
+  }
+});
 
 // -------------------------------------------------------------
 // -------------------------------------------------------------
@@ -3025,7 +3067,7 @@ app.post('/api/payment/checkout', (req, res) => {
         break;
       case 'credit_inst':
         paymentFlags.CREDIT = 1;
-        paymentFlags.InstFlag = '3,6,12'; // 3期、6期、12期分期
+        paymentFlags.InstFlag = '3'; // 信用卡分三期
         break;
       case 'credit_red':
         paymentFlags.CREDIT = 1;
@@ -3057,7 +3099,8 @@ app.post('/api/payment/checkout', (req, res) => {
         paymentFlags.VACC = 1; // ATM 轉帳 / 虛擬帳號
         break;
       case 'webatm':
-        paymentFlags.WEBATM = 1; // 網路 ATM 晶片讀卡機
+        paymentFlags.WEBATM = 1; // 銀行轉帳 / WebATM
+        paymentFlags.VACC = 1;
         break;
       case 'smartpay':
         paymentFlags.SMARTPAY = 1; // 智慧 ATM 2.0 / 晶片金融卡
@@ -3067,6 +3110,7 @@ app.post('/api/payment/checkout', (req, res) => {
         break;
       case 'barcode':
         paymentFlags.BARCODE = 1; // 超商條碼繳費
+        paymentFlags.CVS = 1;
         break;
       default:
         paymentFlags.CREDIT = 1;
@@ -4643,17 +4687,19 @@ app.all('/api/*', (req, res) => {
 let activeHttpServer: any = null;
 
 async function startServer() {
-  const isDev = process.env.NODE_ENV === 'development';
+  const isDev = process.env.NODE_ENV !== 'production';
   const possiblePaths = [
     path.resolve(process.cwd(), 'dist'),
     path.resolve(__dirname, '.'),
     path.resolve(__dirname, 'dist'),
   ];
   let distPath = '';
+  let hasBuiltDist = false;
   for (const p of possiblePaths) {
     try {
       if (fs.existsSync(path.join(p, 'index.html'))) {
         distPath = p;
+        hasBuiltDist = true;
         break;
       }
     } catch {}
@@ -4662,21 +4708,13 @@ async function startServer() {
     distPath = path.resolve(process.cwd(), 'dist');
   }
 
-  // Serve public assets (images, icons, etc.)
+  // Serve public assets (images, icons, etc.) immediately
   app.use(express.static(path.resolve(process.cwd(), 'public')));
 
-  const isProd = process.env.NODE_ENV === 'production' || (!isDev && !!distPath);
-  if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
-      },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
+  let viteMiddleware: any = null;
+  const useProdStatic = process.env.NODE_ENV === 'production' && hasBuiltDist;
+
+  if (useProdStatic) {
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       const indexPath = path.join(distPath, 'index.html');
@@ -4686,16 +4724,26 @@ async function startServer() {
         }
       });
     });
+  } else {
+    // Dynamic middleware that delegates to Vite once ready, or falls back to dist if available
+    app.use((req, res, next) => {
+      if (viteMiddleware) {
+        return viteMiddleware(req, res, next);
+      }
+      if (hasBuiltDist) {
+        return express.static(distPath)(req, res, next);
+      }
+      next();
+    });
   }
 
+  // Bind port 3000 immediately so the control plane health check succeeds right away
   const tryListen = (retries = 10, delay = 500) => {
-    
-
     const s: any = app.listen(PORT, '0.0.0.0', () => {
       activeHttpServer = s;
       console.log(`[神狗勾 Server] Running on http://0.0.0.0:${PORT} (env: ${process.env.NODE_ENV || 'development'})`);
     });
-    
+
     s.on('error', (err: any) => {
       if (err.code === 'EADDRINUSE' && retries > 0) {
         console.warn(`[神狗勾 Server] Port ${PORT} busy, retrying in ${delay}ms (${retries} attempts left)...`);
@@ -4709,6 +4757,22 @@ async function startServer() {
     });
   };
   tryListen();
+
+  if (!useProdStatic && isDev) {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
+        },
+        appType: 'spa',
+      });
+      viteMiddleware = vite.middlewares;
+    } catch (e) {
+      console.error('[神狗勾 Server] Vite middleware init error:', e);
+    }
+  }
 }
 
 // Graceful process handlers

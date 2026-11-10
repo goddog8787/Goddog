@@ -26,7 +26,7 @@ export function createClientNewebPayCheckout(params: NewebPayCheckoutParams) {
       break;
     case 'credit_inst':
       paymentFlags.CREDIT = 1;
-      paymentFlags.InstFlag = '3,6,12';
+      paymentFlags.InstFlag = '3';
       break;
     case 'credit_red':
       paymentFlags.CREDIT = 1;
@@ -59,6 +59,7 @@ export function createClientNewebPayCheckout(params: NewebPayCheckoutParams) {
       break;
     case 'webatm':
       paymentFlags.WEBATM = 1;
+      paymentFlags.VACC = 1;
       break;
     case 'smartpay':
       paymentFlags.SMARTPAY = 1;
@@ -68,6 +69,7 @@ export function createClientNewebPayCheckout(params: NewebPayCheckoutParams) {
       break;
     case 'barcode':
       paymentFlags.BARCODE = 1;
+      paymentFlags.CVS = 1;
       break;
     default:
       paymentFlags.CREDIT = 1;

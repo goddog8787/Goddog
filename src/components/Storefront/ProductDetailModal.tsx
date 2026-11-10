@@ -119,6 +119,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const materialDensities: Record<string, number> = {
     'High-Speed PLA': 1.24,
     'PETG': 1.27,
+    'PETG Matte': 1.27,
     'ABS': 1.04,
     'TPU': 1.21,
     'Carbon Fiber': 1.25,
@@ -301,11 +302,6 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                   <span className="text-2xl sm:text-3xl font-black text-slate-900 font-mono">
                     {formatPrice(displayProduct.price, currency)}
                   </span>
-                  {displayProduct.originalPrice > displayProduct.price && (
-                    <span className="ml-3 text-sm text-slate-400 line-through font-mono">
-                      {formatPrice(displayProduct.originalPrice, currency)}
-                    </span>
-                  )}
                 </div>
                 <div className="text-right">
                   <span className="text-xs bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full">

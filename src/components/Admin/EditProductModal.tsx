@@ -33,12 +33,12 @@ interface EditProductModalProps {
 }
 
 const PRESET_IMAGES = [
-  { label: '碳纖維/黑色線盤 (AMS 相容)', url: '/images/products/pla_cf_black.webp' },
-  { label: '多色 PLA 環保線盤', url: '/images/products/pla_white.webp' },
-  { label: '高光 PETG 耐熱耗材', url: '/images/products/petg_blue.webp' },
-  { label: '高流速 High-Speed 列印', url: '/images/products/hyper_pla_red.webp' },
-  { label: '無線盤 Refill 裸裝補充包', url: '/images/products/refill_yellow.webp' },
-  { label: '光固化 8K 高精樹脂', url: '/images/products/resin_8k_grey.svg' },
+  { label: 'Bambu 拓竹 PETG Matte 消光耐候', url: '/assets/aistudio/IMG_20260908_230642_0d9581e2.png' },
+  { label: 'SUNLU 三綠 S4 Pro 四盤烘乾箱', url: '/assets/aistudio/1794141738451-1734206707_ccc83181.jpg' },
+  { label: 'Bambu 拓竹 AMS 四色自動進料器', url: '/images/products/bambu_ams.jpg' },
+  { label: 'Bambu 拓竹 PLA Basic 原廠耗材', url: '/images/products/bambu_pla_basic.jpg' },
+  { label: '碳纖維 PLA-CF / PETG-CF 線盤', url: '/images/products/pla_cf_black.webp' },
+  { label: '光固化 8K 高精樹脂', url: '/images/products/resin_8k_grey.jpg' },
 ];
 
 export const EditProductModal: React.FC<EditProductModalProps> = ({
@@ -245,7 +245,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
       badge: badge.trim() || undefined,
       imageUrl: imageUrl.trim() || product.imageUrl,
       price: Number(price),
-      originalPrice: Number(originalPrice),
+      originalPrice: Number(price),
       stock: Number(stock),
       colors: colors.length > 0 ? colors : product.colors,
       nozzleTemp,

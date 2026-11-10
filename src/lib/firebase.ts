@@ -26,7 +26,15 @@ import {
   onSnapshot,
   Firestore,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+const firebaseConfig: Record<string, string> = {
+  projectId: 'goddog-shop',
+  appId: '1:470116154074:web:6b5fe2382911d3fc3ec3e3',
+  firestoreDatabaseId: 'ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4',
+  storageBucket: 'goddog-shop.firebasestorage.app',
+  messagingSenderId: '470116154074',
+  authDomain: 'goddog-shop.firebaseapp.com',
+  apiKey: '',
+};
 
 const FALLBACK_PUBLIC_KEY = (() => {
   try {

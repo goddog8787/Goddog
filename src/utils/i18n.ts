@@ -861,6 +861,7 @@ const MATERIAL_DICTIONARY: Record<string, { en: string; ja: string }> = {
   'PLA Glow': { en: 'Glow-in-the-Dark PLA', ja: '夜光蓄光PLA' },
   'LW-PLA': { en: 'Lightweight LW-PLA', ja: '軽量発泡LW-PLA' },
   'PETG': { en: 'PETG-HF High-Flow', ja: 'PETG-HF (高流動)' },
+  'PETG Matte': { en: 'PETG Matte Weatherproof', ja: 'マットPETG (消光耐候)' },
   'PETG-CF': { en: 'PETG-CF Carbon Fiber', ja: 'PETG-CF (高剛性カーボン)' },
   'PETG Translucent': { en: 'PETG Crystal Clear', ja: '高透明PETG' },
   'PETG-ESD': { en: 'PETG-ESD Anti-Static', ja: '帯電防止PETG-ESD' },

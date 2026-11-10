@@ -6,17 +6,52 @@ import React from 'react';
 export function getMaterialFallbackImage(material?: string, name?: string): string {
   const text = `${material || ''} ${name || ''}`.toLowerCase();
 
+  if (text.includes('s4') || (text.includes('sunlu') && (text.includes('dry') || text.includes('烘') || text.includes('乾')))) {
+    return '/assets/aistudio/1794141738451-1734206707_ccc83181.jpg';
+  }
+  if ((text.includes('petg') && text.includes('matte')) || text.includes('petg matte') || text.includes('petgmatte')) {
+    return '/assets/aistudio/IMG_20260908_230642_0d9581e2.png';
+  }
+  if (text.includes('ams') || text.includes('四色') || text.includes('進料器') || text.includes('供料系統')) {
+    return '/images/products/bambu_ams.jpg';
+  }
   if (text.includes('resin') || text.includes('樹脂') || text.includes('光敏')) {
-    return '/images/products/resin_8k_grey.svg';
+    if (text.includes('abs') || text.includes('韌')) {
+      return '/images/products/resin_abs_tough.jpg';
+    }
+    return '/images/products/resin_8k_grey.jpg';
   }
   if (text.includes('tpu') || text.includes('柔性') || text.includes('軟膠') || text.includes('彈性')) {
+    if (text.includes('85a')) return '/images/products/tpu_cyan.webp';
+    if (text.includes('64d')) return '/images/products/tpu_64d.webp';
     return '/images/products/tpu_orange.webp';
+  }
+  if (text.includes('pa12') && text.includes('cf')) {
+    return '/images/products/pa12_cf.webp';
+  }
+  if ((text.includes('pa') || text.includes('nylon') || text.includes('尼龍')) && text.includes('cf')) {
+    return '/images/products/pa6_cf.webp';
+  }
+  if ((text.includes('pa') || text.includes('nylon') || text.includes('尼龍')) && text.includes('gf')) {
+    return '/images/products/pa_gf.webp';
+  }
+  if (text.includes('petg') && text.includes('cf')) {
+    return '/images/products/petg_cf.webp';
   }
   if (text.includes('carbon') || text.includes('cf') || text.includes('碳纖維')) {
     return '/images/products/pla_cf_black.webp';
   }
+  if (text.includes('petg') && (text.includes('trans') || text.includes('透明') || text.includes('透光'))) {
+    return '/images/products/petg_translucent.webp';
+  }
+  if (text.includes('petg') && (text.includes('esd') || text.includes('靜電'))) {
+    return '/images/products/petg_esd.webp';
+  }
   if (text.includes('petg')) {
     return '/images/products/petg_blue.webp';
+  }
+  if (text.includes('pc-abs') || (text.includes('pc') && text.includes('abs'))) {
+    return '/images/products/pc_abs.webp';
   }
   if (text.includes('abs')) {
     return '/images/products/abs_black.webp';
@@ -30,6 +65,15 @@ export function getMaterialFallbackImage(material?: string, name?: string): stri
   if (text.includes('pc') || text.includes('聚碳酸酯')) {
     return '/images/products/pc_clear.webp';
   }
+  if (text.includes('pp') || text.includes('聚丙烯')) {
+    return '/images/products/pp_poly.webp';
+  }
+  if (text.includes('pva') || text.includes('hips') || text.includes('support') || text.includes('支撐')) {
+    return '/images/products/pva_support.webp';
+  }
+  if (text.includes('peek') || text.includes('ultem')) {
+    return '/images/products/peek_ultem.webp';
+  }
   if (text.includes('wood') || text.includes('木')) {
     return '/images/products/pla_wood.webp';
   }
@@ -39,26 +83,29 @@ export function getMaterialFallbackImage(material?: string, name?: string): stri
   if (text.includes('silk') || text.includes('絲綢')) {
     return '/images/products/pla_silk.webp';
   }
-  if (text.includes('refill') || text.includes('補充') || text.includes('裸裝')) {
-    return '/images/products/refill_yellow.webp';
+  if (text.includes('lw-pla') || text.includes('發泡') || text.includes('輕量')) {
+    return '/images/products/lw_pla.webp';
   }
   if (text.includes('dry') || text.includes('乾燥') || text.includes('烘乾')) {
-    return '/images/products/dryer_box_s2.svg';
+    return '/images/products/dryer_box_s2.png';
+  }
+  if (text.includes('esun') && (text.includes('matte') || text.includes('消光'))) {
+    return '/images/products/esun_pla_matte.jpg';
   }
   if (text.includes('matte') || text.includes('消光') || text.includes('啞光') || text.includes('莫蘭迪')) {
     return '/images/products/pla_matte.webp';
   }
-  if (text.includes('ams') || text.includes('feeder') || text.includes('進料') || text.includes('漏斗')) {
-    return '/images/products/nozzle_hardened_steel.webp';
-  }
-  if (text.includes('cardboard') || text.includes('紙盤')) {
-    return '/images/products/cardboard_spool.webp';
-  }
   if (text.includes('pei') || text.includes('鋼板') || text.includes('熱床')) {
-    return '/images/products/pei_textured_sheet.svg';
+    if (text.includes('bambu') || text.includes('拓竹')) {
+      return '/images/products/bambu_pei_plate.png';
+    }
+    return '/images/products/pei_textured_sheet.png';
   }
-  if (text.includes('nozzle') || text.includes('噴嘴')) {
-    return '/images/products/nozzle_hardened_steel.webp';
+  if (text.includes('nozzle') || text.includes('噴嘴') || text.includes('熱端')) {
+    return '/images/products/bambu_hotend_nozzle.png';
+  }
+  if (text.includes('bambu') && text.includes('pla')) {
+    return '/images/products/bambu_pla_basic.jpg';
   }
   return '/images/products/hyper_pla_red.webp';
 }
@@ -74,7 +121,8 @@ export function getSafeProductImageUrl(url?: string, material?: string, name?: s
     url.includes('unsplash.com') ||
     url.includes('1550684848') ||
     url.includes('1584308666744') ||
-    url.includes('1518770660439')
+    url.includes('1518770660439') ||
+    url.endsWith('.svg')
   ) {
     return getMaterialFallbackImage(material, name);
   }

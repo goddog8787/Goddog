@@ -86,13 +86,18 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     return (liveProduct.name || '').replace(/神狗勾\s*/g, '').trim();
   }, [liveProduct.name]);
 
-  // 清理品牌顯示：若為神狗勾則改為顯示產品材質分類
+  // 清理品牌顯示：保持完整且簡潔的品牌名稱，絕不截斷
   const cleanBrand = useMemo(() => {
     const b = (liveProduct.brand || '').trim();
     if (!b || b === '神狗勾' || b.includes('神狗勾')) {
-      return liveProduct.material ? `${liveProduct.material} 系列` : '專業耗材';
+      return liveProduct.material ? `${liveProduct.material}` : '專業耗材';
     }
-    return b.replace(/\s*(pro|官方驗證)/gi, '').trim();
+    return b
+      .replace(/\s*(pro|官方驗證|工業級|\/\s*嚴選|規格)/gi, '')
+      .replace('Bambu / Polymaker', 'Bambu Lab')
+      .replace('Bambu / eSUN', 'eSUN 易生')
+      .replace('Polymaker / eSUN', 'Polymaker')
+      .trim();
   }, [liveProduct.brand, liveProduct.material]);
 
   const handleAdd = (e: React.MouseEvent) => {
@@ -103,9 +108,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setTimeout(() => setIsAddedAnimation(false), 1200);
   };
 
-  const discountPercent = Math.round(
-    ((liveProduct.originalPrice - liveProduct.price) / liveProduct.originalPrice) * 100
-  );
   const featureHighlights = useMemo(() => getProductFeatureHighlights(liveProduct), [liveProduct]);
   const activeImageUrl = useMemo(() => {
     return getSafeProductImageUrl(liveProduct.imageUrl, liveProduct.material, liveProduct.name);
@@ -185,17 +187,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         )}
       </div>
 
-      {/* 簡潔有力的商品資訊內容（高度緊湊、不顯示顏色、無遮蔽） */}
+      {/* 簡潔有力的商品資訊內容（完整顯示不省略、不顯示顏色、無遮蔽） */}
       <div className="p-2.5 sm:p-3.5 flex-1 flex flex-col justify-between space-y-2">
         <div className="space-y-1.5">
-          {/* 第 1 列：材質/品牌 與 線徑規格 */}
-          <div className="flex items-center justify-between gap-1 text-[10px] sm:text-xs">
-            <div className="flex items-center gap-1 min-w-0 truncate">
-              <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded truncate">
+          {/* 第 1 列：材質/品牌 與 線徑規格（完整展開不省略） */}
+          <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] sm:text-xs">
+            <div className="flex flex-wrap items-center gap-1 min-w-0">
+              <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded whitespace-normal break-words">
                 {cleanBrand}
               </span>
               {liveProduct.diameter && (
-                <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px]">
+                <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px] shrink-0">
                   {liveProduct.diameter}
                 </span>
               )}
@@ -205,40 +207,30 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </span>
           </div>
 
-          {/* 第 2 列：商品標題 */}
-          <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors min-h-[2rem] sm:min-h-[2.25rem]">
+          {/* 第 2 列：商品標題（完整顯示不截斷、不出現 ...） */}
+          <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug break-words group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
             {cleanTitle}
           </h3>
 
-          {/* 第 3 列：商品核心特色特點（純性能亮點，不顯示顏色） */}
+          {/* 第 3 列：商品核心特色特點（完整顯示不省略） */}
           <div className="flex flex-wrap items-center gap-1 pt-0.5">
-            <span className="inline-flex items-center text-[10px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded max-w-full truncate">
+            <span className="inline-flex items-center text-[10px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded break-words whitespace-normal leading-tight">
               ✦ {featureHighlights.primary}
             </span>
             {featureHighlights.secondary && (
-              <span className="hidden sm:inline-flex items-center text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 px-1.5 py-0.5 rounded max-w-full truncate">
+              <span className="hidden sm:inline-flex items-center text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 px-1.5 py-0.5 rounded break-words whitespace-normal leading-tight">
                 {featureHighlights.secondary}
               </span>
             )}
           </div>
         </div>
 
-        {/* 第 4 列：價格與快速加入購物車 */}
+        {/* 第 4 列：價格與快速加入購物車（直接呈現實惠直購價，不寫折扣） */}
         <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1.5 mt-auto">
           <div className="flex items-baseline gap-1 min-w-0 flex-wrap">
             <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white font-mono tracking-tight">
               {formatPrice(liveProduct.price, currency)}
             </span>
-            {liveProduct.originalPrice > liveProduct.price && (
-              <>
-                <span className="text-[10px] sm:text-xs text-slate-400 line-through font-mono">
-                  {formatPrice(liveProduct.originalPrice, currency)}
-                </span>
-                <span className="text-[10px] bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold px-1 py-0.2 rounded">
-                  -{discountPercent}%
-                </span>
-              </>
-            )}
           </div>
 
           <button

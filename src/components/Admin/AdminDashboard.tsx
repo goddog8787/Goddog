@@ -87,6 +87,11 @@ import { SystemBackupAuditManager } from './SystemBackupAuditManager';
 import { NewebPayShippingLabelModal, createSampleOrderForTesting } from './NewebPayShippingLabelModal';
 import { isMockOrder } from '../../lib/orderVerification';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { INITIAL_PRODUCTS } from '../../data/mockData';
+import {
+  recordAdminProductUpsert,
+  recordAdminProductDelete,
+} from '../../lib/productPersistence';
 
 interface AdminDashboardProps {
   products: FilamentProduct[];
@@ -183,8 +188,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleSaveProductEdit = (updated: FilamentProduct) => {
-    setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-    setToastMessage(`✨ 耗材【${updated.name}】已成功更新內容、價格與物流規格！`);
+    const updatedList = recordAdminProductUpsert(updated, INITIAL_PRODUCTS);
+    setProducts(updatedList);
+    setToastMessage(`✨ 耗材【${updated.name}】已永久儲存更新（重整網頁不會還原）！`);
     setTimeout(() => setToastMessage(null), 4000);
   };
 
@@ -583,9 +589,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Stock update helper
   const handleSaveStock = (id: string) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, stock: Number(stockEditValue) } : p))
-    );
+    const target = products.find((p) => p.id === id);
+    if (target) {
+      const updatedProd: FilamentProduct = { ...target, stock: Number(stockEditValue) };
+      const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
+      setProducts(updatedList);
+      setToastMessage(`✨ 已永久儲存【${target.name}】庫存為 ${stockEditValue} 卷！`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } else {
+      setProducts((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, stock: Number(stockEditValue) } : p))
+      );
+    }
     setEditingStockId(null);
   };
 
@@ -596,13 +611,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const newProd: FilamentProduct = {
       id: `p-${Date.now()}`,
-      name: newProdName,
-      brand: newProdBrand,
+      name: newProdName.trim(),
+      brand: newProdBrand.trim() || '神狗勾',
       material: newProdMaterial,
       diameter: '1.75mm',
       weight: '1.0kg',
       price: Number(newProdPrice),
-      originalPrice: Math.round(newProdPrice * 1.25),
+      originalPrice: Number(newProdPrice),
       sku: `PC-${newProdMaterial.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`,
       rating: 5.0,
       reviewsCount: 1,
@@ -620,9 +635,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       imageUrl: newProdImageUrl || '/images/products/hyper_pla_red.webp',
     };
 
-    setProducts([newProd, ...products]);
+    const updatedList = recordAdminProductUpsert(newProd, INITIAL_PRODUCTS);
+    setProducts(updatedList);
     setIsAddProductOpen(false);
     setNewProdName('');
+    setToastMessage(`✨ 新商品【${newProd.name}】已成功上架並永久儲存！`);
+    setTimeout(() => setToastMessage(null), 4000);
   };
 
   const filteredProducts = products.filter((p) => {
@@ -1501,7 +1519,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <tr>
                     <th className="py-3.5 px-4 font-semibold">耗材品名 / SKU</th>
                     <th className="py-3.5 px-3 font-semibold">材質規格</th>
-                    <th className="py-3.5 px-3 font-semibold">售價 / 原價</th>
+                    <th className="py-3.5 px-3 font-semibold">直購售價</th>
                     <th className="py-3.5 px-3 font-semibold">即時庫存 (卷)</th>
                     <th className="py-3.5 px-3 font-semibold">顏色規格</th>
                     <th className="py-3.5 px-3 font-semibold">列印溫度</th>
@@ -1548,9 +1566,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <td className="py-3.5 px-3">
                           <div className="font-mono font-bold text-slate-900">
                             {formatPrice(p.price, currency)}
-                          </div>
-                          <div className="text-[10px] text-slate-400 line-through font-mono">
-                            {formatPrice(p.originalPrice, currency)}
                           </div>
                         </td>
 
@@ -1639,9 +1654,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             </button>
                             <button
                               onClick={() => {
-                                if (confirm(`確定要將【${p.name}】下架嗎？`)) {
-                                  setProducts(products.filter((item) => item.id !== p.id));
-                                }
+                                const updatedList = recordAdminProductDelete(p.id, INITIAL_PRODUCTS);
+                                setProducts(updatedList);
+                                setToastMessage(`🗑️ 已將【${p.name}】永久下架！`);
+                                setTimeout(() => setToastMessage(null), 3500);
                               }}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               title="下架此耗材"
@@ -2709,14 +2725,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           product={studioProduct}
           initialImage={studioProduct.imageUrl}
           onApplyImage={(newImg) => {
-            setProducts((prev) =>
-              prev.map((item) =>
-                item.id === studioProduct.id ? { ...item, imageUrl: newImg } : item
-              )
-            );
+            const updatedProd: FilamentProduct = { ...studioProduct, imageUrl: newImg };
+            const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
+            setProducts(updatedList);
             setIsStudioOpen(false);
             setStudioProduct(null);
-            setToastMessage(`✨ 已成功更新【${studioProduct.name}】的商品圖片！`);
+            setToastMessage(`✨ 已永久儲存【${studioProduct.name}】的商品圖片！`);
             setTimeout(() => setToastMessage(null), 4000);
           }}
         />

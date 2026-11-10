@@ -82,6 +82,11 @@ import {
 import confetti from 'canvas-confetti';
 import { translations, translateMaterial, translateProductName } from './utils/i18n';
 import { subscribeToProductStats } from './lib/reviewPersistence';
+import {
+  loadPersistedProductsSync,
+  subscribeToCloudCatalog,
+  recordAdminProductUpsert,
+} from './lib/productPersistence';
 import { 
   saveOrderToFirestore, 
   saveUserProfileToFirestore, 
@@ -273,50 +278,24 @@ export default function App() {
     return () => window.removeEventListener('printcore_announcement_updated', handleAnnouncementUpdate);
   }, []);
 
-  // Core Data States
-  const [products, setProducts] = useState<FilamentProduct[]>(() => {
-    try {
-      const CATALOG_VERSION = 'v20261005_self_store_clean_v5';
-      const currentVersion = localStorage.getItem('printcore_products_version');
-      if (currentVersion !== CATALOG_VERSION) {
-        localStorage.setItem('printcore_products_version', CATALOG_VERSION);
-        localStorage.setItem('printcore_products', JSON.stringify(INITIAL_PRODUCTS));
-        return INITIAL_PRODUCTS;
-      }
-
-      const saved = localStorage.getItem('printcore_products');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const merged = parsed
-            .filter((p: FilamentProduct) => p.id !== 'test-01')
-            .map((p: FilamentProduct) => {
-              const sanitized = { ...p };
-              delete sanitized.affiliateUrl;
-              delete sanitized.affiliateCtaText;
-
-              const freshMatch = INITIAL_PRODUCTS.find(item => item.id === sanitized.id);
-              if (freshMatch) {
-                if (!sanitized.imageUrl || !sanitized.imageUrl.startsWith('/images/products/')) {
-                  return { ...sanitized, imageUrl: freshMatch.imageUrl };
-                }
-              }
-              return sanitized;
-            });
-
-          // Ensure all products in catalog are present
-          const existingIds = new Set(merged.map(p => p.id));
-          const missing = INITIAL_PRODUCTS.filter(p => !existingIds.has(p.id));
-          return [...merged, ...missing];
-        }
-      }
-    } catch {}
-    return INITIAL_PRODUCTS;
-  });
+  // Core Data States (Preserves all Admin edits, additions, stock changes, and deletions across refreshes & cloud)
+  const [products, setProducts] = useState<FilamentProduct[]>(() =>
+    loadPersistedProductsSync(INITIAL_PRODUCTS)
+  );
 
   useEffect(() => {
-    localStorage.setItem('printcore_products', JSON.stringify(products));
+    try {
+      localStorage.setItem('printcore_products', JSON.stringify(products));
+    } catch {}
   }, [products]);
+
+  // Real-time synchronization of Admin product catalog edits/additions/deletions from Cloud & Server
+  useEffect(() => {
+    const unsubCatalog = subscribeToCloudCatalog(INITIAL_PRODUCTS, (cloudMergedProducts) => {
+      setProducts(cloudMergedProducts);
+    });
+    return () => unsubCatalog();
+  }, []);
 
   // Real-time synchronization of product review stats from Firestore database
   useEffect(() => {
@@ -338,9 +317,8 @@ export default function App() {
   }, []);
 
   const handleReviewSubmitted = (updatedProduct: FilamentProduct, review: ProductReview) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p))
-    );
+    const updatedList = recordAdminProductUpsert(updatedProduct, INITIAL_PRODUCTS);
+    setProducts(updatedList);
     if (viewingProduct?.id === updatedProduct.id) {
       setViewingProduct(updatedProduct);
     }
@@ -1380,7 +1358,7 @@ export default function App() {
   };
 
   // Filter and sort products
-  const materials = ['All', 'High-Speed PLA', 'PETG', 'ABS', 'TPU', 'Carbon Fiber', 'Resin'];
+  const materials = ['All', 'High-Speed PLA', 'PLA Matte', 'PETG', 'PETG Matte', 'ABS', 'TPU', 'PLA-CF', 'Resin', 'Accessories'];
 
   const filteredAndSortedProducts = products
     .filter((p) => {
@@ -1535,7 +1513,7 @@ export default function App() {
                 <div className="lg:col-span-7 space-y-3 sm:space-y-4">
                   <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] sm:text-xs font-bold tracking-wide">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="truncate">
+                    <span className="break-words">
                       {lang === 'en' ? '2026 High-Speed 600mm/s Bambu AMS & Creality K1 Flagship Filaments' : lang === 'ja' ? '2026最新 最高600mm/s Bambu AMS＆K1公式検証済みフィラメント' : '2026 高速 600mm/s 拓竹 AMS 與 K1 旗艦專用線材'}
                     </span>
                   </div>
@@ -1631,7 +1609,7 @@ export default function App() {
                     <Bot className="w-5 h-5 text-sky-200" />
                     <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-800 animate-pulse" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 truncate max-w-full">
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 break-words max-w-full">
                     {t.aiSupport || (lang === 'en' ? 'AI Support' : lang === 'ja' ? 'AIサポート' : 'AI 機器人')}
                   </span>
                   <span className="text-[9px] text-slate-400 hidden sm:block">
@@ -1648,7 +1626,7 @@ export default function App() {
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center text-white shadow-md shadow-cyan-500/20 group-hover:scale-105 transition-transform">
                     <Wrench className="w-5 h-5 text-cyan-200" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-cyan-600 truncate max-w-full">
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-cyan-600 break-words max-w-full">
                     {t.makerTools || (lang === 'en' ? 'Maker Lab' : lang === 'ja' ? 'メイカーラボ' : '創客工具')}
                   </span>
                   <span className="text-[9px] text-slate-400 hidden sm:block">
@@ -1665,7 +1643,7 @@ export default function App() {
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
                     <Recycle className="w-5 h-5 text-emerald-200" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 truncate max-w-full">
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 break-words max-w-full">
                     {t.spoolRecycleBtn || (lang === 'en' ? 'Spool Rewards' : lang === 'ja' ? '空スプール還元' : '空盤換幣')}
                   </span>
                   <span className="text-[9px] text-slate-400 hidden sm:block">
@@ -1687,7 +1665,7 @@ export default function App() {
                       {comparisonIds.length}
                     </span>
                   )}
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 truncate max-w-full">
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 break-words max-w-full">
                     {t.specCompare || (lang === 'en' ? 'Compare' : lang === 'ja' ? '比較' : '規格對比')}
                   </span>
                   <span className="text-[9px] text-slate-400 hidden sm:block">

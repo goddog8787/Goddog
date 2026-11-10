@@ -245,7 +245,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
-                        <h4 className="font-bold text-slate-900 text-xs truncate leading-snug">
+                        <h4 className="font-bold text-slate-900 text-xs break-words leading-snug">
                           {translateProductName(item.product.name, lang, item.product.brand, item.product.material, item.product.weight)}
                         </h4>
                         <div className="flex items-center gap-1.5 mt-1">
@@ -253,7 +253,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                             className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0" 
                             style={{ backgroundColor: item.selectedColor.hex }} 
                           />
-                          <span className="text-[11px] text-slate-500 truncate">
+                          <span className="text-[11px] text-slate-500 break-words">
                             {translateColorName(item.selectedColor.name, lang)} · {item.selectedDiameter}
                           </span>
                         </div>
@@ -318,7 +318,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         className="p-2 bg-white rounded-xl border border-indigo-100 flex items-center justify-between gap-2 text-xs shadow-2xs"
                       >
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-800 text-[11px] truncate">{addon.name}</p>
+                          <p className="font-bold text-slate-800 text-[11px] break-words">{addon.name}</p>
                           <span className="text-[10px] font-mono font-bold text-indigo-600">
                             {formatPrice(addon.price, currency)}
                           </span>
