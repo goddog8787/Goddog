@@ -685,7 +685,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Menu Dropdown Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-200 bg-white/98 backdrop-blur-xl px-4 pt-3 pb-5 space-y-3 shadow-2xl animate-in slide-in-from-top-2 duration-200 max-h-[85vh] overflow-y-auto">
+        <div className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white/98 dark:bg-slate-900/98 backdrop-blur-xl px-4 pt-3 pb-5 space-y-2.5 shadow-2xl animate-in slide-in-from-top-2 duration-200 max-h-[85vh] overflow-y-auto">
           {/* Mobile Search Autocomplete */}
           {setSearchQuery && (
             <div>
@@ -705,16 +705,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
                 products={products}
                 size="sm"
-                placeholder={t.searchPlaceholderInput || "搜尋耗材材質、品牌 (如 PLA, Bambu)..."}
+                placeholder="搜尋線材材質、品牌或型號..."
               />
             </div>
           )}
 
           {/* Mobile Language & Currency Selector Row */}
-          <div className="flex items-center justify-between py-1.5 px-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
-            <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
+          <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 text-xs">
+            <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200 font-bold">
               <Globe className="w-3.5 h-3.5 text-slate-500" />
-              <span className="text-[11px]">{t.langCurrency || "語系 / 幣別"}</span>
+              <span className="text-xs">語系 / 幣別</span>
             </div>
             <div className="flex items-center gap-1">
               {(['zh-TW', 'en', 'ja'] as const).map((l) => (
@@ -724,14 +724,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setLang(l);
                     try { localStorage.setItem('printcore_lang', l); } catch(e){}
                   }}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${
-                    lang === l ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                    lang === l ? 'bg-slate-900 dark:bg-sky-500 text-white' : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {l === 'zh-TW' ? '繁中' : l === 'en' ? 'EN' : '日'}
                 </button>
               ))}
-              <span className="text-slate-300 mx-0.5">|</span>
+              <span className="text-slate-300 dark:text-slate-600 mx-0.5">|</span>
               {(['TWD', 'USD', 'JPY'] as const).map((c) => (
                 <button
                   key={c}
@@ -739,8 +739,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setCurrency(c);
                     try { localStorage.setItem('printcore_currency', c); } catch(e){}
                   }}
-                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold transition-colors cursor-pointer ${
-                    currency === c ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                  className={`px-2 py-0.5 rounded-md font-mono text-[11px] font-bold transition-colors cursor-pointer ${
+                    currency === c ? 'bg-indigo-600 text-white' : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   {c}
@@ -749,7 +749,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Top Expanded Menu: Featured AI 顧問 (機型配對與耗材推薦) */}
+          {/* Featured AI 耗材顧問 (Concise 1-line subtitle, no duplicate button below) */}
           {onOpenAIAdvisor && (
             <button
               id="mobile-nav-featured-ai-advisor"
@@ -757,21 +757,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                 onOpenAIAdvisor();
                 setMobileMenuOpen(false);
               }}
-              className="w-full p-3 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-sky-600 text-white flex items-center justify-between shadow-md shadow-indigo-600/25 active:scale-[0.99] transition-all cursor-pointer text-left"
+              className="w-full p-3 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-sky-600 text-white flex items-center justify-between shadow-sm active:scale-[0.99] transition-all cursor-pointer text-left"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center shrink-0">
-                  <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-4 h-4 text-amber-300" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black tracking-wide">{t.aiAdvisorHeroTitle || "AI 耗材顧問"}</span>
-                    <span className="text-[10px] bg-amber-400 text-slate-900 font-extrabold px-1.5 py-0.2 rounded-full">
-                      {t.aiAdvisorHeroTag || "機型配對"}
+                    <span className="text-xs font-black">AI 耗材顧問</span>
+                    <span className="text-[10px] bg-amber-400 text-slate-900 font-extrabold px-1.5 py-0.5 rounded-full">
+                      機型配對
                     </span>
                   </div>
                   <p className="text-[11px] text-sky-100 mt-0.5">
-                    {t.aiAdvisorHeroDesc || "輸入 3D 印表機型號，自動精準適配最佳線材與切片參數"}
+                    依 3D 印表機型號推薦最佳線材與切片參數
                   </p>
                 </div>
               </div>
@@ -779,33 +779,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
 
-          {/* Mobile Quick Action Buttons Row (Features not in bottom bar) */}
-          <div className="grid grid-cols-5 gap-1.5 py-1">
-            {onOpenAIAdvisor && (
-              <button
-                id="mobile-nav-ai-advisor"
-                onClick={() => {
-                  onOpenAIAdvisor();
-                  setMobileMenuOpen(false);
-                }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-gradient-to-tr from-indigo-600 to-sky-600 text-white text-[10px] sm:text-[11px] font-bold cursor-pointer shadow-xs hover:opacity-95 active:scale-95 transition-all"
-              >
-                <Sparkles className="w-4 h-4 mb-1 text-amber-300 animate-pulse" />
-                <span className="truncate">{t.aiAdvisor || 'AI 顧問'}</span>
-              </button>
-            )}
+          {/* 4 Distinct Quick Tools Grid (Clean 4-column layout) */}
+          <div className="grid grid-cols-4 gap-2">
             {onOpenCompare && (
               <button
                 onClick={() => {
                   onOpenCompare();
                   setMobileMenuOpen(false);
                 }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[10px] sm:text-[11px] font-bold cursor-pointer relative hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
+                className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer relative hover:bg-slate-200 transition-all"
               >
                 <Scale className="w-4 h-4 mb-1 text-slate-600 dark:text-slate-300" />
-                <span className="truncate">{t.specCompare || '規格對比'}</span>
+                <span className="whitespace-nowrap">規格對比</span>
                 {compareCount > 0 && (
-                  <span className="absolute top-1 right-2 bg-indigo-600 text-white text-[9px] font-bold px-1 rounded-full">
+                  <span className="absolute top-1 right-1.5 bg-indigo-600 text-white text-[9px] font-bold px-1.5 rounded-full">
                     {compareCount}
                   </span>
                 )}
@@ -817,12 +804,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onOpenWishlist();
                   setMobileMenuOpen(false);
                 }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-[10px] sm:text-[11px] font-bold cursor-pointer relative hover:bg-rose-100 dark:hover:bg-rose-900/50 active:scale-95 transition-all"
+                className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-xs font-bold cursor-pointer relative hover:bg-rose-100 transition-all"
               >
                 <Heart className={`w-4 h-4 mb-1 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : 'text-rose-500'}`} />
-                <span className="truncate">{t.wishlist || '願望清單'}</span>
+                <span className="whitespace-nowrap">願望清單</span>
                 {wishlistCount > 0 && (
-                  <span className="absolute top-1 right-2 bg-rose-500 text-white text-[9px] font-bold px-1 rounded-full">
+                  <span className="absolute top-1 right-1.5 bg-rose-500 text-white text-[9px] font-bold px-1.5 rounded-full">
                     {wishlistCount}
                   </span>
                 )}
@@ -834,10 +821,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onOpenRecycle();
                   setMobileMenuOpen(false);
                 }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-[10px] sm:text-[11px] font-bold cursor-pointer hover:bg-emerald-100 dark:hover:bg-emerald-900/50 active:scale-95 transition-all"
+                className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold cursor-pointer hover:bg-emerald-100 transition-all"
               >
                 <Recycle className="w-4 h-4 mb-1 text-emerald-600 dark:text-emerald-400" />
-                <span className="truncate">{t.spoolRecycle || '空盤回收'}</span>
+                <span className="whitespace-nowrap">空盤回收</span>
               </button>
             )}
             {onOpenFilamentLab && (
@@ -846,26 +833,31 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onOpenFilamentLab();
                   setMobileMenuOpen(false);
                 }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-[10px] sm:text-[11px] font-bold cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/50 active:scale-95 transition-all"
+                className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold cursor-pointer hover:bg-indigo-100 transition-all"
               >
                 <Wrench className="w-4 h-4 mb-1 text-indigo-600 dark:text-indigo-400" />
-                <span className="truncate">{t.makerTools || '創客工具'}</span>
+                <span className="whitespace-nowrap">創客工具</span>
               </button>
             )}
           </div>
 
-          {/* Mobile Navigation Links */}
-          <div className="grid grid-cols-2 gap-2 pb-1">
+          {/* 2-Column Navigation Grid (Concise Labels, Zero Truncation) */}
+          <div className="grid grid-cols-2 gap-2">
             <button
               id="mobile-nav-blog"
               onClick={() => {
                 handleNavClick('blog');
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              <BookOpen className="w-4 h-4 shrink-0 text-indigo-500" />
-              <span className="truncate">{t.navArticlesCount || "創客專欄 (18篇)"}</span>
+              <span className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 shrink-0 text-indigo-500" />
+                <span>創客專欄</span>
+              </span>
+              <span className="text-[10px] font-mono bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded-full">
+                18篇
+              </span>
             </button>
 
             <button
@@ -874,10 +866,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 handleNavClick('faq');
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <HelpCircle className="w-4 h-4 shrink-0 text-amber-500" />
-              <span className="truncate">{t.navFaq || "常見問題百科"}</span>
+              <span>常見問題</span>
             </button>
 
             <button
@@ -886,10 +878,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 handleNavClick('guide');
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Compass className="w-4 h-4 shrink-0 text-cyan-500" />
-              <span className="truncate">{t.navGuideShort || "3D選材指南"}</span>
+              <span>3D 選材指南</span>
             </button>
 
             <button
@@ -898,10 +890,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 handleNavClick('about');
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Info className="w-4 h-4 shrink-0 text-blue-500" />
-              <span className="truncate">{t.navAbout || "關於神狗勾"}</span>
+              <span>關於神狗勾</span>
             </button>
 
             <button
@@ -910,10 +902,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 handleNavClick('subscription');
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-amber-50/80 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
             >
-              <Package className="w-4 h-4 shrink-0 text-amber-500" />
-              <span className="truncate">{t.subscriptionClub || t.navSubscription || '創客月配盒'}</span>
+              <span className="flex items-center gap-2">
+                <Package className="w-4 h-4 shrink-0 text-amber-500" />
+                <span>創客 VIP 會員</span>
+              </span>
+              <span className="text-[10px] font-extrabold bg-amber-200/80 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded-full">
+                95折
+              </span>
             </button>
 
             <button
@@ -922,10 +919,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 handleNavClick('logistics');
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Truck className="w-4 h-4 shrink-0 text-sky-500" />
-              <span className="truncate">{t.navLogistics || '即時物流追蹤'}</span>
+              <span>即時物流追蹤</span>
             </button>
 
             {onOpenHistory && (
@@ -935,12 +932,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                   onOpenHistory();
                   setMobileMenuOpen(false);
                 }}
-                className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-colors cursor-pointer"
+                className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 transition-colors cursor-pointer"
               >
-                <Clock className="w-4 h-4 shrink-0 text-purple-600 dark:text-purple-400" />
-                <span className="truncate">{t.navHistory || "最近瀏覽記錄"}</span>
+                <span className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 shrink-0 text-purple-600 dark:text-purple-400" />
+                  <span>最近瀏覽</span>
+                </span>
                 {historyCount > 0 && (
-                  <span className="ml-auto bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
+                  <span className="bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
                     {historyCount}
                   </span>
                 )}
@@ -953,25 +952,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                 handleNavClick('admin');
                 setMobileMenuOpen(false);
               }}
-              className="flex items-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-left text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-950/60 hover:bg-indigo-100 transition-colors cursor-pointer"
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/60 hover:bg-indigo-100 transition-colors cursor-pointer"
             >
               <Settings className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
-              <span className="truncate">{t.navAdmin || '管理後台'}</span>
+              <span>管理後台</span>
             </button>
           </div>
 
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+          <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
             {isLoggedIn ? (
               <>
-                <span className="text-slate-600 font-medium">{t.memberLabel || "會員"}: {member?.name || (t.memberLabel || "會員")} ({(member?.tier || "Silver")} · {(member?.points || 0)}{t.navPointsSuffix || 'pt'})</span>
+                <span className="text-slate-700 dark:text-slate-300 font-bold">
+                  會員：{member?.name || '創客會員'} ({member?.tier || 'Silver'} · {member?.points || 0} 點)
+                </span>
                 <button
                   onClick={() => {
                     effectiveMemberOpen();
                     setMobileMenuOpen(false);
                   }}
-                  className="text-sky-600 font-bold hover:underline cursor-pointer"
+                  className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
                 >
-                  {t.viewPerks || "查看積分與特權 →"}
+                  會員中心 →
                 </button>
               </>
             ) : (
@@ -982,13 +983,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
                 className="w-full py-2 px-3 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs"
               >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-                <span>{t.navLoginPrompt || t.loginWithGoogle || "登入會員 / 連結 Google 帳號"}</span>
+                <span>登入 / 註冊會員</span>
               </button>
             )}
           </div>

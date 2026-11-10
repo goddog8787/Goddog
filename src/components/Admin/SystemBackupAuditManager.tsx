@@ -131,16 +131,25 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = JSON.parse(event.target?.result as string);
+        if (data && Array.isArray(data.products) && data.products.length > 0) {
+          const { recordAdminProductUpsert } = await import('../../lib/productPersistence');
+          const { INITIAL_PRODUCTS } = await import('../../data/mockData');
+          for (const prod of data.products) {
+            if (prod && prod.id) {
+              recordAdminProductUpsert(prod, INITIAL_PRODUCTS);
+            }
+          }
+        }
         if (data && data.coupons) {
           saveStoreCoupons(data.coupons);
         }
         if (data && data.announcement) {
           saveStoreAnnouncementConfig(data.announcement);
         }
-        showToast('✅ 備份資料已成功匯入並套用！');
+        showToast('✅ 備份資料已成功匯入並寫入網站核心代碼與雲端資料庫！');
         setTimeout(() => window.location.reload(), 1500);
       } catch (err) {
         alert('解析備份 JSON 失敗，請確認檔案格式是否正確。');

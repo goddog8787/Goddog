@@ -74,7 +74,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
       if (!res) return;
       const img = new Image();
       img.onload = () => {
-        const maxDim = 1200;
+        const maxDim = 720;
         let w = img.width;
         let h = img.height;
         if (w > maxDim || h > maxDim) {
@@ -92,7 +92,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, w, h);
-          const compressed = canvas.toDataURL('image/jpeg', 0.88);
+          const compressed = canvas.toDataURL('image/jpeg', 0.8);
           setImageUrl(compressed);
         }
       };
@@ -234,15 +234,18 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
     if (shippingFamilyMart) shippingMethods.push('familymart');
     if (shippingBlackCat) shippingMethods.push('blackcat');
 
+    const baseCopy = { ...product };
+    delete (baseCopy as any).badge;
+
     const updatedProduct: FilamentProduct = {
-      ...product,
+      ...baseCopy,
+      ...(badge.trim() ? { badge: badge.trim() } : {}),
       name: name.trim(),
       brand: brand.trim() || '神狗勾',
       material,
       diameter,
       weight,
       spoolType,
-      badge: badge.trim() || undefined,
       imageUrl: imageUrl.trim() || product.imageUrl,
       price: Number(price),
       originalPrice: Number(price),

@@ -774,9 +774,11 @@ setTimeout(() => {
 }, 1500);
 
 // -------------------------------------------------------------
-// 0. 後台商品目錄持久化同步 API (Admin Product Catalog Persistence)
+// 0. 後台商品目錄持久化同步 API (Admin Product Catalog Persistence & Direct Source Code Update)
 // -------------------------------------------------------------
 const CATALOG_DELTA_FILE = path.resolve(process.cwd(), 'data', 'product_catalog_delta.json');
+const PUBLIC_CATALOG_SNAPSHOT_FILE = path.resolve(process.cwd(), 'public', 'catalog_snapshot.json');
+const ALL_MARKET_PRODUCTS_TS_FILE = path.resolve(process.cwd(), 'src', 'data', 'allMarketProducts.ts');
 
 app.get('/api/catalog/sync', (_req, res) => {
   try {
@@ -797,17 +799,59 @@ app.post('/api/catalog/sync', (req, res) => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+
+    const incomingDelta = req.body?.delta && typeof req.body.delta === 'object' ? req.body.delta : req.body;
+    const incomingFullProducts = Array.isArray(req.body?.fullProducts) ? req.body.fullProducts : null;
+
     const payload = {
-      customProducts: Array.isArray(req.body?.customProducts) ? req.body.customProducts : [],
+      customProducts: Array.isArray(incomingDelta?.customProducts) ? incomingDelta.customProducts : [],
       editedProductsMap:
-        req.body?.editedProductsMap && typeof req.body.editedProductsMap === 'object'
-          ? req.body.editedProductsMap
+        incomingDelta?.editedProductsMap && typeof incomingDelta.editedProductsMap === 'object'
+          ? incomingDelta.editedProductsMap
           : {},
-      deletedProductIds: Array.isArray(req.body?.deletedProductIds) ? req.body.deletedProductIds : [],
-      updatedAt: typeof req.body?.updatedAt === 'number' ? req.body.updatedAt : Date.now(),
+      deletedProductIds: Array.isArray(incomingDelta?.deletedProductIds) ? incomingDelta.deletedProductIds : [],
+      itemTimestamps:
+        incomingDelta?.itemTimestamps && typeof incomingDelta.itemTimestamps === 'object'
+          ? incomingDelta.itemTimestamps
+          : {},
+      deletedTimestamps:
+        incomingDelta?.deletedTimestamps && typeof incomingDelta.deletedTimestamps === 'object'
+          ? incomingDelta.deletedTimestamps
+          : {},
+      catalogItemIds: Array.isArray(incomingDelta?.catalogItemIds) ? incomingDelta.catalogItemIds : [],
+      updatedAt: typeof incomingDelta?.updatedAt === 'number' ? incomingDelta.updatedAt : Date.now(),
     };
+
     fs.writeFileSync(CATALOG_DELTA_FILE, JSON.stringify(payload, null, 2), 'utf8');
-    return res.json({ success: true, updatedAt: payload.updatedAt });
+
+    // Directly rewrite /src/data/allMarketProducts.ts (internal website code) so edits become permanent source defaults
+    let codeUpdated = false;
+    if (incomingFullProducts && incomingFullProducts.length > 0) {
+      const sanitizedList = incomingFullProducts
+        .filter((p: any) => p && typeof p === 'object' && p.id && p.name)
+        .map((p: any) => {
+          const cleanObj: Record<string, any> = {};
+          for (const [k, v] of Object.entries(p)) {
+            if (v !== undefined && v !== null) {
+              cleanObj[k] = v;
+            }
+          }
+          return cleanObj;
+        });
+
+      if (sanitizedList.length > 0) {
+        const tsContent = `import { FilamentProduct } from '../types';\n\nexport const ALL_MARKET_PRODUCTS: FilamentProduct[] = ${JSON.stringify(sanitizedList, null, 2)};\n`;
+        fs.writeFileSync(ALL_MARKET_PRODUCTS_TS_FILE, tsContent, 'utf8');
+        fs.writeFileSync(
+          PUBLIC_CATALOG_SNAPSHOT_FILE,
+          JSON.stringify({ updatedAt: payload.updatedAt, products: sanitizedList, delta: payload }, null, 2),
+          'utf8'
+        );
+        codeUpdated = true;
+      }
+    }
+
+    return res.json({ success: true, updatedAt: payload.updatedAt, codeUpdated });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err?.message });
   }
@@ -4708,14 +4752,23 @@ async function startServer() {
     distPath = path.resolve(process.cwd(), 'dist');
   }
 
-  // Serve public assets (images, icons, etc.) immediately
-  app.use(express.static(path.resolve(process.cwd(), 'public')));
+  // Serve public assets (images, icons, etc.) immediately with browser cache acceleration
+  const staticOptions = {
+    maxAge: '7d',
+    etag: true,
+    setHeaders: (res: express.Response, filePath: string) => {
+      if (/\.(webp|jpg|jpeg|png|svg|ico)$/i.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+      }
+    },
+  };
+  app.use(express.static(path.resolve(process.cwd(), 'public'), staticOptions));
 
   let viteMiddleware: any = null;
   const useProdStatic = process.env.NODE_ENV === 'production' && hasBuiltDist;
 
   if (useProdStatic) {
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, staticOptions));
     app.get('*', (_req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       res.sendFile(indexPath, (err) => {

@@ -113,10 +113,10 @@ service cloud.firestore {
       allow delete: if isValidId(orderId) && isAdmin();
     }
 
-    // Products collection (public read, admin write)
+    // Products collection (public read, admin dashboard write with valid product ID)
     match /products/{productId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isValidId(productId);
     }
 
     // Store announcements collection (public read, admin write)

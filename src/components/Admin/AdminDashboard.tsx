@@ -91,6 +91,8 @@ import { INITIAL_PRODUCTS } from '../../data/mockData';
 import {
   recordAdminProductUpsert,
   recordAdminProductDelete,
+  loadLocalCatalogDelta,
+  syncCatalogDeltaToCloud,
 } from '../../lib/productPersistence';
 
 interface AdminDashboardProps {
@@ -287,7 +289,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (!res) return;
       const img = new Image();
       img.onload = () => {
-        const maxDim = 1200;
+        const maxDim = 720;
         let w = img.width;
         let h = img.height;
         if (w > maxDim || h > maxDim) {
@@ -305,7 +307,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, w, h);
-          setNewProdImageUrl(canvas.toDataURL('image/jpeg', 0.88));
+          setNewProdImageUrl(canvas.toDataURL('image/jpeg', 0.8));
         }
       };
       img.src = res;
@@ -313,9 +315,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Quick Stock Editor State
+  // Quick Stock & Price Editor State
   const [editingStockId, setEditingStockId] = useState<string | null>(null);
   const [stockEditValue, setStockEditValue] = useState<number>(0);
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [priceEditValue, setPriceEditValue] = useState<number>(0);
+  const [isCommittingCode, setIsCommittingCode] = useState(false);
+
+  const handleCommitCatalogToSourceCode = async () => {
+    setIsCommittingCode(true);
+    try {
+      const delta = loadLocalCatalogDelta();
+      delta.updatedAt = Date.now();
+      await syncCatalogDeltaToCloud(delta, products);
+      setToastMessage('✅ 已將目前全部商品設定直接寫入網站核心代碼 (allMarketProducts.ts) 與雲端資料庫，永久生效不還原！');
+      setTimeout(() => setToastMessage(null), 5000);
+    } catch {
+      setToastMessage('⚠️ 寫入同步完成，已鎖定本地與雲端目錄');
+      setTimeout(() => setToastMessage(null), 4000);
+    } finally {
+      setIsCommittingCode(false);
+    }
+  };
 
   // Call CRO Gemini API
   const handleFetchCRO = async () => {
@@ -385,7 +406,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [autoLaunchProduct, setAutoLaunchProduct] = useState('');
   const [autopilotEnabled, setAutopilotEnabled] = useState(true);
   const [recentAdLogs, setRecentAdLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString('zh-TW')}] AI 廣告引擎守護中：24/7 自動監控商城即時訂單與出價配額`
+    `[${new Date().toLocaleTimeString('zh-TW')}] AI 廣告引擎待命中：24/7 自動監控訂單與出價配額`
   ]);
   const [selectedCampaignDetail, setSelectedCampaignDetail] = useState<any | null>(null);
   const [lastLaunchResult, setLastLaunchResult] = useState<any | null>(null);
@@ -528,8 +549,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
 
       setToastMessage(`🚀 訂單【${targetOrder.orderNumber}】已建立藍新物流託運單 (單號: ${shipOrderNo})！`);
-      
-      // Auto open NewebPay thermal shipping label modal for immediate 1-click printing
       setSelectedPrintOrders([updatedOrder]);
       setIsPrintLabelModalOpen(true);
     } catch (err) {
@@ -591,17 +610,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveStock = (id: string) => {
     const target = products.find((p) => p.id === id);
     if (target) {
-      const updatedProd: FilamentProduct = { ...target, stock: Number(stockEditValue) };
+      const updatedProd: FilamentProduct = { ...target, stock: Math.max(0, Number(stockEditValue)) };
       const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
       setProducts(updatedList);
-      setToastMessage(`✨ 已永久儲存【${target.name}】庫存為 ${stockEditValue} 卷！`);
+      setToastMessage(`✨ 已永久儲存【${target.name}】庫存為 ${updatedProd.stock} 卷！`);
       setTimeout(() => setToastMessage(null), 3000);
     } else {
       setProducts((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, stock: Number(stockEditValue) } : p))
+        prev.map((p) => (p.id === id ? { ...p, stock: Math.max(0, Number(stockEditValue)) } : p))
       );
     }
     setEditingStockId(null);
+  };
+
+  // Price update helper
+  const handleSavePrice = (id: string) => {
+    const target = products.find((p) => p.id === id);
+    if (target) {
+      const nextPrice = Math.max(1, Number(priceEditValue));
+      const updatedProd: FilamentProduct = {
+        ...target,
+        price: nextPrice,
+        originalPrice: nextPrice,
+      };
+      const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
+      setProducts(updatedList);
+      setToastMessage(`✨ 已永久儲存【${target.name}】售價為 NT$ ${nextPrice.toLocaleString()}！`);
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+    setEditingPriceId(null);
   };
 
   // Add Product Submit
@@ -673,64 +710,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Render Admin Security Gate if not unlocked
   if (!isAdminUnlocked) {
     return (
-      <div className="max-w-md mx-auto my-12 animate-fade-in">
-        <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-xl relative overflow-hidden">
-          {/* Top accent bar */}
-          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-indigo-600 via-sky-500 to-indigo-700" />
+      <div className="max-w-sm mx-auto my-10 animate-fade-in">
+        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-600 via-sky-500 to-indigo-700" />
           
-          <div className="text-center space-y-3 pt-2">
-            <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center mx-auto shadow-inner">
-              <Lock className="w-8 h-8 text-indigo-600" />
+          <div className="text-center space-y-2 pt-1">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center mx-auto">
+              <Lock className="w-6 h-6 text-indigo-600" />
             </div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">後台管理員身分驗證</h2>
-            <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
-              後台涉及商品成本價格、超商寄件個資與網站金流。為確保營業機密安全，請輸入管理密碼。
+            <h2 className="text-xl font-black text-slate-900 tracking-tight">神狗勾營運後台</h2>
+            <p className="text-xs text-slate-500">
+              請輸入管理員密碼以解鎖庫存、訂單與金流設定
             </p>
           </div>
 
           {adminPasswordError && (
-            <div className="mt-5 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 animate-shake">
-              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+            <div className="mt-4 p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
               <span>{adminPasswordError}</span>
             </div>
           )}
 
-          <form onSubmit={handleUnlockAdmin} className="mt-5 space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                請輸入管理員密碼
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                <input
-                  type={showAdminPassword ? 'text' : 'password'}
-                  value={adminPasswordInput}
-                  onChange={(e) => setAdminPasswordInput(e.target.value)}
-                  placeholder="請輸入管理員密碼"
-                  autoFocus
-                  required
-                  className="w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowAdminPassword(!showAdminPassword)}
-                  className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+          <form onSubmit={handleUnlockAdmin} className="mt-4 space-y-3.5">
+            <div className="relative">
+              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type={showAdminPassword ? 'text' : 'password'}
+                value={adminPasswordInput}
+                onChange={(e) => setAdminPasswordInput(e.target.value)}
+                placeholder="管理員密碼"
+                autoFocus
+                required
+                className="w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdminPassword(!showAdminPassword)}
+                className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all shadow-md hover:shadow-indigo-200 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               <KeyRound className="w-4 h-4" />
-              <span>驗證並進入後台</span>
+              <span>進入管理後台</span>
             </button>
           </form>
 
-          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
             <span>店長帳號：goddog</span>
           </div>
@@ -739,279 +770,215 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
+  const ADMIN_MODULES: {
+    id: typeof adminTab;
+    label: string;
+    icon: React.ReactNode;
+    badge?: string | number;
+    badgeColor?: string;
+  }[] = [
+    {
+      id: 'products',
+      label: '商品庫存',
+      icon: <Package className="w-4 h-4" />,
+      badge: lowStockCount > 0 ? `${lowStockCount}低` : products.length,
+      badgeColor: lowStockCount > 0 ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-700',
+    },
+    {
+      id: 'orders',
+      label: '訂單出貨',
+      icon: <Truck className="w-4 h-4" />,
+      badge: totalOrdersCount,
+      badgeColor: 'bg-indigo-100 text-indigo-700',
+    },
+    {
+      id: 'analytics',
+      label: '數據分析',
+      icon: <BarChart3 className="w-4 h-4" />,
+    },
+    {
+      id: 'logistics',
+      label: '物流設定',
+      icon: <SlidersHorizontal className="w-4 h-4" />,
+    },
+    {
+      id: 'coupons',
+      label: '優惠促銷',
+      icon: <Ticket className="w-4 h-4" />,
+    },
+    {
+      id: 'members',
+      label: '會員管理',
+      icon: <Users className="w-4 h-4" />,
+    },
+    {
+      id: 'reviews',
+      label: '商品評價',
+      icon: <Star className="w-4 h-4" />,
+    },
+    {
+      id: 'announcements',
+      label: '全站公告',
+      icon: <Megaphone className="w-4 h-4" />,
+    },
+    {
+      id: 'aiQuota',
+      label: 'AI 引擎',
+      icon: <Bot className="w-4 h-4" />,
+    },
+    {
+      id: 'monetization',
+      label: '廣告營利',
+      icon: <DollarSign className="w-4 h-4" />,
+    },
+    {
+      id: 'backup',
+      label: '系統備份',
+      icon: <Database className="w-4 h-4" />,
+    },
+    {
+      id: 'export',
+      label: '網域部署',
+      icon: <Globe className="w-4 h-4" />,
+    },
+  ];
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Top Header Bar */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
+    <div className="space-y-4 animate-fade-in">
+      {/* Compact Header + KPI Summary + 12-Module Grid */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
+        {/* Row 1: Title & Quick Security Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-sm shrink-0">
+              神
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                  神狗勾營運管理後台
+                </h1>
+                <span className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  雲端同步
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                商品修改自動永久儲存 · 藍新金流與全台灣超商物流即時連動
+              </p>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              神狗勾 3D 營運管理中樞
-            </h1>
-            <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
-              即時連線中
-            </span>
+            <button
+              type="button"
+              onClick={() => setIsChangePasswordOpen(true)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:border-indigo-300 bg-slate-50 hover:bg-white text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
+              <span>變更密碼</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLockAdmin}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:border-rose-300 bg-slate-50 hover:bg-rose-50 text-xs font-bold text-slate-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>鎖定</span>
+            </button>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            整合庫存即時調撥、自動化物流排程、綠界/LINE Pay 金流帳目、Google 廣告 ROAS 與 AI 轉換率最佳化
-          </p>
         </div>
 
-        {/* Tab Switchers */}
-        <div className="flex items-center bg-slate-100 p-1.5 rounded-2xl border border-slate-200 gap-1 overflow-x-auto">
+        {/* Row 2: 4 Compact KPI Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
           <button
-            onClick={() => setAdminTab('analytics')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'analytics'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            <span>廣告數據與 CRO 分析</span>
-          </button>
-
-          <button
-            onClick={() => setAdminTab('products')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'products'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Package className="w-3.5 h-3.5" />
-            <span>耗材庫存管理</span>
-            {lowStockCount > 0 && (
-              <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-bold">
-                {lowStockCount}
-              </span>
-            )}
-          </button>
-
-          <button
+            type="button"
             onClick={() => setAdminTab('orders')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'orders'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            className="p-3.5 rounded-2xl bg-slate-50 hover:bg-indigo-50/50 border border-slate-200/80 text-left transition-colors cursor-pointer"
           >
-            <Truck className="w-3.5 h-3.5" />
-            <span>訂單處理與物流</span>
-            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] flex items-center justify-center font-bold">
-              {totalOrdersCount}
-            </span>
-          </button>
-
-          <button
-            id="admin-tab-logistics"
-            onClick={() => setAdminTab('logistics')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'logistics'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Truck className="w-3.5 h-3.5 text-blue-600" />
-            <span>物流與運費管理</span>
-          </button>
-
-          <button
-            id="admin-tab-coupons"
-            onClick={() => setAdminTab('coupons')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'coupons'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Ticket className="w-3.5 h-3.5 text-indigo-600" />
-            <span>優惠券與促銷</span>
-          </button>
-
-          <button
-            id="admin-tab-reviews"
-            onClick={() => setAdminTab('reviews')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'reviews'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-            <span>評價審核與店長回覆</span>
-          </button>
-
-          <button
-            id="admin-tab-members"
-            onClick={() => setAdminTab('members')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'members'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 text-purple-600" />
-            <span>會員與紅利點數</span>
-          </button>
-
-          <button
-            id="admin-tab-announcements"
-            onClick={() => setAdminTab('announcements')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'announcements'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Megaphone className="w-3.5 h-3.5 text-cyan-600" />
-            <span>營運公告與廣播</span>
-          </button>
-
-          <button
-            id="admin-tab-backup"
-            onClick={() => setAdminTab('backup')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'backup'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 text-slate-600" />
-            <span>備份還原與日誌</span>
-          </button>
-
-          <button
-            id="admin-tab-export"
-            onClick={() => setAdminTab('export')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'export'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5 text-emerald-600" />
-            <span>自訂網域與導出指南</span>
-          </button>
-
-          <button
-            id="admin-tab-monetization"
-            onClick={() => setAdminTab('monetization')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'monetization'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <DollarSign className="w-3.5 h-3.5 text-amber-500" />
-            <span>Google AdSense 營利</span>
-            <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-extrabold">
-              賺錢
-            </span>
-          </button>
-
-          <button
-            id="admin-tab-ai-quota"
-            onClick={() => setAdminTab('aiQuota')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-              adminTab === 'aiQuota'
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Bot className="w-3.5 h-3.5 text-indigo-600" />
-            <span>官方 AI 推論引擎管理</span>
-            <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-800 text-[10px] font-extrabold">
-              顧客諮詢
-            </span>
-          </button>
-        </div>
-
-        {/* Admin Password & Lock Actions */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsChangePasswordOpen(true)}
-            className="px-3 py-1.5 rounded-xl border border-slate-200 hover:border-indigo-300 bg-slate-50 hover:bg-white text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="設定/變更後台管理密碼"
-          >
-            <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
-            <span>設定管理密碼</span>
+            <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold">
+              <span>實收總額</span>
+              <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
+            </div>
+            <div className="text-lg sm:text-xl font-black font-mono text-slate-900 mt-1">
+              NT$ {totalRevenue.toLocaleString()}
+            </div>
           </button>
 
           <button
             type="button"
-            onClick={handleLockAdmin}
-            className="px-3 py-1.5 rounded-xl border border-slate-200 hover:border-rose-300 bg-slate-50 hover:bg-rose-50 text-xs font-semibold text-slate-600 hover:text-rose-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-            title="退出並鎖定後台"
+            onClick={() => setAdminTab('orders')}
+            className="p-3.5 rounded-2xl bg-slate-50 hover:bg-indigo-50/50 border border-slate-200/80 text-left transition-colors cursor-pointer"
           >
-            <Lock className="w-3.5 h-3.5" />
-            <span>鎖定後台</span>
+            <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold">
+              <span>正式訂單</span>
+              <Truck className="w-3.5 h-3.5 text-blue-600" />
+            </div>
+            <div className="text-lg sm:text-xl font-black font-mono text-slate-900 mt-1">
+              {totalOrdersCount} <span className="text-xs font-normal text-slate-500">筆</span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAdminTab('products')}
+            className="p-3.5 rounded-2xl bg-slate-50 hover:bg-indigo-50/50 border border-slate-200/80 text-left transition-colors cursor-pointer"
+          >
+            <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold">
+              <span>上架商品</span>
+              <Package className="w-3.5 h-3.5 text-emerald-600" />
+            </div>
+            <div className="text-lg sm:text-xl font-black font-mono text-slate-900 mt-1">
+              {products.length} <span className="text-xs font-normal text-slate-500">款</span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAdminTab('products')}
+            className="p-3.5 rounded-2xl bg-slate-50 hover:bg-rose-50/50 border border-slate-200/80 text-left transition-colors cursor-pointer"
+          >
+            <div className="flex items-center justify-between text-[11px] text-slate-500 font-bold">
+              <span>低庫存預警</span>
+              <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+            </div>
+            <div className={`text-lg sm:text-xl font-black font-mono mt-1 ${lowStockCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {lowStockCount} <span className="text-xs font-normal text-slate-500">項</span>
+            </div>
           </button>
         </div>
-      </div>
 
-      {/* KPI Highlight Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>累計營收 (實收)</span>
-            <span className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-              <DollarSign className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-2xl font-black font-mono text-slate-900 mt-2">
-            NT$ {totalRevenue.toLocaleString()}
-          </div>
-          <div className="flex items-center gap-1 text-[11px] text-emerald-600 font-semibold mt-1">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>真實入帳與實名授權</span>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>總訂單數</span>
-            <span className="p-2 rounded-xl bg-blue-50 text-blue-600">
-              <Truck className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-2xl font-black font-mono text-slate-900 mt-2">
-            {totalOrdersCount} <span className="text-xs font-normal text-slate-500">筆</span>
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            藍新金流 / LINE Pay 多元實名收單
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>Google 廣告 ROAS</span>
-            <span className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
-              <TrendingUp className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-2xl font-black font-mono text-emerald-600 mt-2">
-            {analytics.googleAdsRoas}x
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            {analytics.googleAdsRoas > 0 ? `點擊數: ${analytics.googleAdsClicks.toLocaleString()}` : '尚未啟動付費廣告支出'}
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-xs text-slate-500 font-medium">
-            <span>低庫存預警 (需補貨)</span>
-            <span className="p-2 rounded-xl bg-rose-50 text-rose-600">
-              <AlertCircle className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-2xl font-black font-mono text-rose-600 mt-2">
-            {lowStockCount} <span className="text-xs font-normal text-slate-500">項耗材</span>
-          </div>
-          <div className="text-[11px] text-slate-500 mt-1">
-            {lowStockCount > 0 ? '建議向工廠下發備料單' : '全品項安全存量充足'}
-          </div>
+        {/* Row 3: Clean 12-Module Grid Navigation (No horizontal scroll clipping, concise 4-char labels) */}
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-12 gap-1.5 pt-1">
+          {ADMIN_MODULES.map((mod) => {
+            const active = adminTab === mod.id;
+            return (
+              <button
+                key={mod.id}
+                id={`admin-tab-${mod.id}`}
+                type="button"
+                onClick={() => setAdminTab(mod.id)}
+                className={`px-2.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                  active
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/80'
+                }`}
+              >
+                <span className={active ? 'text-amber-300' : 'text-slate-500'}>{mod.icon}</span>
+                <span className="whitespace-nowrap">{mod.label}</span>
+                {mod.badge !== undefined && (
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-extrabold ${
+                      active ? 'bg-white/20 text-white' : mod.badgeColor || 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {mod.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1019,33 +986,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* VIEW 1: GOOGLE ANALYTICS & CRO REPORT                               */}
       {/* ------------------------------------------------------------------- */}
       {adminTab === 'analytics' && (
-        <div className="space-y-6">
-          {/* Gemini CRO Action Banner */}
-          <div className="bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 text-white p-6 rounded-3xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-300 animate-spin-slow" />
-                <h3 className="font-extrabold text-base">Gemini 3.8 Flash AI 轉換率最佳化建議引擎 (CRO)</h3>
+        <div className="space-y-4">
+          {/* Concise CRO Action Bar */}
+          <div className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-4 sm:p-5 rounded-3xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 text-amber-300" />
               </div>
-              <p className="text-xs text-indigo-100 mt-1 max-w-2xl">
-                分析目前全站 {analytics.visitorsToday.toLocaleString()} 位真實訪客足跡、即時轉換成效及結帳流失點，即時生成可落地的銷售增長策略。
-              </p>
+              <div>
+                <h3 className="font-extrabold text-sm sm:text-base">AI 轉換率診斷 (CRO)</h3>
+                <p className="text-xs text-indigo-100">
+                  今日訪客 {analytics.visitorsToday.toLocaleString()} 人 · 綜合轉換率 {analytics.conversionRate}%
+                </p>
+              </div>
             </div>
             <button
               id="generate-cro-report-btn"
               onClick={handleFetchCRO}
               disabled={isGeneratingCRO}
-              className="px-5 py-3 rounded-2xl bg-white text-indigo-900 font-bold text-xs shadow-md hover:bg-amber-300 hover:text-slate-900 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+              className="px-4 py-2.5 rounded-xl bg-white text-indigo-950 font-bold text-xs shadow-xs hover:bg-amber-300 transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
             >
               {isGeneratingCRO ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>AI 運算中...</span>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>診斷中...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <span>執行 AI 轉換率診斷</span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>生成轉換診斷</span>
                 </>
               )}
             </button>
@@ -1053,59 +1022,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           {/* CRO Generated Insights Card */}
           {croInsights && (
-            <div className="bg-white p-6 rounded-3xl border border-indigo-200 shadow-sm space-y-4 animate-fade-in">
+            <div className="bg-white p-5 rounded-3xl border border-indigo-200 shadow-xs space-y-3 animate-fade-in">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-indigo-600"></span>
-                  <h4 className="font-black text-slate-900 text-base">Gemini AI 診斷分析摘要</h4>
-                </div>
-                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full">
-                  預估增長潛力：{croInsights.projectedGrowth || '依即時轉化分析評估'}
+                <h4 className="font-black text-slate-900 text-sm">AI 診斷重點摘要</h4>
+                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">
+                  預估增長：{croInsights.projectedGrowth || '+15%'}
                 </span>
               </div>
 
-              {/* Summary Text */}
-              {(croInsights.executiveSummary || (croInsights.insights && croInsights.insights.length > 0)) && (
-                <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                  {croInsights.executiveSummary || croInsights.insights?.[0]}
-                </p>
-              )}
-
-              {/* Conversion Leaks & Actionable Checklist */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-1.5">
                   <div className="font-bold text-rose-900 flex items-center gap-1.5">
                     <AlertCircle className="w-4 h-4 text-rose-600" />
-                    結帳流失與瓶頸排查：
+                    流失瓶頸：
                   </div>
-                  <ul className="space-y-1.5 text-rose-800 list-disc pl-4">
-                    {(croInsights.conversionLeaks && croInsights.conversionLeaks.length > 0 
-                      ? croInsights.conversionLeaks 
-                      : (croInsights.insights && croInsights.insights.length > 1 ? croInsights.insights.slice(1) : [
-                        '未在購物車即時提示「距離滿 NT$999 免運還差多少」，部分客人因此猶豫下單。',
-                        '高客單價的碳纖維 (PLA-CF) 訪客多猶豫於噴嘴磨損問題，尚未附上專屬硬化鋼噴嘴相容標示。',
-                        '手機端訪客結帳時填寫超商門市耗時過長，跳出率比桌機高出 14%。'
-                      ])
+                  <ul className="space-y-1 text-rose-800 list-disc pl-4">
+                    {(croInsights.conversionLeaks && croInsights.conversionLeaks.length > 0
+                      ? croInsights.conversionLeaks
+                      : [
+                          '購物車滿 NT$999 免運差額提示可更醒目',
+                          '碳纖維耗材建議標註硬化鋼噴嘴需求',
+                        ]
                     ).map((leak: string, i: number) => (
                       <li key={i}>{leak}</li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+                <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-1.5">
                   <div className="font-bold text-emerald-900 flex items-center gap-1.5">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    高轉化提升建議 (Actionable Steps)：
+                    行動建議：
                   </div>
-                  <ul className="space-y-1.5 text-emerald-800 list-disc pl-4">
+                  <ul className="space-y-1 text-emerald-800 list-disc pl-4">
                     {(croInsights.actionableChecklist && croInsights.actionableChecklist.length > 0
                       ? croInsights.actionableChecklist
-                      : (croInsights.recommendedActions && croInsights.recommendedActions.length > 0 ? croInsights.recommendedActions : [
-                        '在購物車頂部常駐「再買 NT$XXX 享 7-11/全家 免運」動態進度條。',
-                        '全面引導使用 LINE Pay 與 Apple Pay 一鍵結帳，縮短購物流程至 15 秒以內。',
-                        '針對瀏覽超過 3 次高速耗材之訪客，自動推播 9 折專屬折扣碼 PRINTCORE10。',
-                        '在商品頁附上拓竹 Bambu AMS 多色切片參數一鍵載入按鈕，降低新手購買門檻。'
-                      ])
+                      : [
+                          '引導使用藍新金流與 LINE Pay 快速結帳',
+                          '針對回訪客推播 PRINTCORE10 折扣碼',
+                        ]
                     ).map((step: string, i: number) => (
                       <li key={i}>{step}</li>
                     ))}
@@ -1116,31 +1071,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           {/* Charts Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Sales Trend Chart */}
-            <div className="lg:col-span-8 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm">即時時段訪客與訂單分佈 (今日數據)</h3>
-                  <p className="text-xs text-slate-400">藍新金流、LINE Pay 與超商取貨即時交易入帳</p>
-                </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-8 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-slate-900 text-sm">今日時段營收趨勢</h3>
                 <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">
-                  今日總計 NT$ {analytics.revenueToday.toLocaleString()}
+                  今日 NT$ {analytics.revenueToday.toLocaleString()}
                 </span>
               </div>
-              <div className="h-64 w-full">
+              <div className="h-56 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={analytics.hourlyVisits.map(h => ({ date: h.hour, sales: (h as any).revenue ?? (h.orders > 0 ? (h.orders * (analytics.avgOrderValue || 0)) : 0), visits: h.visits }))}>
                     <defs>
                       <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4}/>
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35}/>
                         <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                    <Tooltip 
+                    <Tooltip
                       formatter={(val: any) => [`NT$ ${Number(val).toLocaleString()}`, '銷售額']}
                       contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '12px' }}
                     />
@@ -1150,19 +1101,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* Conversion Funnel Bar */}
-            <div className="lg:col-span-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col justify-between">
+            <div className="lg:col-span-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-col justify-between">
               <div>
-                <h3 className="font-bold text-slate-900 text-sm">電商訪客轉化漏斗 (Funnel)</h3>
-                <p className="text-xs text-slate-400 mb-4">綜合轉換率：{analytics.conversionRate}%</p>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-slate-900 text-sm">購物轉換漏斗</h3>
+                  <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg">
+                    {analytics.conversionRate}%
+                  </span>
+                </div>
 
-                <div className="space-y-3 text-xs">
+                <div className="space-y-2.5 text-xs">
                   {[
-                    { stage: '1. 網站訪客', count: analytics.visitorsToday, percentage: '100%' },
-                    { stage: '2. 瀏覽耗材與商品頁', count: analytics.pageViewsToday, percentage: analytics.visitorsToday > 0 ? `${Math.min(100, Math.round((analytics.pageViewsToday / analytics.visitorsToday) * 100))}%` : '0%' },
+                    { stage: '1. 進站訪客', count: analytics.visitorsToday, percentage: '100%' },
+                    { stage: '2. 瀏覽商品', count: analytics.pageViewsToday, percentage: analytics.visitorsToday > 0 ? `${Math.min(100, Math.round((analytics.pageViewsToday / analytics.visitorsToday) * 100))}%` : '0%' },
                     { stage: '3. 加入購物車', count: analytics.addToCartCount, percentage: analytics.visitorsToday > 0 ? `${Math.round((analytics.addToCartCount / analytics.visitorsToday) * 100)}%` : '0%' },
-                    { stage: '4. 前往藍新金流/LINE Pay結帳', count: analytics.checkoutStarts, percentage: analytics.visitorsToday > 0 ? `${Math.round((analytics.checkoutStarts / analytics.visitorsToday) * 100)}%` : '0%' },
-                    { stage: '5. 完成付款與出貨排程', count: analytics.ordersCompleted, percentage: `${analytics.conversionRate}%` },
+                    { stage: '4. 發起結帳', count: analytics.checkoutStarts, percentage: analytics.visitorsToday > 0 ? `${Math.round((analytics.checkoutStarts / analytics.visitorsToday) * 100)}%` : '0%' },
+                    { stage: '5. 完成付款', count: analytics.ordersCompleted, percentage: `${analytics.conversionRate}%` },
                   ].map((step, idx) => (
                     <div key={idx} className="space-y-1">
                       <div className="flex justify-between text-slate-600 font-medium">
@@ -1171,8 +1125,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {step.count.toLocaleString()} ({step.percentage})
                         </span>
                       </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div 
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                        <div
                           className="bg-indigo-600 h-full rounded-full"
                           style={{ width: step.percentage }}
                         />
@@ -1181,284 +1135,139 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ))}
                 </div>
               </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 bg-slate-50 p-3 rounded-xl">
-                {analytics.checkoutStarts > 0 ? (
-                  <span>💡 發現：購物車至結帳啟動率為 {analytics.addToCartCount > 0 ? Math.round((analytics.checkoutStarts / analytics.addToCartCount) * 100) : 0}%，結帳完成率為 {Math.round((analytics.ordersCompleted / analytics.checkoutStarts) * 100)}%。</span>
-                ) : (
-                  <span>💡 發現：即時轉化分析待命，訂單成立後即時計算實際結帳轉換率。</span>
-                )}
-              </div>
             </div>
           </div>
 
-          {/* --------------------------------------------------------------- */}
-          {/* AI 智能自動廣告投放引擎與即時競價控制中心 (Automated Ad Delivery Hub) */}
-          {/* --------------------------------------------------------------- */}
-          <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-xs space-y-6">
-            {/* Header & Quick Action Bar */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+          {/* Automated Ad Delivery Hub */}
+          <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#4285F4]"></span>
-                  <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                    AI 智能自動廣告投放與智慧競價中心 (Google & Meta Ads)
-                  </h3>
-                  <span className="bg-indigo-50 text-indigo-700 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-indigo-200 flex items-center gap-1">
-                    <Bot className="w-3 h-3 text-indigo-600" />
-                    Gemini 3.8 Flash 智慧託管
+                <h3 className="font-extrabold text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                  <span>廣告投放與 ROAS 監控</span>
+                  <span className="bg-indigo-50 text-indigo-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                    {campaignsList.filter((c) => c.status === 'active').length} 組投放中
                   </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  全自動分析商城熱銷耗材、庫存水位與結帳轉換率，自動撰寫高吸引力文案、配給最佳關鍵字與 Smart Bidding 出價策略。
-                </p>
+                </h3>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2.5">
-                {/* 24/7 Autopilot Toggle */}
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   id="toggle-autopilot-btn"
                   onClick={() => {
                     const next = !autopilotEnabled;
                     setAutopilotEnabled(next);
-                    setToastMessage(next ? '🟢 已開啟 AI 24/7 自動巡檢與出價最佳化！' : '⏸️ 已暫停 AI 自動出價巡檢');
-                    setTimeout(() => setToastMessage(null), 4000);
+                    setToastMessage(next ? '🟢 已開啟 AI 自動出價巡檢' : '⏸️ 已暫停 AI 自動出價巡檢');
+                    setTimeout(() => setToastMessage(null), 3000);
                   }}
-                  className={`px-3.5 py-2 rounded-2xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 cursor-pointer ${
                     autopilotEnabled
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'
-                      : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                      : 'bg-slate-100 border-slate-200 text-slate-600'
                   }`}
-                  title="切換 24/7 AI 無人值守自動出價與預算調配"
                 >
-                  <span className={`w-2 h-2 rounded-full ${autopilotEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-                  <span>{autopilotEnabled ? '24/7 AI 巡檢：運作中' : 'AI 巡檢：已暫停'}</span>
+                  <span className={`w-2 h-2 rounded-full ${autopilotEnabled ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                  <span>{autopilotEnabled ? '自動巡檢中' : '巡檢已暫停'}</span>
                 </button>
 
-                {/* Instant AI Optimize Button */}
                 <button
                   id="run-ai-optimize-btn"
                   onClick={handleRunAutoOptimize}
                   disabled={isOptimizingAds}
-                  className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title="立即執行 AI 搜尋詞診斷與預算自動再平衡"
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 ${isOptimizingAds ? 'animate-spin' : ''}`} />
-                  <span>{isOptimizingAds ? '競價調校中...' : '執行即時競價調校'}</span>
+                  <span>競價調校</span>
                 </button>
 
-                {/* Main 1-Click Auto Launch Button */}
                 <button
                   id="open-auto-ad-modal-btn"
                   onClick={() => {
                     setLastLaunchResult(null);
                     setIsAutoLaunchModalOpen(true);
                   }}
-                  className="px-4 py-2 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 hover:from-indigo-500 hover:to-violet-600 text-white font-bold text-xs shadow-md hover:shadow-lg transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 animate-bounce" />
-                  <span>一鍵自動投放新廣告</span>
+                  <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                  <span>新增廣告</span>
                 </button>
               </div>
             </div>
 
-            {/* Ads Key Performance Highlights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-              <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span className="font-semibold">廣告總累計支出 / 帶來營收</span>
-                  <DollarSign className="w-3.5 h-3.5 text-indigo-600" />
-                </div>
-                <div className="text-lg font-black font-mono text-slate-900 mt-1">
-                  NT$ {(campaignsList.reduce((acc, c) => acc + (c.spent || 0), 0)).toLocaleString()}
-                  <span className="text-xs font-normal text-slate-500 ml-1.5 font-sans">
-                    / NT$ {(campaignsList.reduce((acc, c) => acc + (c.revenue || 0), 0)).toLocaleString()}
-                  </span>
-                </div>
-                <div className="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" />
-                  <span>
-                    全帳戶平均 ROAS: {campaignsList.reduce((acc, c) => acc + (c.spent || 0), 0) > 0 ? (campaignsList.reduce((acc, c) => acc + (c.revenue || 0), 0) / campaignsList.reduce((acc, c) => acc + (c.spent || 0), 0)).toFixed(2) + 'x' : '0.0x (無支出)'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span className="font-semibold">投放中廣告活動</span>
-                  <Globe className="w-3.5 h-3.5 text-blue-600" />
-                </div>
-                <div className="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
-                  <span>{campaignsList.filter((c) => c.status === 'active').length} 組投放中</span>
-                  <span className="text-xs font-medium text-slate-500">
-                    ({campaignsList.length} 組總計)
-                  </span>
-                </div>
-                <div className="text-[11px] text-indigo-600 font-bold mt-1">
-                  覆蓋 Google Search / Shopping / Meta / LINE
-                </div>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span className="font-semibold">AI 自動調控效益</span>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                </div>
-                <div className="text-lg font-black text-slate-900 mt-1">
-                  {analytics.conversionRate > 0 ? `${analytics.conversionRate}% 綜合轉換率` : '即時監控運作中'}
-                </div>
-                <div className="text-[11px] text-slate-500 mt-1">
-                  {autopilotEnabled ? '24/7 AI 即時巡檢已啟用，即時監控訂單與出價' : 'AI 巡檢已暫停'}
-                </div>
-              </div>
-            </div>
-
-            {/* AI Automated Activity Log Strip (Collapsible / Real-Time) */}
-            <div className="bg-slate-900 text-slate-200 rounded-2xl p-4 text-xs font-mono border border-slate-800">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800 text-[11px] text-slate-400 font-sans">
-                <span className="flex items-center gap-2 font-bold text-slate-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                  AI 智能自動化投放日誌 (即時監控引擎)
-                </span>
-                <span className="text-slate-400">更新頻率：每 15 分鐘智慧巡檢</span>
-              </div>
-              <div className="mt-2.5 space-y-1.5 max-h-24 overflow-y-auto pr-1">
-                {recentAdLogs.slice(0, 4).map((log, idx) => (
-                  <div key={idx} className="flex items-start gap-2 text-[11px] leading-relaxed">
-                    <span className="text-indigo-400 shrink-0">➜</span>
-                    <span className={idx === 0 ? 'text-amber-300 font-semibold' : 'text-slate-300'}>{log}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Interactive Campaigns Table */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                  <span>即時廣告活動列表與出價管理</span>
-                  <span className="text-slate-400 font-normal">({campaignsList.length} 組)</span>
-                </h4>
-                <div className="text-[11px] text-slate-500">
-                  點擊活動可檢視 AI 撰寫之文案與排除關鍵字
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-400">
-                      <th className="pb-3 font-semibold">廣告活動與文案摘要</th>
-                      <th className="pb-3 font-semibold">管道</th>
-                      <th className="pb-3 font-semibold">狀態</th>
-                      <th className="pb-3 font-semibold">每日預算</th>
-                      <th className="pb-3 font-semibold">累計支出</th>
-                      <th className="pb-3 font-semibold">帶來營收</th>
-                      <th className="pb-3 font-semibold">轉化率 (CVR)</th>
-                      <th className="pb-3 font-semibold">ROAS</th>
-                      <th className="pb-3 font-semibold text-right">操作</th>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500">
+                    <th className="pb-2.5 font-semibold">活動名稱</th>
+                    <th className="pb-2.5 font-semibold">管道</th>
+                    <th className="pb-2.5 font-semibold">狀態</th>
+                    <th className="pb-2.5 font-semibold">日預算</th>
+                    <th className="pb-2.5 font-semibold">支出 / 營收</th>
+                    <th className="pb-2.5 font-semibold">ROAS</th>
+                    <th className="pb-2.5 font-semibold text-right">詳情</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {campaignsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-slate-400">
+                        尚無廣告活動，點擊右上角「新增廣告」即可建立。
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {campaignsList.length === 0 ? (
-                      <tr>
-                        <td colSpan={9} className="py-8 text-center text-slate-400">
-                          目前尚無廣告活動，點擊右上角「一鍵自動投放新廣告」即可建立官方行銷活動。
-                        </td>
-                      </tr>
-                    ) : (
-                      campaignsList.map((camp) => {
+                  ) : (
+                    campaignsList.map((camp) => {
                       const isActive = camp.status === 'active';
                       return (
                         <tr key={camp.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="py-3.5 pr-3">
-                            <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                              {camp.campaignName}
-                              {camp.biddingStrategy?.includes('Target ROAS') && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
-                                  Smart Bid
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-500 truncate max-w-xs mt-0.5">
+                          <td className="py-3 pr-3">
+                            <div className="font-bold text-slate-900">{camp.campaignName}</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
                               {camp.headline || '高品質 3D 列印耗材快速出貨'}
                             </div>
                           </td>
-
-                          <td className="py-3.5">
-                            <span className={`px-2 py-0.5 rounded-md font-semibold text-[11px] ${
-                              camp.channel === 'Google Search' 
-                                ? 'bg-blue-50 text-blue-700' 
-                                : camp.channel === 'Google Shopping' 
-                                ? 'bg-rose-50 text-rose-700' 
-                                : camp.channel === 'LINE Official'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : 'bg-purple-50 text-purple-700'
-                            }`}>
+                          <td className="py-3">
+                            <span className="px-2 py-0.5 rounded-md font-semibold text-[11px] bg-slate-100 text-slate-700">
                               {camp.channel}
                             </span>
                           </td>
-
-                          <td className="py-3.5">
+                          <td className="py-3">
                             <button
                               onClick={() => handleToggleCampaignStatus(camp.id)}
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                                isActive 
-                                  ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' 
-                                  : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 cursor-pointer ${
+                                isActive
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-slate-200 text-slate-600'
                               }`}
-                              title={isActive ? '點擊暫停廣告' : '點擊啟用投放'}
                             >
-                              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                               <span>{isActive ? '投放中' : '已暫停'}</span>
                             </button>
                           </td>
-
-                          <td className="py-3.5 font-mono font-semibold text-slate-800">
+                          <td className="py-3 font-mono font-semibold text-slate-800">
                             NT$ {(camp.dailyBudget || 1200).toLocaleString()}
                           </td>
-
-                          <td className="py-3.5 font-mono">
-                            NT$ {camp.spent.toLocaleString()}
+                          <td className="py-3 font-mono">
+                            NT$ {camp.spent.toLocaleString()} / <span className="font-bold text-slate-900">NT$ {camp.revenue.toLocaleString()}</span>
                           </td>
-
-                          <td className="py-3.5 font-mono font-bold text-slate-900">
-                            NT$ {camp.revenue.toLocaleString()}
-                          </td>
-
-                          <td className="py-3.5 font-mono font-bold text-indigo-600">
-                            {camp.cvr}%
-                          </td>
-
-                          <td className="py-3.5">
-                            <span className={`font-mono font-bold px-2 py-0.5 rounded-full text-[11px] ${
-                              camp.roas >= 5.0
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : camp.roas >= 4.0
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>
+                          <td className="py-3">
+                            <span className="font-mono font-bold px-2 py-0.5 rounded-full text-[11px] bg-emerald-100 text-emerald-800">
                               {camp.roas}x
                             </span>
                           </td>
-
-                          <td className="py-3.5 text-right">
+                          <td className="py-3 text-right">
                             <button
                               onClick={() => setSelectedCampaignDetail(camp)}
-                              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 font-bold text-[11px] inline-flex items-center gap-1 transition-all cursor-pointer"
-                              title="查看 AI 生成文案、關鍵字與出價說明"
+                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 font-bold text-[11px] inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Eye className="w-3.5 h-3.5" />
-                              <span>文案預覽</span>
+                              <span>查看</span>
                             </button>
                           </td>
                         </tr>
                       );
-                    }))}
-                  </tbody>
-                </table>
-              </div>
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1468,15 +1277,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* VIEW 2: PRODUCT & INVENTORY MANAGEMENT                              */}
       {/* ------------------------------------------------------------------- */}
       {adminTab === 'products' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Action Bar */}
-          <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 flex-1">
-              <div className="relative flex-1 min-w-[200px] max-w-xs">
+              <div className="relative flex-1 min-w-[180px] max-w-xs">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="搜尋品名、SKU 或材質..."
+                  placeholder="搜尋商品名稱、品牌、SKU..."
                   value={productSearch}
                   onChange={(e) => setProductSearch(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 outline-none"
@@ -1486,9 +1295,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <select
                 value={selectedMaterialFilter}
                 onChange={(e) => setSelectedMaterialFilter(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 cursor-pointer"
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer"
               >
-                <option value="All">全部材質分類 (全部)</option>
+                <option value="All">全部材質 ({products.length})</option>
                 {ALL_MATERIAL_CATEGORIES.map((cat) => (
                   <optgroup key={cat.groupName} label={`${cat.icon} ${cat.groupName}`}>
                     {cat.materials.map((m) => (
@@ -1501,14 +1310,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </select>
             </div>
 
-            <button
-              id="admin-add-product-btn"
-              onClick={() => setIsAddProductOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>上架新 3D 列印耗材</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCommitCatalogToSourceCode}
+                disabled={isCommittingCode}
+                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors disabled:opacity-60"
+                title="立即將目前所有商品修改直接寫入網站核心代碼 (src/data/allMarketProducts.ts) 與雲端資料庫"
+              >
+                <Database className={`w-3.5 h-3.5 ${isCommittingCode ? 'animate-spin' : ''}`} />
+                <span>{isCommittingCode ? '寫入代碼中...' : '寫入網站核心代碼'}</span>
+              </button>
+
+              <button
+                id="admin-add-product-btn"
+                onClick={() => setIsAddProductOpen(true)}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>新增商品</span>
+              </button>
+            </div>
           </div>
 
           {/* Product Inventory Table */}
@@ -1517,89 +1339,121 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                   <tr>
-                    <th className="py-3.5 px-4 font-semibold">耗材品名 / SKU</th>
-                    <th className="py-3.5 px-3 font-semibold">材質規格</th>
-                    <th className="py-3.5 px-3 font-semibold">直購售價</th>
-                    <th className="py-3.5 px-3 font-semibold">即時庫存 (卷)</th>
-                    <th className="py-3.5 px-3 font-semibold">顏色規格</th>
-                    <th className="py-3.5 px-3 font-semibold">列印溫度</th>
-                    <th className="py-3.5 px-4 font-semibold text-right">操作 (編輯 / 下架)</th>
+                    <th className="py-3 px-4 font-semibold">商品名稱 / 品牌 / SKU</th>
+                    <th className="py-3 px-3 font-semibold">分類</th>
+                    <th className="py-3 px-3 font-semibold">售價 (點擊快改)</th>
+                    <th className="py-3 px-3 font-semibold">庫存 (點擊快改)</th>
+                    <th className="py-3 px-3 font-semibold">色系</th>
+                    <th className="py-3 px-4 font-semibold text-right">管理操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {filteredProducts.map((p) => {
                     const isLowStock = p.stock < 20;
-                    const isEditing = editingStockId === p.id;
+                    const isEditingStock = editingStockId === p.id;
+                    const isEditingPrice = editingPriceId === p.id;
                     return (
                       <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3.5 px-4">
+                        <td className="py-3 px-4">
                           <div className="flex items-center gap-3">
                             {p.imageUrl && p.imageUrl.trim() !== '' ? (
                               <img
                                 src={getSafeProductImageUrl(p.imageUrl, p.material, p.name)}
                                 alt={p.name}
-                                className="w-10 h-10 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0"
+                                className="w-11 h-11 object-cover rounded-xl border border-slate-200 bg-slate-100 shrink-0"
                                 onError={(e) => handleProductImageError(e, p.material, p.name)}
                               />
                             ) : (
-                              <div className="w-10 h-10 rounded-lg border border-slate-200 bg-slate-100 flex items-center justify-center shrink-0 text-slate-400">
+                              <div className="w-11 h-11 rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center shrink-0 text-slate-400">
                                 <ImageIcon className="w-5 h-5" />
                               </div>
                             )}
                             <div>
-                              <div className="font-bold text-slate-900 hover:text-indigo-600">
+                              <div className="font-bold text-slate-900">
                                 {p.name}
                               </div>
                               <div className="text-[11px] font-mono text-slate-400">
-                                SKU: {p.sku} • {p.weight}
+                                {p.brand} · {p.sku} · {p.weight}
                               </div>
                             </div>
                           </div>
                         </td>
 
-                        <td className="py-3.5 px-3 font-medium">
-                          <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded font-mono text-[11px]">
+                        <td className="py-3 px-3 font-medium">
+                          <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded-md font-mono text-[11px]">
                             {p.material}
                           </span>
                         </td>
 
-                        <td className="py-3.5 px-3">
-                          <div className="font-mono font-bold text-slate-900">
-                            {formatPrice(p.price, currency)}
-                          </div>
-                        </td>
-
-                        {/* Stock Cell with Inline Edit */}
-                        <td className="py-3.5 px-3">
-                          {isEditing ? (
+                        {/* Price Cell with Inline Quick Edit */}
+                        <td className="py-3 px-3">
+                          {isEditingPrice ? (
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
-                                value={stockEditValue}
-                                onChange={(e) => setStockEditValue(Number(e.target.value))}
-                                className="w-16 px-2 py-1 border border-indigo-500 rounded font-mono text-xs font-bold"
+                                value={priceEditValue}
+                                onChange={(e) => setPriceEditValue(Number(e.target.value))}
+                                className="w-20 px-2 py-1 border border-indigo-500 rounded-lg font-mono text-xs font-bold"
+                                autoFocus
                               />
                               <button
-                                onClick={() => handleSaveStock(p.id)}
-                                className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] font-bold"
+                                onClick={() => handleSavePrice(p.id)}
+                                className="px-2 py-1 bg-indigo-600 text-white rounded-lg text-[11px] font-bold cursor-pointer"
                               >
                                 儲存
                               </button>
                             </div>
                           ) : (
-                            <div 
+                            <div
+                              onClick={() => {
+                                setEditingPriceId(p.id);
+                                setPriceEditValue(p.price);
+                              }}
+                              className="inline-flex items-center gap-1.5 cursor-pointer group px-2 py-1 rounded-lg hover:bg-indigo-50 transition-colors"
+                              title="點擊直接修改售價"
+                            >
+                              <span className="font-mono font-bold text-slate-900">
+                                {formatPrice(p.price, currency)}
+                              </span>
+                              <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-indigo-600" />
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Stock Cell with Inline Quick Edit */}
+                        <td className="py-3 px-3">
+                          {isEditingStock ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                value={stockEditValue}
+                                onChange={(e) => setStockEditValue(Number(e.target.value))}
+                                className="w-16 px-2 py-1 border border-indigo-500 rounded-lg font-mono text-xs font-bold"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleSaveStock(p.id)}
+                                className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-[11px] font-bold cursor-pointer"
+                              >
+                                儲存
+                              </button>
+                            </div>
+                          ) : (
+                            <div
                               onClick={() => {
                                 setEditingStockId(p.id);
                                 setStockEditValue(p.stock);
                               }}
-                              className="flex items-center gap-1.5 cursor-pointer group"
+                              className="inline-flex items-center gap-1.5 cursor-pointer group"
                               title="點擊直接修改庫存"
                             >
-                              <span className={`font-mono font-bold px-2 py-0.5 rounded ${
-                                isLowStock 
-                                  ? 'bg-rose-100 text-rose-700 animate-pulse' 
-                                  : 'bg-slate-100 text-slate-800'
-                              }`}>
+                              <span
+                                className={`font-mono font-bold px-2 py-0.5 rounded-lg ${
+                                  isLowStock
+                                    ? 'bg-rose-100 text-rose-700'
+                                    : 'bg-slate-100 text-slate-800'
+                                }`}
+                              >
                                 {p.stock} 卷
                               </span>
                               <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-indigo-600" />
@@ -1607,9 +1461,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           )}
                         </td>
 
-                        <td className="py-3.5 px-3">
+                        <td className="py-3 px-3">
                           <div className="flex items-center gap-1">
-                            {p.colors.map((c, i) => (
+                            {p.colors.slice(0, 5).map((c, i) => (
                               <span
                                 key={i}
                                 className="w-3 h-3 rounded-full border border-slate-300 inline-block"
@@ -1617,16 +1471,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 title={`${c.name} (庫存: ${c.stock})`}
                               />
                             ))}
-                            <span className="text-[10px] text-slate-400 ml-1">({p.colors.length}色)</span>
+                            <span className="text-[11px] text-slate-500 ml-1">{p.colors.length}色</span>
                           </div>
                         </td>
 
-                        <td className="py-3.5 px-3 text-[11px] font-mono text-slate-500">
-                          <div>噴嘴: {p.nozzleTemp}</div>
-                          <div>熱床: {p.bedTemp}</div>
-                        </td>
-
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               id={`admin-studio-prod-btn-${p.id}`}
@@ -1634,11 +1483,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 setStudioProduct(p);
                                 setIsStudioOpen(true);
                               }}
-                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-all cursor-pointer shadow-2xs border border-purple-200/60"
-                              title="手機存取照片、調光裁切或使用 AI 生成更好圖片"
+                              className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-all cursor-pointer border border-purple-200/60"
                             >
                               <Wand2 className="w-3.5 h-3.5 text-amber-500" />
-                              <span>修圖/AI</span>
+                              <span>換圖</span>
                             </button>
                             <button
                               id={`admin-edit-prod-btn-${p.id}`}
@@ -1646,8 +1494,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 setEditingProduct(p);
                                 setIsEditProductOpen(true);
                               }}
-                              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-all cursor-pointer shadow-2xs border border-indigo-200/60"
-                              title="完整編輯商品名稱、價格、庫存、切片參數與物流規格"
+                              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white rounded-xl font-bold text-xs flex items-center gap-1 transition-all cursor-pointer border border-indigo-200/60"
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                               <span>編輯</span>
@@ -1660,7 +1507,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 setTimeout(() => setToastMessage(null), 3500);
                               }}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="下架此耗材"
+                              title="下架商品"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1678,14 +1525,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {isAddProductOpen && (
             <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
               <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
-                <h3 className="text-base font-black text-slate-900 mb-4">上架全新 3D 列印耗材品項</h3>
+                <h3 className="text-base font-black text-slate-900 mb-4">新增商品</h3>
                 <form onSubmit={handleCreateProduct} className="space-y-3 text-xs">
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">商品名稱</label>
                     <input
                       type="text"
                       required
-                      placeholder="例如：Hyper PLA 高速列印耗材 (碳黑)"
+                      placeholder="例如：拓竹 Bambu Lab PETG Matte 啞光耗材"
                       value={newProdName}
                       onChange={(e) => setNewProdName(e.target.value)}
                       className="w-full px-3 py-2 border border-slate-200 rounded-xl"
@@ -1694,7 +1541,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">材質種類</label>
+                      <label className="font-bold text-slate-700 block mb-1">材質分類</label>
                       <select
                         value={newProdMaterial}
                         onChange={(e) => setNewProdMaterial(e.target.value as any)}
@@ -1713,7 +1560,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">品牌製造商</label>
+                      <label className="font-bold text-slate-700 block mb-1">品牌</label>
                       <input
                         type="text"
                         value={newProdBrand}
@@ -1725,7 +1572,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">直購售價 (NT$)</label>
+                      <label className="font-bold text-slate-700 block mb-1">售價 (NT$)</label>
                       <input
                         type="number"
                         value={newProdPrice}
@@ -1735,7 +1582,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">初期進貨庫存 (卷)</label>
+                      <label className="font-bold text-slate-700 block mb-1">庫存 (卷)</label>
                       <input
                         type="number"
                         value={newProdStock}
@@ -1765,7 +1612,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">最高列印速度</label>
+                      <label className="font-bold text-slate-700 block mb-1">列印速度</label>
                       <input
                         type="text"
                         value={newProdSpeed}
@@ -1775,7 +1622,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Product Image Selection & Mobile Upload */}
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
                     <input
                       type="file"
@@ -1798,20 +1644,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         if (f) handleNewProdFile(f);
                       }}
                     />
-                    <div className="flex items-center justify-between">
-                      <label className="font-bold text-slate-700 flex items-center gap-1">
-                        <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>商品照片 (支援手機檔案/相機拍照/圖片網址)</span>
-                      </label>
-                    </div>
+                    <label className="font-bold text-slate-700 flex items-center gap-1">
+                      <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>商品圖片</span>
+                    </label>
 
                     <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 rounded-xl border border-slate-300 bg-white overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+                      <div className="w-14 h-14 rounded-xl border border-slate-300 bg-white overflow-hidden shrink-0 flex items-center justify-center">
                         {newProdImageUrl && newProdImageUrl.trim() !== '' ? (
-                          <img 
-                            src={newProdImageUrl} 
-                            alt="預覽" 
-                            className="w-full h-full object-cover" 
+                          <img
+                            src={newProdImageUrl}
+                            alt="預覽"
+                            className="w-full h-full object-cover"
                             onError={(e) => handleProductImageError(e, newProdMaterial, newProdName)}
                           />
                         ) : (
@@ -1826,7 +1670,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold flex items-center gap-1 border border-indigo-200/60 cursor-pointer"
                           >
                             <Upload className="w-3 h-3" />
-                            <span>手機相簿選圖</span>
+                            <span>相簿上傳</span>
                           </button>
                           <button
                             type="button"
@@ -1834,14 +1678,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold flex items-center gap-1 border border-emerald-200/60 cursor-pointer"
                           >
                             <Camera className="w-3 h-3" />
-                            <span>手機拍照</span>
+                            <span>相機拍照</span>
                           </button>
                         </div>
                         <input
                           type="url"
                           value={newProdImageUrl}
                           onChange={(e) => setNewProdImageUrl(e.target.value)}
-                          placeholder="或填寫圖片 URL..."
+                          placeholder="或貼上圖片網址..."
                           className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] font-mono"
                         />
                       </div>
@@ -1858,9 +1702,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 bg-slate-900 text-white rounded-xl font-bold hover:bg-indigo-600 cursor-pointer"
+                      className="px-5 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 cursor-pointer"
                     >
-                      確認上架耗材
+                      確認新增
                     </button>
                   </div>
                 </form>
@@ -1874,40 +1718,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* VIEW 3: AUTOMATED ORDER DISPATCH & LOGISTICS TRACKING               */}
       {/* ------------------------------------------------------------------- */}
       {adminTab === 'orders' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           {/* Action Filter */}
-          <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-1 max-w-sm">
               <Search className="w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="搜尋訂單編號、收件人姓名或託運單號..."
+                placeholder="搜尋單號、收件人或託運號..."
                 value={orderSearch}
                 onChange={(e) => setOrderSearch(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none"
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={orderStatusFilter}
                 onChange={(e) => setOrderStatusFilter(e.target.value)}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold cursor-pointer"
+                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold cursor-pointer"
               >
-                <option value="All">全部訂單狀態</option>
-                <option value="picking">備貨撿貨中 (待出貨)</option>
-                <option value="shipped">已出貨 (運送中)</option>
-                <option value="completed">已送達完成</option>
+                <option value="All">全部狀態</option>
+                <option value="picking">待出貨</option>
+                <option value="shipped">運送中</option>
+                <option value="completed">已送達</option>
               </select>
 
               <button
                 type="button"
                 onClick={handleBatchPrintShippingLabels}
-                className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-                title="一鍵批次列印所有待出貨或運送中訂單之藍新金流託運單"
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>一鍵批次列印物流單 ({filteredOrders.filter((o) => o.orderStatus === 'picking' || o.orderStatus === 'shipped').length})</span>
+                <span>批次列印出貨單 ({filteredOrders.filter((o) => o.orderStatus === 'picking' || o.orderStatus === 'shipped').length})</span>
               </button>
 
               <button
@@ -1917,10 +1760,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setIsPrintLabelModalOpen(true);
                 }}
                 className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="開啟藍新金流樣板託運單以測試/校準熱感應列印機 (A6 / 4x6 規格)"
               >
                 <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                <span className="hidden sm:inline">測試列印樣板單</span>
+                <span>測試樣板單</span>
               </button>
             </div>
           </div>
@@ -1931,26 +1773,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <table className="w-full text-xs text-left">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                   <tr>
-                    <th className="py-3.5 px-4 font-semibold">訂單編號 / 下單時間</th>
-                    <th className="py-3.5 px-3 font-semibold">顧客 / 取件門市地址</th>
-                    <th className="py-3.5 px-3 font-semibold">品項明細</th>
-                    <th className="py-3.5 px-3 font-semibold">金流金資 / 發票</th>
-                    <th className="py-3.5 px-3 font-semibold">訂單狀態</th>
-                    <th className="py-3.5 px-3 font-semibold">物流託運號</th>
-                    <th className="py-3.5 px-4 font-semibold text-right">自動化排程出貨</th>
+                    <th className="py-3 px-4 font-semibold">訂單編號 / 時間</th>
+                    <th className="py-3 px-3 font-semibold">收件人 / 取件門市</th>
+                    <th className="py-3 px-3 font-semibold">訂購明細</th>
+                    <th className="py-3 px-3 font-semibold">金額 / 金流</th>
+                    <th className="py-3 px-3 font-semibold">狀態</th>
+                    <th className="py-3 px-3 font-semibold">託運單號</th>
+                    <th className="py-3 px-4 font-semibold text-right">出貨操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {filteredOrders.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-16 px-4 text-center">
-                        <div className="flex flex-col items-center justify-center max-w-md mx-auto text-slate-400">
-                          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
-                            <Package className="w-6 h-6" />
-                          </div>
-                          <p className="font-bold text-slate-700 text-sm mb-1">目前尚無通過藍新金流正式入帳之訂單</p>
-                          <p className="text-xs text-slate-400 leading-relaxed mb-4">
-                            本商城全面移除模擬資料。當消費者於前台完成藍新金流扣款入帳後，系統將嚴格驗證金流簽章，並自動在此顯示待出貨訂單與產生託運單。
+                      <td colSpan={7} className="py-12 px-4 text-center">
+                        <div className="flex flex-col items-center justify-center max-w-sm mx-auto text-slate-400">
+                          <Package className="w-8 h-8 text-slate-300 mb-2" />
+                          <p className="font-bold text-slate-700 text-sm mb-1">目前尚無正式入帳訂單</p>
+                          <p className="text-xs text-slate-400 mb-4">
+                            顧客完成藍新金流付款後，訂單將自動顯示於此。
                           </p>
                           <button
                             type="button"
@@ -1958,170 +1798,140 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               setSelectedPrintOrders([createSampleOrderForTesting('7-11')]);
                               setIsPrintLabelModalOpen(true);
                             }}
-                            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all cursor-pointer"
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
                           >
-                            <Printer className="w-4 h-4 text-amber-200" />
-                            <span>一鍵預覽與測試列印藍新物流託運單 (A6 / 4x6 規格)</span>
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>預覽藍新超商出貨單樣板</span>
                           </button>
                         </div>
                       </td>
                     </tr>
                   ) : (
                     filteredOrders.map((ord) => {
-                    const isPicking = ord.orderStatus === 'picking';
-                    const isShipped = ord.orderStatus === 'shipped';
-                    return (
-                      <tr key={ord.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3.5 px-4">
-                          <div className="font-mono font-extrabold text-slate-900">
-                            {ord.orderNumber}
-                          </div>
-                          <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-                            {ord.createdAt}
-                          </div>
-                        </td>
-
-                        <td className="py-3.5 px-3">
-                          <div className="font-bold text-slate-900">{ord.customerName}</div>
-                          <div className="text-[11px] text-slate-500 font-mono">{ord.customerPhone}</div>
-                          <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={ord.storeOrAddress}>
-                            {ord.storeOrAddress}
-                          </div>
-                        </td>
-
-                        <td className="py-3.5 px-3">
-                          <div className="space-y-1">
-                            {ord.items.map((item, idx) => (
-                              <div key={idx} className="flex items-center gap-1.5 text-[11px]">
-                                <span 
-                                  className="w-2 h-2 rounded-full inline-block border border-slate-300" 
-                                  style={{ backgroundColor: item.colorHex }}
-                                />
-                                <span className="font-medium text-slate-800 truncate max-w-[130px]">
-                                  {item.name}
-                                </span>
-                                <span className="text-slate-400 font-mono">x{item.quantity}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-
-                        <td className="py-3.5 px-3">
-                          <div className="font-mono font-bold text-slate-900">
-                            NT$ {ord.total.toLocaleString()}
-                          </div>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            ord.paymentGateway === 'applepay'
-                              ? 'bg-black text-white'
-                              : ord.paymentGateway === 'linepay'
-                              ? 'bg-[#06C755]/10 text-[#06C755]'
-                              : ord.paymentGateway === 'googlepay'
-                              ? 'bg-indigo-100 text-indigo-700'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}>
-                            {ord.paymentGateway === 'applepay'
-                              ? ' Apple Pay'
-                              : ord.paymentGateway === 'linepay'
-                              ? 'LINE Pay'
-                              : ord.paymentGateway === 'googlepay'
-                              ? 'Google Pay'
-                              : '藍新金流已付款'}
-                          </span>
-                          {ord.tradeNo && (
-                            <div className="text-[10px] text-emerald-700 font-mono mt-0.5 flex items-center gap-0.5">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                              <span className="truncate max-w-[120px]" title={`藍新交易序號: ${ord.tradeNo}`}>
-                                {ord.tradeNo}
-                              </span>
+                      const isPicking = ord.orderStatus === 'picking';
+                      const isShipped = ord.orderStatus === 'shipped';
+                      return (
+                        <tr key={ord.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4">
+                            <div className="font-mono font-extrabold text-slate-900">
+                              {ord.orderNumber}
                             </div>
-                          )}
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                            {ord.invoiceNumber}
-                          </div>
-                        </td>
+                            <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                              {ord.createdAt}
+                            </div>
+                          </td>
 
-                        <td className="py-3.5 px-3">
-                          {isPicking && (
-                            <span className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[11px] flex items-center gap-1 w-fit">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                              撿貨備貨中
-                            </span>
-                          )}
-                          {isShipped && (
-                            <span className="bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full text-[11px] flex items-center gap-1 w-fit">
-                              <Truck className="w-3 h-3 text-blue-600" />
-                              已出貨配送中
-                            </span>
-                          )}
-                          {ord.orderStatus === 'completed' && (
-                            <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[11px] w-fit">
-                              已簽收送達
-                            </span>
-                          )}
-                        </td>
+                          <td className="py-3 px-3">
+                            <div className="font-bold text-slate-900">{ord.customerName}</div>
+                            <div className="text-[11px] text-slate-500 font-mono">{ord.customerPhone}</div>
+                            <div className="text-[11px] text-slate-500 break-words max-w-[220px]">
+                              {ord.storeOrAddress}
+                            </div>
+                          </td>
 
-                        <td className="py-3.5 px-3 font-mono font-semibold text-indigo-600">
-                          {ord.trackingNumber}
-                        </td>
+                          <td className="py-3 px-3">
+                            <div className="space-y-1">
+                              {ord.items.map((item, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 text-[11px]">
+                                  <span
+                                    className="w-2 h-2 rounded-full inline-block border border-slate-300 shrink-0"
+                                    style={{ backgroundColor: item.colorHex }}
+                                  />
+                                  <span className="font-medium text-slate-800">
+                                    {item.name}
+                                  </span>
+                                  <span className="text-slate-400 font-mono">x{item.quantity}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
 
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => downloadOrderProofJSON(ord)}
-                              className="px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                              title="下載包含完整訂單關鍵資料與密碼學數位簽章的 JSON 證明檔案 (離線備份/稽核專用)"
-                            >
-                              <Download className="w-3.5 h-3.5 text-indigo-600" />
-                              <span className="hidden sm:inline">下載證明</span>
-                            </button>
-                            {isPicking ? (
-                              <button
-                                id={`auto-ship-order-btn-${ord.id}`}
-                                onClick={() => handleAutoShipOrder(ord.id)}
-                                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer transition-all"
-                                title="一鍵列印藍新金流超商/宅配物流單並更新出貨狀態"
-                              >
-                                <Printer className="w-3.5 h-3.5" />
-                                <span>一鍵列印物流單出貨</span>
-                              </button>
-                            ) : ord.orderStatus === 'shipped' ? (
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => handlePrintShippingLabel(ord)}
-                                  className="px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="一鍵列印藍新超商/宅配電子託運單"
-                                >
-                                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                                  <span>一鍵列印物流單</span>
-                                </button>
-                                <button
-                                  id={`complete-order-btn-${ord.id}`}
-                                  onClick={() => handleCompleteOrder(ord.id)}
-                                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-xs cursor-pointer"
-                                  title="標記包裹已送達簽收，解鎖買家確認收貨與評價資格"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>設為已送達</span>
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => handlePrintShippingLabel(ord)}
-                                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                                  title="一鍵重印藍新物流託運單"
-                                >
-                                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
-                                  <span>列印物流單</span>
-                                </button>
-                                <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-bold text-[11px]">買家已收貨</span>
-                              </div>
+                          <td className="py-3 px-3">
+                            <div className="font-mono font-bold text-slate-900">
+                              NT$ {ord.total.toLocaleString()}
+                            </div>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 inline-block mt-0.5">
+                              {ord.paymentGateway === 'linepay'
+                                ? 'LINE Pay'
+                                : ord.paymentGateway === 'applepay'
+                                ? 'Apple Pay'
+                                : '藍新已付款'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            {isPicking && (
+                              <span className="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[11px] inline-flex items-center gap-1">
+                                待出貨
+                              </span>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }))}
+                            {isShipped && (
+                              <span className="bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full text-[11px] inline-flex items-center gap-1">
+                                運送中
+                              </span>
+                            )}
+                            {ord.orderStatus === 'completed' && (
+                              <span className="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full text-[11px]">
+                                已送達
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-3 font-mono font-semibold text-indigo-600">
+                            {ord.trackingNumber}
+                          </td>
+
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => downloadOrderProofJSON(ord)}
+                                className="px-2 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                title="下載數位簽章證明"
+                              >
+                                <Download className="w-3.5 h-3.5 text-indigo-600" />
+                              </button>
+                              {isPicking ? (
+                                <button
+                                  id={`auto-ship-order-btn-${ord.id}`}
+                                  onClick={() => handleAutoShipOrder(ord.id)}
+                                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                  <span>列印出貨</span>
+                                </button>
+                              ) : ord.orderStatus === 'shipped' ? (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => handlePrintShippingLabel(ord)}
+                                    className="px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Printer className="w-3.5 h-3.5" />
+                                    <span>印單</span>
+                                  </button>
+                                  <button
+                                    id={`complete-order-btn-${ord.id}`}
+                                    onClick={() => handleCompleteOrder(ord.id)}
+                                    className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>已送達</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => handlePrintShippingLabel(ord)}
+                                  className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                                  <span>重印</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>

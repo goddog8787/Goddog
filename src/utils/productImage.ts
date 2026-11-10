@@ -117,12 +117,13 @@ export function getSafeProductImageUrl(url?: string, material?: string, name?: s
   if (!url || typeof url !== 'string' || url.trim() === '') {
     return getMaterialFallbackImage(material, name);
   }
+  if (url.startsWith('data:image/')) {
+    return url;
+  }
   if (
-    url.includes('unsplash.com') ||
     url.includes('1550684848') ||
     url.includes('1584308666744') ||
-    url.includes('1518770660439') ||
-    url.endsWith('.svg')
+    url.includes('1518770660439')
   ) {
     return getMaterialFallbackImage(material, name);
   }
@@ -143,3 +144,51 @@ export function handleProductImageError(
     target.src = fallback;
   }
 }
+
+const preloadedImageCache = new Map<string, HTMLImageElement>();
+
+export function preloadProductImageUrl(url?: string): void {
+  if (typeof window === 'undefined' || !url || preloadedImageCache.has(url)) return;
+  if (url.startsWith('data:image/')) return;
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+    preloadedImageCache.set(url, img);
+  } catch {}
+}
+
+// Auto-warm core product images in browser memory cache on idle
+if (typeof window !== 'undefined') {
+  const CORE_PRODUCT_IMAGES = [
+    '/assets/aistudio/IMG_20260908_230642_0d9581e2.png',
+    '/assets/aistudio/1794141738451-1734206707_ccc83181.jpg',
+    '/images/products/bambu_ams.jpg',
+    '/images/products/bambu_pla_basic.jpg',
+    '/images/products/hyper_pla_red.webp',
+    '/images/products/pla_matte.webp',
+    '/images/products/esun_pla_matte.jpg',
+    '/images/products/pla_silk.webp',
+    '/images/products/pla_cf_black.webp',
+    '/images/products/petg_blue.webp',
+    '/images/products/petg_cf.webp',
+    '/images/products/abs_black.webp',
+    '/images/products/asa_grey.webp',
+    '/images/products/tpu_orange.webp',
+    '/images/products/tpu_cyan.webp',
+    '/images/products/pa6_cf.webp',
+    '/images/products/pa12_cf.webp',
+    '/images/products/pc_clear.webp',
+    '/images/products/resin_8k_grey.jpg',
+    '/images/products/resin_abs_tough.jpg',
+    '/images/products/dryer_box_s2.png',
+    '/images/products/bambu_pei_plate.png',
+    '/images/products/bambu_hotend_nozzle.png',
+  ];
+  setTimeout(() => {
+    for (const src of CORE_PRODUCT_IMAGES) {
+      preloadProductImageUrl(src);
+    }
+  }, 50);
+}
+

@@ -1316,19 +1316,19 @@ export default function App() {
     saveCustomerOrderRecord(orderWithOwner, activeUid);
     saveCustomerCart(activeUid, [], { explicitClear: true });
     setCartItems([]);
-    // Deduct stock
-    setProducts((prev) =>
-      prev.map((p) => {
-        const orderItem = newOrder.items.find((i) => i.productId === p.id);
-        if (orderItem) {
-          return {
-            ...p,
-            stock: Math.max(0, p.stock - orderItem.quantity),
-          };
-        }
-        return p;
-      })
-    );
+    // Deduct stock and persist permanently
+    let nextCatalog = products;
+    for (const orderItem of newOrder.items) {
+      const targetProd = nextCatalog.find((p) => p.id === orderItem.productId);
+      if (targetProd) {
+        const updatedProd: FilamentProduct = {
+          ...targetProd,
+          stock: Math.max(0, targetProd.stock - orderItem.quantity),
+        };
+        nextCatalog = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
+      }
+    }
+    setProducts(nextCatalog);
     // Add loyalty points to member profile
     if (isLoggedIn && activeUid) {
       const updatedMember = sanitizeCustomerProfile({
