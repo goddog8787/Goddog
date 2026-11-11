@@ -12,9 +12,10 @@ import {
   Coins, 
   Package, 
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Check
 } from 'lucide-react';
-import { CartItem, CurrencyCode, LanguageCode, MemberProfile } from '../../types';
+import { CartItem, ColorOption, CurrencyCode, LanguageCode, MemberProfile } from '../../types';
 import { formatPrice, translations, translateProductName, translateColorName } from '../../utils/i18n';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 
@@ -23,6 +24,7 @@ interface CartDrawerProps {
   onClose: () => void;
   cartItems: CartItem[];
   onUpdateQuantity: (index: number, newQty: number) => void;
+  onUpdateColor?: (index: number, newColor: ColorOption) => void;
   onRemoveItem: (index: number) => void;
   onProceedCheckout: (pointsUsed: number) => void;
   onClearCart?: () => void;
@@ -37,6 +39,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClose,
   cartItems,
   onUpdateQuantity,
+  onUpdateColor,
   onRemoveItem,
   onProceedCheckout,
   onClearCart,
@@ -52,6 +55,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number; label: string } | null>(null);
   const [couponMsg, setCouponMsg] = useState('');
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(false);
+  const [editingColorItemIdx, setEditingColorItemIdx] = useState<number | null>(null);
 
   const rawSubtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const isVip = member?.subscriptionPlan && member.subscriptionPlan !== 'None';
@@ -246,16 +250,41 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs break-words leading-snug">
-                          {translateProductName(item.product.name, lang, item.product.brand, item.product.material, item.product.weight)}
+                          {translateProductName(item.product.name, lang, item.product.brand, item.product.material, item.product.weight).replace(/莫蘭迪\s*/g, '')}
                         </h4>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span 
-                            className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0" 
-                            style={{ backgroundColor: item.selectedColor.hex }} 
-                          />
-                          <span className="text-[11px] text-slate-500 break-words">
-                            {translateColorName(item.selectedColor.name, lang)} · {item.selectedDiameter}
-                          </span>
+                        <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
+                          {item.product.colors && item.product.colors.length > 1 && onUpdateColor ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditingColorItemIdx(idx)}
+                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 text-[11px] font-semibold text-slate-700 hover:text-indigo-700 transition-colors cursor-pointer"
+                              title="點擊更換此商品顏色"
+                            >
+                              <span
+                                className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                                style={{ backgroundColor: item.selectedColor.hex }}
+                              />
+                              <span className="truncate max-w-[120px]">
+                                {translateColorName(item.selectedColor.name, lang).replace(/\s+[A-Za-z\s-]+$/, '').trim() || translateColorName(item.selectedColor.name, lang)}
+                              </span>
+                              <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+                            </button>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 text-[11px] text-slate-600">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                                style={{ backgroundColor: item.selectedColor.hex }}
+                              />
+                              <span className="truncate max-w-[130px]">
+                                {translateColorName(item.selectedColor.name, lang).replace(/\s+[A-Za-z\s-]+$/, '').trim() || translateColorName(item.selectedColor.name, lang)}
+                              </span>
+                            </div>
+                          )}
+                          {item.product.material !== 'Accessories' && item.product.material !== 'Resin' && (
+                            <span className="text-[10px] font-mono text-slate-400">
+                              {item.selectedDiameter}
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -538,6 +567,73 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <span>LINE Pay 直連</span>
               <span>•</span>
               <span>{lang === 'en' ? 'E-Invoice' : lang === 'ja' ? '電子領収書' : '電子發票'}</span>
+            </div>
+          </div>
+        )}
+
+        {/* 購物車內：從下往上彈出的更換顏色小視窗 (Bottom Sheet) */}
+        {editingColorItemIdx !== null && cartItems[editingColorItemIdx] && (
+          <div
+            className="absolute inset-0 z-30 bg-slate-900/50 backdrop-blur-xs flex items-end justify-center animate-fade-in"
+            onClick={() => setEditingColorItemIdx(null)}
+          >
+            <div
+              className="w-full bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 max-h-[65%] flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 shrink-0" />
+              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-black text-slate-900 truncate">
+                    更換商品顏色規格
+                  </div>
+                  <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    {translateProductName(cartItems[editingColorItemIdx].product.name, lang, cartItems[editingColorItemIdx].product.brand, cartItems[editingColorItemIdx].product.material, cartItems[editingColorItemIdx].product.weight).replace(/莫蘭迪\s*/g, '')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingColorItemIdx(null)}
+                  className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto grid grid-cols-2 gap-2">
+                {(cartItems[editingColorItemIdx].product.colors || []).map((colorOption) => {
+                  const isCurrent = cartItems[editingColorItemIdx].selectedColor.name === colorOption.name;
+                  const cleanColorLabel = translateColorName(colorOption.name, lang).replace(/\s+[A-Za-z\s-]+$/, '').trim() || translateColorName(colorOption.name, lang);
+                  return (
+                    <button
+                      key={colorOption.name}
+                      type="button"
+                      onClick={() => {
+                        if (onUpdateColor) {
+                          onUpdateColor(editingColorItemIdx, colorOption);
+                        }
+                        setEditingColorItemIdx(null);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                        isCurrent
+                          ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 ring-1 ring-indigo-600'
+                          : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
+                      }`}
+                    >
+                      <span
+                        className="w-4 h-4 rounded-full border border-slate-300 shrink-0 shadow-2xs"
+                        style={{ backgroundColor: colorOption.hex }}
+                      />
+                      <span className="text-xs font-bold truncate flex-1">
+                        {cleanColorLabel}
+                      </span>
+                      {isCurrent && (
+                        <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}

@@ -265,34 +265,34 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
           {/* Right Column: Configurations & Actions */}
           <div className="p-6 sm:p-8 flex flex-col justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs text-indigo-600 font-bold mb-1">
-                <span>{(displayProduct.brand || '').replace(/\s*pro/gi, '') || '神狗勾'}</span>
+              <div className="flex items-center gap-2 text-xs text-indigo-600 font-bold mb-1 pr-9">
+                <span className="whitespace-nowrap">{(displayProduct.brand || '').replace(/\s*pro/gi, '') || '神狗勾'}</span>
                 <span>•</span>
-                <span className="text-slate-500 font-mono">SKU: {displayProduct.sku}</span>
+                <span className="text-slate-500 font-mono whitespace-nowrap">SKU: {displayProduct.sku}</span>
               </div>
 
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
-                {displayProduct.name}
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight pr-8">
+                {(displayProduct.name || '').replace(/莫蘭迪\s*/g, '')}
               </h2>
 
               {/* Rating & reviews */}
               <div className="flex items-center gap-2 mt-2 text-xs text-slate-600 dark:text-slate-400 flex-wrap">
                 {displayProduct.reviewsCount > 0 ? (
                   <>
-                    <div className="flex items-center text-amber-500 font-bold">
+                    <div className="flex items-center text-amber-500 font-bold whitespace-nowrap">
                       <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
                       <span className="ml-1 text-slate-900 dark:text-slate-100 font-mono">{displayProduct.rating}</span>
                     </div>
-                    <span>({displayProduct.reviewsCount} {lang === 'en' ? 'Verified Reviews' : lang === 'ja' ? '件のカスタマー評価' : '則真實顧客評價'})</span>
+                    <span className="whitespace-nowrap">({displayProduct.reviewsCount} {lang === 'en' ? 'Reviews' : lang === 'ja' ? '件の評価' : '則顧客評價'})</span>
                   </>
                 ) : (
-                  <span className="text-slate-500 dark:text-slate-400 font-medium">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
                     {t.noReviewsYet}
                   </span>
                 )}
                 <span className="text-slate-300 dark:text-slate-700">|</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> {lang === 'en' ? 'Authentic & Sealed' : lang === 'ja' ? '正規品・真空防湿' : '原廠正品防潮'}
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 whitespace-nowrap">
+                  <ShieldCheck className="w-3.5 h-3.5" /> {lang === 'en' ? 'Authentic & Sealed' : lang === 'ja' ? '正規品・真空防湿' : '原廠防潮包裝'}
                 </span>
               </div>
 
@@ -390,9 +390,9 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 </div>
               </div>
 
-              {/* Detail Tabs */}
+              {/* Detail Tabs - Concise 4-character single-line labels */}
               <div className="mt-5 border-t border-slate-100 pt-3">
-                <div className="flex border-b border-slate-200 gap-2 mb-3 overflow-x-auto scrollbar-none">
+                <div className="flex border-b border-slate-200 gap-3 mb-3 overflow-x-auto scrollbar-none">
                   <button
                     type="button"
                     onClick={() => setActiveTab('specs')}
@@ -402,7 +402,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    {lang === 'en' ? 'Features & Specs' : lang === 'ja' ? '物性・製品特徴' : '耗材特點與物性'}
+                    {lang === 'en' ? 'Specs' : lang === 'ja' ? '製品特徴' : '物性特點'}
                   </button>
                   <button
                     type="button"
@@ -413,7 +413,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    {lang === 'en' ? 'Slicer Profiles' : lang === 'ja' ? 'スライス設定推奨' : '切片參數推薦'}
+                    {lang === 'en' ? 'Slicer' : lang === 'ja' ? 'スライス設定' : '切片參數'}
                   </button>
                   <button
                     type="button"
@@ -425,7 +425,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                     }`}
                   >
                     <Calculator className="w-3.5 h-3.5" />
-                    <span>{lang === 'en' ? 'Cost Calculator' : lang === 'ja' ? 'コスト試算' : '成本與件數估算'}</span>
+                    <span>{lang === 'en' ? 'Calculator' : lang === 'ja' ? 'コスト試算' : '成本試算'}</span>
                   </button>
                   <button
                     type="button"
@@ -436,7 +436,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    {lang === 'en' ? `Maker Reviews (${displayProduct.reviewsCount})` : lang === 'ja' ? `レビュー (${displayProduct.reviewsCount})` : `創客評價 (${displayProduct.reviewsCount})`}
+                    {lang === 'en' ? `Reviews (${displayProduct.reviewsCount})` : lang === 'ja' ? `評価 (${displayProduct.reviewsCount})` : `創客評價 (${displayProduct.reviewsCount})`}
                   </button>
                 </div>
 
@@ -639,13 +639,13 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Single-line crisp CTAs */}
             <div className="mt-6 pt-4 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
               <button
                 id="modal-add-to-cart-btn"
                 type="button"
                 onClick={handleAdd}
-                className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
                   isAdded
                     ? 'bg-emerald-600 text-white'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-900'
@@ -653,13 +653,13 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
               >
                 {isAdded ? (
                   <>
-                    <Check className="w-4 h-4" />
-                    {t.addedToCart}
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>{t.addedToCart}</span>
                   </>
                 ) : (
                   <>
-                    <ShoppingCart className="w-4 h-4" />
-                    {t.addToCart}
+                    <ShoppingCart className="w-4 h-4 shrink-0" />
+                    <span>{t.addToCart}</span>
                   </>
                 )}
               </button>
@@ -668,25 +668,24 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 id="modal-buy-now-btn"
                 type="button"
                 onClick={handleBuyNow}
-                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
+                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer whitespace-nowrap"
               >
-                <span>{lang === 'zh-TW' ? '立即結帳付款 (藍新 / LINE Pay)' : lang === 'ja' ? '今すぐ購入 (NewebPay / LINE Pay)' : 'Checkout (NewebPay / LINE Pay)'}</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>{lang === 'zh-TW' ? '立即結帳付款' : lang === 'ja' ? '今すぐ購入' : 'Buy Now'}</span>
+                <ArrowRight className="w-4 h-4 shrink-0" />
               </button>
             </div>
 
             {/* Quick Ask AI button */}
             {onAskAI && (
-              <div className="mt-2.5">
+              <div className="mt-2">
                 <button
                   id="modal-ask-ai-btn"
                   type="button"
                   onClick={() => onAskAI(displayProduct)}
-                  className="w-full py-2.5 px-3 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
-                  title={lang === 'en' ? 'Open AI Advisor to get optimal slicing settings' : lang === 'ja' ? 'AIアドバイザーに最適なスライス設定を質問' : '開啟 AI 客服小視窗詢問切片與最佳列印參數'}
+                  className="w-full py-2.5 px-3 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
                 >
-                  <Bot className="w-4 h-4 text-indigo-600" />
-                  <span>{lang === 'en' ? 'Ask AI Advisor for optimal slicing parameters' : lang === 'ja' ? 'AIアドバイザーに最適なスライス設定を質問' : '打開 AI 顧問小視窗詢問此款線材切片參數'}</span>
+                  <Bot className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>{lang === 'en' ? 'Ask AI for Slicer Settings' : lang === 'ja' ? 'AIにスライス設定を質問' : '詢問 AI 顧問此款切片參數'}</span>
                 </button>
               </div>
             )}

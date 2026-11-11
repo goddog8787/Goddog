@@ -88,7 +88,7 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white p-6 relative">
+        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white p-5 sm:p-6 relative">
           <button
             onClick={onClose}
             className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center cursor-pointer transition-colors"
@@ -96,20 +96,20 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
             <X className="w-5 h-5" />
           </button>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner">
-                <Crown className="w-7 h-7 text-amber-200" />
+          <div className="flex items-center justify-between pr-9">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner shrink-0">
+                <Crown className="w-6 h-6 text-amber-200" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xl font-extrabold">{member?.name || (lang === 'en' ? 'Member' : lang === 'ja' ? '会員' : '會員')}</h3>
-                  <span className="bg-slate-900 text-amber-300 font-bold px-2 py-0.5 rounded-full text-xs">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-nowrap">
+                  <h3 className="text-lg sm:text-xl font-extrabold truncate">{member?.name || (lang === 'en' ? 'Member' : lang === 'ja' ? '会員' : '會員')}</h3>
+                  <span className="bg-slate-900 text-amber-300 font-bold px-2 py-0.5 rounded-full text-xs whitespace-nowrap shrink-0">
                     {(member?.tier || "Silver")} {lang === 'en' ? 'Maker' : lang === 'ja' ? 'メイカー' : '創客'}
                   </span>
                 </div>
-                <p className="text-xs text-amber-100 mt-0.5 font-mono">
-                  {lang === 'en' ? 'Account: ' : lang === 'ja' ? 'アカウント：' : '帳號：'}{member?.email || ""} • {lang === 'en' ? 'Total Spent: ' : lang === 'ja' ? '累計購入額：' : '累積消費 '}{formatPrice(member?.totalSpent || 0, currency)}
+                <p className="text-xs text-amber-100 mt-0.5 font-mono truncate">
+                  {member?.email || ""} • {lang === 'en' ? 'Spent ' : lang === 'ja' ? '累計 ' : '累積 '}{formatPrice(member?.totalSpent || 0, currency)}
                 </p>
               </div>
             </div>
@@ -120,7 +120,7 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
                   onLogout();
                   onClose();
                 }}
-                className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-semibold cursor-pointer transition-colors"
+                className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-semibold cursor-pointer transition-colors shrink-0"
                 title={lang === 'en' ? 'Sign out' : lang === 'ja' ? 'ログアウト' : '登出目前帳號'}
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -130,10 +130,10 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
           </div>
 
           {/* Navigation Tabs inside Header */}
-          <div className="flex gap-2 mt-5 border-t border-white/20 pt-3">
+          <div className="flex gap-2 mt-4 border-t border-white/20 pt-3">
             <button
               onClick={() => setActiveTab('perks')}
-              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'perks'
                   ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-amber-100 hover:bg-white/10'
@@ -141,12 +141,12 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
             >
               <span className="flex items-center gap-1.5">
                 <Coins className="w-3.5 h-3.5" />
-                {lang === 'en' ? 'Privileges & Points' : lang === 'ja' ? '特典＆ポイント' : '會員禮遇與點數'}
+                {lang === 'en' ? 'Perks & Points' : lang === 'ja' ? '特典＆ポイント' : '積分與專屬禮遇'}
               </span>
             </button>
             <button
               onClick={() => setActiveTab('orders')}
-              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 activeTab === 'orders'
                   ? 'bg-white text-slate-900 shadow-xs'
                   : 'text-amber-100 hover:bg-white/10'
@@ -154,7 +154,7 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
             >
               <span className="flex items-center gap-1.5">
                 <Package className="w-3.5 h-3.5" />
-                {lang === 'en' ? `Orders & Logistics (${displayOrders.length})` : lang === 'ja' ? `注文履歴＆配送 (${displayOrders.length})` : `購買紀錄與物流 (${displayOrders.length})`}
+                {lang === 'en' ? `Orders (${displayOrders.length})` : lang === 'ja' ? `注文履歴 (${displayOrders.length})` : `訂單與物流 (${displayOrders.length})`}
               </span>
             </button>
           </div>

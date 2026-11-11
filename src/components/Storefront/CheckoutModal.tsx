@@ -375,30 +375,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md sticky top-0 z-10">
-          <div className="flex items-center gap-3">
+        <div className="px-4 py-3.5 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md sticky top-0 z-10">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-none">
-                  {createdOrder ? '🎉 訂單支付成功與電子憑證' : t.checkoutTitle}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-nowrap">
+                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-none whitespace-nowrap">
+                  {createdOrder ? '訂單支付成功' : '訂單結帳支付'}
                 </h2>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold">
-                  <Lock className="w-2.5 h-2.5" />
-                  藍新金流 NewebPay 安全連線
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold whitespace-nowrap shrink-0">
+                  <Lock className="w-2.5 h-2.5 shrink-0" />
+                  藍新 SSL 加密
                 </span>
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 leading-normal">
-                支援信用卡 · LINE Pay · Apple Pay · ATM · 銀行轉帳 · 超商條碼
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
+                支援信用卡・LINE Pay・Apple Pay・ATM・超商條碼
               </p>
             </div>
           </div>
           <button
             id="close-checkout-modal-btn"
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            className="w-8 h-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -857,32 +857,39 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
 
-                  {/* Items preview list (Full text, no truncation) */}
+                  {/* Items preview list (Clean 1-2 line layout without redundant parentheses) */}
                   <div className="max-h-52 overflow-y-auto space-y-2 pr-1 mb-4">
-                    {cartItems.map((item) => (
-                      <div 
-                        key={`${item.product.id}-${item.selectedColor.name}`}
-                        className="flex items-start justify-between text-xs py-2 border-b border-slate-200/80 dark:border-slate-800/80 gap-2.5"
-                      >
-                        <div className="flex items-start gap-2 min-w-0 flex-1">
-                          <span 
-                            className="w-2.5 h-2.5 rounded-full shrink-0 border border-slate-300 dark:border-slate-600 mt-1"
-                            style={{ backgroundColor: item.selectedColor.hex }} 
-                          />
-                          <span className="font-medium text-slate-800 dark:text-slate-200 break-words leading-snug">
-                            {translateProductName(item.product.name, item.product.brand, item.product.material, item.product.weight, lang)}
-                          </span>
+                    {cartItems.map((item) => {
+                      const cleanItemName = translateProductName(item.product.name, item.product.brand, item.product.material, item.product.weight, lang)
+                        .replace(/神狗勾\s*/g, '')
+                        .replace(/莫蘭迪\s*/g, '')
+                        .replace(/\s*[\(（][^\)）]*[\)）]\s*$/g, '')
+                        .trim();
+                      return (
+                        <div 
+                          key={`${item.product.id}-${item.selectedColor.name}`}
+                          className="flex items-center justify-between text-xs py-2 border-b border-slate-200/80 dark:border-slate-800/80 gap-2.5"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span 
+                              className="w-2.5 h-2.5 rounded-full shrink-0 border border-slate-300 dark:border-slate-600"
+                              style={{ backgroundColor: item.selectedColor.hex }} 
+                            />
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                              {cleanItemName}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded whitespace-nowrap">
+                              × {item.quantity}
+                            </span>
+                            <span className="font-mono font-bold text-slate-900 dark:text-slate-100 min-w-[68px] text-right tabular-nums whitespace-nowrap">
+                              {formatPrice(item.product.price * item.quantity, currency)}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                            × {item.quantity}
-                          </span>
-                          <span className="font-mono font-bold text-slate-900 dark:text-slate-100 min-w-[68px] text-right tabular-nums">
-                            {formatPrice(item.product.price * item.quantity, currency)}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Coupon Code Section */}
@@ -983,26 +990,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     id="start-payment-gateway-btn"
                     onClick={handleStartPayment}
                     disabled={isProcessing}
-                    className="w-full py-4 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20"
+                    className="w-full py-3.5 px-5 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20 whitespace-nowrap"
                   >
                     {isProcessing ? (
-                      <div className="flex items-center gap-2">
-                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0"></span>
                         <span>正在連線藍新金流加密授權...</span>
                       </div>
                     ) : (
                       <>
-                        <Lock className="w-4 h-4 text-emerald-400" />
-                        <span>
-                          前往藍新金流結帳 ({paymentRadioOptions.find(p => p.id === paymentGateway)?.label || '安全付款'})
+                        <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span className="whitespace-nowrap">
+                          前往藍新結帳・{(paymentRadioOptions.find(p => p.id === paymentGateway)?.label || '安全付款').replace(/[\(（]/g, ' ').replace(/[\)）]/g, '').trim()}
                         </span>
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="w-4 h-4 shrink-0" />
                       </>
                     )}
                   </button>
 
-                  <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center">
-                    點擊將導向藍新金流 (NewebPay) 256-bit SSL 安全收銀台完成付款
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center whitespace-nowrap">
+                    🔒 藍新金流 NewebPay 256-bit SSL 安全加密收銀台
                   </p>
                 </div>
               </div>

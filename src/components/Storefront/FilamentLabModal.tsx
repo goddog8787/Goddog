@@ -292,94 +292,94 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
-        <div className="sticky top-0 z-20 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white pt-10 pb-5 px-5 sm:p-6 flex flex-row items-start sm:items-center justify-between border-b border-indigo-500/20">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600/80 border border-indigo-400/40 text-amber-300 flex items-center justify-center shadow-lg">
+        <div className="sticky top-0 z-20 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white pt-10 pb-4 px-5 sm:p-5 flex flex-row items-center justify-between gap-3 border-b border-indigo-500/20">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600/80 border border-indigo-400/40 text-amber-300 flex items-center justify-center shadow-lg shrink-0">
               <Calculator className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black text-white tracking-tight">
-                  神狗勾 3D 創客計算實驗室
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-nowrap">
+                <h2 className="text-base sm:text-lg font-black text-white tracking-tight whitespace-nowrap">
+                  3D 創客計算實驗室
                 </h2>
-                <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black uppercase">
+                <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black uppercase whitespace-nowrap shrink-0">
                   Maker Pro
                 </span>
               </div>
-              <p className="text-xs text-indigo-200/80">
-                殘餘線材測量 • 商業代印成本精算 • Bambu AMS 多色矩陣 • 切片參數產生器
+              <p className="text-xs text-indigo-200/80 truncate mt-0.5">
+                餘料測量・代印報價・AMS 支撐・切片與防潮烘乾
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="bg-slate-100 p-3 border-b border-slate-200 flex items-center gap-2 overflow-x-auto overflow-y-hidden text-sm font-bold [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] touch-pan-x">
+        <div className="bg-slate-100 p-2.5 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto overflow-y-hidden text-xs sm:text-sm font-bold [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] touch-pan-x">
           <button
             onClick={() => setActiveTab('estimator')}
-            className={`px-5 py-3 rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'estimator'
                 ? 'bg-white text-indigo-700 shadow-md border border-slate-200/50'
                 : 'text-slate-600 hover:text-slate-900 bg-slate-200/50 hover:bg-slate-200'
             }`}
           >
-            <Scale className="w-5 h-5 text-indigo-600" />
-            <span>線盤剩餘米數測量</span>
+            <Scale className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>餘料測量</span>
           </button>
 
           <button
             onClick={() => setActiveTab('cost')}
-            className={`px-5 py-3 rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'cost'
                 ? 'bg-white text-emerald-700 shadow-md border border-slate-200/50'
                 : 'text-slate-600 hover:text-slate-900 bg-slate-200/50 hover:bg-slate-200'
             }`}
           >
-            <DollarSign className="w-5 h-5 text-emerald-600" />
-            <span>代印報價與成本精算</span>
+            <DollarSign className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>代印報價</span>
           </button>
 
           <button
             onClick={() => setActiveTab('ams')}
-            className={`px-5 py-3 rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'ams'
                 ? 'bg-white text-amber-700 shadow-md border border-slate-200/50'
                 : 'text-slate-600 hover:text-slate-900 bg-slate-200/50 hover:bg-slate-200'
             }`}
           >
-            <Palette className="w-5 h-5 text-amber-500" />
-            <span>AMS 多色與支撐矩陣</span>
+            <Palette className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>AMS 秘笈</span>
           </button>
 
           <button
             onClick={() => setActiveTab('slicer')}
-            className={`px-5 py-3 rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'slicer'
                 ? 'bg-white text-purple-700 shadow-md border border-slate-200/50'
                 : 'text-slate-600 hover:text-slate-900 bg-slate-200/50 hover:bg-slate-200'
             }`}
           >
-            <Sliders className="w-5 h-5 text-purple-600" />
-            <span>切片參數一鍵生成</span>
+            <Sliders className="w-4 h-4 text-purple-600 shrink-0" />
+            <span>切片參數</span>
           </button>
 
           <button
             onClick={() => setActiveTab('drying')}
-            className={`px-5 py-3 rounded-xl transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`px-3.5 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'drying'
                 ? 'bg-white text-orange-700 shadow-md border border-slate-200/50'
                 : 'text-slate-600 hover:text-slate-900 bg-slate-200/50 hover:bg-slate-200'
             }`}
           >
-            <Wind className="w-5 h-5 text-amber-500" />
-            <span>耗材防潮與烘烤指南</span>
+            <Wind className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>防潮烘乾</span>
           </button>
         </div>
 
@@ -388,10 +388,10 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
           {/* TAB 1: ESTIMATOR */}
           {activeTab === 'estimator' && (
             <div className="space-y-6">
-              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-4 rounded-2xl border border-indigo-100 flex items-start gap-3">
-                <Info className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-3.5 rounded-2xl border border-indigo-100 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
                 <p className="text-xs text-indigo-950 leading-relaxed">
-                  在進行大尺寸列印前，先用廚房秤量秤含盤總重。系統會自動扣除對應空盤重量，並結合材質精確比重，計算出<strong>剩餘公尺數</strong>與<strong>可印模型數量</strong>，徹底杜絕斷線斷印悲劇！
+                  列印前先秤「含盤總重」，系統將自動扣除空盤重量與材質比重，精算<strong>剩餘公尺數</strong>與<strong>可印數量</strong>，避免半途斷料。
                 </p>
               </div>
 

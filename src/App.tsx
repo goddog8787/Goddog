@@ -1260,6 +1260,39 @@ export default function App() {
     saveCustomerCart(activeUid, updated).catch(console.warn);
   };
 
+  const handleUpdateCartColor = (index: number, newColor: ColorOption) => {
+    const baseCart = cartItemsRef.current;
+    const targetItem = baseCart[index];
+    if (!targetItem) return;
+
+    // 檢查購物車內是否已有同商品、同新顏色、同線徑的項目，若有則自動合併數量
+    const duplicateIdx = baseCart.findIndex(
+      (item, idx) =>
+        idx !== index &&
+        item.product.id === targetItem.product.id &&
+        item.selectedColor.name === newColor.name &&
+        item.selectedDiameter === targetItem.selectedDiameter
+    );
+
+    let updated: CartItem[];
+    if (duplicateIdx > -1) {
+      updated = baseCart
+        .map((item, idx) =>
+          idx === duplicateIdx ? { ...item, quantity: item.quantity + targetItem.quantity } : item
+        )
+        .filter((_, idx) => idx !== index);
+    } else {
+      updated = baseCart.map((item, idx) =>
+        idx === index ? { ...item, selectedColor: newColor } : item
+      );
+    }
+
+    cartItemsRef.current = updated;
+    setCartItems(updated);
+    const activeUid = resolveActiveCustomerId();
+    saveCustomerCart(activeUid, updated).catch(console.warn);
+  };
+
   const handleRemoveCartItem = (index: number) => {
     const updated = cartItemsRef.current.filter((_, idx) => idx !== index);
     cartItemsRef.current = updated;
@@ -1480,17 +1513,17 @@ export default function App() {
           <div className="space-y-4 sm:space-y-8">
             {/* Guest Welcome & Sign-In Reward Banner */}
             {!isLoggedIn && (
-              <div className="bg-gradient-to-r from-amber-500/15 via-indigo-500/15 to-purple-500/15 border border-amber-500/30 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md backdrop-blur-xs">
-                <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="bg-gradient-to-r from-amber-500/15 via-indigo-500/15 to-purple-500/15 border border-amber-500/30 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-md backdrop-blur-xs">
+                <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
                   <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-500 flex items-center justify-center shrink-0 border border-amber-400/30 shadow-sm">
                     <Gift className="w-5 h-5" />
                   </div>
-                  <div>
-                    <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                      <span>{lang === 'en' ? 'New Member Benefit: Sign in to get 100 G-Coins & Free Shipping!' : lang === 'ja' ? '新規会員特典：ログインで100 G-Coin＆送料無料クーポン進呈！' : '🎁 新客專屬好禮：登入 Google 帳號或註冊會員，立即領取 100 點狗狗幣與免運券！'}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                      {lang === 'en' ? 'New Member Gift: Sign in for 100 G-Coins & Free Shipping!' : lang === 'ja' ? '新規特典：ログインで100 G-Coin＆送料無料進呈！' : '🎁 新客專屬好禮：登入即領 100 點積分與免運優惠'}
                     </div>
-                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                      {lang === 'en' ? 'Quick Google login, cash discount points, and real-time order tracking.' : lang === 'ja' ? 'ワンクリックGoogleログインでポイント即時付与＆注文配送追跡。' : '免繁瑣填表，一鍵 Google 登入即享購物現金折抵與超商包裹即時追蹤。'}
+                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      {lang === 'en' ? '1-click Google login, cash discount points & live package tracking.' : lang === 'ja' ? 'Googleログインでポイント即時付与＆配送追跡。' : '一鍵 Google 登入，享購物現金折抵與超商包裹即時追蹤'}
                     </p>
                   </div>
                 </div>
@@ -1499,8 +1532,8 @@ export default function App() {
                     onClick={() => setIsAuthOpen(true)}
                     className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-amber-500 hover:from-indigo-500 hover:to-amber-400 text-white text-xs font-bold shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                   >
-                    <User className="w-3.5 h-3.5" />
-                    <span>{lang === 'en' ? 'Sign In / Register' : lang === 'ja' ? 'ログイン / 新規登録' : '立即登入 / 註冊領取'}</span>
+                    <User className="w-3.5 h-3.5 shrink-0" />
+                    <span>{lang === 'en' ? 'Sign In / Claim' : lang === 'ja' ? 'ログインして受取' : '立即登入領取'}</span>
                   </button>
                 </div>
               </div>
@@ -1511,36 +1544,36 @@ export default function App() {
               <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
                 {/* Left Column: Heading & Description */}
                 <div className="lg:col-span-7 space-y-3 sm:space-y-4">
-                  <div className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] sm:text-xs font-bold tracking-wide">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] sm:text-xs font-bold tracking-wide whitespace-nowrap">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="break-words">
-                      {lang === 'en' ? '2026 High-Speed 600mm/s Bambu AMS & Creality K1 Flagship Filaments' : lang === 'ja' ? '2026最新 最高600mm/s Bambu AMS＆K1公式検証済みフィラメント' : '2026 高速 600mm/s 拓竹 AMS 與 K1 旗艦專用線材'}
+                    <span>
+                      {lang === 'en' ? '2026 600mm/s Bambu AMS & Creality K1 Verified' : lang === 'ja' ? '2026最新 600mm/s Bambu AMS＆K1公式対応' : '2026 拓竹 AMS・Creality K1 高速專用線材'}
                     </span>
                   </div>
 
                   <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
                     {lang === 'en' ? (
-                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">Ultra-Smooth</span> 3D Printing Filaments & Professional Solutions</>
+                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">Ultra-Smooth</span> 3D Filaments & Slicing Solutions</>
                     ) : lang === 'ja' ? (
-                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">超高速・高精度</span> 3Dプリンター専用フィラメント＆造形ソリューション</>
+                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">超高速・高精度</span> 3Dプリント線材＆造形ソリューション</>
                     ) : (
-                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">極速流暢</span> 3D 列印耗材與專業選材服務</>
+                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">極速流暢</span> 3D 列印耗材與智能選材</>
                     )}
                   </h1>
 
                   <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
-                    {lang === 'en' ? 'All filaments inspected with ±0.02mm laser micrometers and sealed in vacuum aluminum foil. Secure NewebPay checkout with Free Shipping over NT$999!' : lang === 'ja' ? '全商品±0.02mmレーザー高精度検品＆アルミ防湿真空密封包装。NewebPay暗号化決済対応、NT$999以上で全国送料無料！' : '全館耗材通過 0.02mm 高精度光學線徑檢驗與真空鋁箔防潮包裝。支援藍新安全金流 (信用卡/Apple Pay/ATM/超商取貨付款)，全台 7-11 與全家超取滿 NT$999 免運！'}
+                    {lang === 'en' ? 'All spools pass ±0.02mm laser inspection with vacuum foil packaging. Supports NewebPay checkout and Free Shipping over NT$999.' : lang === 'ja' ? '全品±0.02mmレーザー検品＆アルミ真空包装。NewebPay決済対応、NT$999以上で送料無料。' : '全館通過 ±0.02mm 光學線徑檢驗與鋁箔真空防潮包裝。支援藍新安全金流與超商取貨，滿 NT$999 享免運優惠。'}
                   </p>
 
                   {/* Action CTA Buttons */}
-                  <div className="pt-2 flex flex-wrap items-center gap-3">
+                  <div className="pt-1.5 flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
                     <button
                       id="hero-ai-advisor-cta-btn"
                       onClick={() => setIsAIAdvisorOpen(true)}
-                      className="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 cursor-pointer transition-all active:scale-98"
+                      className="flex-1 sm:flex-initial justify-center px-4 sm:px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer transition-all active:scale-98 whitespace-nowrap"
                     >
-                      <Sparkles className="w-4 h-4 text-amber-300" />
-                      <span>{lang === 'en' ? 'AI Advisor: Match by 3D Printer' : lang === 'ja' ? 'AI顧問：機種別マッチング' : 'AI 耗材顧問：依機型精準配對'}</span>
+                      <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                      <span>{lang === 'en' ? 'AI Filament Advisor' : lang === 'ja' ? 'AI機種別マッチング' : 'AI 耗材智能配對'}</span>
                     </button>
 
                     <button
@@ -1549,9 +1582,9 @@ export default function App() {
                         const el = document.getElementById('storefront-product-grid');
                         el?.scrollIntoView({ behavior: 'smooth' });
                       }}
-                      className="px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-xs text-white border border-white/20 text-xs font-bold flex items-center gap-2 cursor-pointer transition-all"
+                      className="flex-1 sm:flex-initial justify-center px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-xs text-white border border-white/20 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
                     >
-                      <span>{lang === 'en' ? 'Explore Full Catalog ↓' : lang === 'ja' ? '全商品カタログを見る ↓' : '選購全部耗材型錄 ↓'}</span>
+                      <span>{lang === 'en' ? 'Browse Catalog ↓' : lang === 'ja' ? '商品一覧を見る ↓' : '選購全部耗材 ↓'}</span>
                     </button>
                   </div>
                 </div>
@@ -1561,32 +1594,32 @@ export default function App() {
                   <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-indigo-500/30 hover:border-indigo-500/60 transition-colors">
                     <div className="text-indigo-400 text-xs font-bold uppercase tracking-wider">High Speed</div>
                     <div className="text-2xl font-black text-white mt-1">600 <span className="text-xs font-semibold text-slate-400">mm/s</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {lang === 'en' ? 'Ultra high-speed extrusion without carbonization, high layer adhesion' : lang === 'ja' ? '超高速吐出でも炭化なし、層間密着強度抜群' : '極限高速出膠不碳化、層間結合力強'}
+                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                      {lang === 'en' ? 'High-flow extrusion, strong bonding' : lang === 'ja' ? '高速吐出でも層間密着強度抜群' : '高速出膠不碳化・層間結合強'}
                     </p>
                   </div>
 
                   <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-cyan-500/30 hover:border-cyan-500/60 transition-colors">
                     <div className="text-cyan-400 text-xs font-bold uppercase tracking-wider">Precision</div>
                     <div className="text-2xl font-black text-white mt-1">±0.02 <span className="text-xs font-semibold text-slate-400">mm</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {lang === 'en' ? 'Laser-calibrated concentricity, zero nozzle clogging' : lang === 'ja' ? '高精度真円度でノズル詰まりゼロ' : '光學校準同心度，連續列印不卡噴嘴'}
+                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                      {lang === 'en' ? 'Laser-calibrated, zero nozzle clogs' : lang === 'ja' ? '高精度真円度でノズル詰まりゼロ' : '光學校準同心度・列印不卡料'}
                     </p>
                   </div>
 
                   <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-amber-500/30 hover:border-amber-500/60 transition-colors">
                     <div className="text-amber-400 text-xs font-bold uppercase tracking-wider">AMS Ready</div>
                     <div className="text-2xl font-black text-white mt-1">100% <span className="text-xs font-semibold text-slate-400">{lang === 'en' ? 'Compatible' : lang === 'ja' ? '対応' : '相容'}</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {lang === 'en' ? 'Standard 200mm spools for seamless Bambu AMS multi-color switching' : lang === 'ja' ? '標準200mm径でBambu AMS多色給排に完全対応' : '標準 200mm 卷軸，拓竹多色完美進退料'}
+                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                      {lang === 'en' ? 'Standard 200mm spools for AMS' : lang === 'ja' ? '標準200mm径でAMS多色対応' : '標準 200mm 盤徑・多色順暢進料'}
                     </p>
                   </div>
 
                   <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-emerald-500/30 hover:border-emerald-500/60 transition-colors">
                     <div className="text-emerald-400 text-xs font-bold uppercase tracking-wider">Local Fast</div>
                     <div className="text-2xl font-black text-white mt-1">24H <span className="text-xs font-semibold text-slate-400">{lang === 'en' ? 'Dispatch' : lang === 'ja' ? '発送' : '出貨'}</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      {lang === 'en' ? 'Taiwan warehouse stock dispatched within 24 hours' : lang === 'ja' ? '台湾国内倉庫より24時間以内にスピード発送' : '台灣現貨新竹/7-11/全家快速發貨'}
+                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                      {lang === 'en' ? 'Taiwan warehouse rapid dispatch' : lang === 'ja' ? '台湾国内倉庫より24Hスピード発送' : '台灣現貨・7-11/全家快速發貨'}
                     </p>
                   </div>
                 </div>
@@ -1916,7 +1949,7 @@ export default function App() {
                             product={product}
                             currency={currency}
                             lang={lang}
-                            onAddToCart={(p, color, diameter) => handleAddToCart(p, color, diameter, 1)}
+                            onAddToCart={(p, color, diameter, qty) => handleAddToCart(p, color, diameter, qty || 1)}
                             onViewDetail={handleOpenProductDetail}
                             isWishlisted={wishlistIds.includes(product.id)}
                             onToggleWishlist={handleToggleWishlist}
@@ -2045,6 +2078,7 @@ export default function App() {
           onClose={() => setIsCartOpen(false)}
           cartItems={cartItems}
           onUpdateQuantity={handleUpdateCartQuantity}
+          onUpdateColor={handleUpdateCartColor}
           onRemoveItem={handleRemoveCartItem}
           onClearCart={() => {
             const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;

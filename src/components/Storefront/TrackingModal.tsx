@@ -206,27 +206,27 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <Truck className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-bold text-base text-slate-900 leading-none">
-                {lang === 'en' ? 'Live Order Tracking Portal' : lang === 'ja' ? 'リアルタイム配送追跡センター' : '即時物流動態查詢中心'}
+            <div className="min-w-0">
+              <h3 className="font-bold text-base text-slate-900 leading-none whitespace-nowrap">
+                {lang === 'en' ? 'Live Order Tracking' : lang === 'ja' ? 'リアルタイム配送追跡' : '即時物流動態查詢'}
               </h3>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-slate-500 mt-1 truncate">
                 {lang === 'en'
-                  ? '7-ELEVEN, FamilyMart & T-Cat Courier • Live Official Carrier Status'
+                  ? '7-ELEVEN, FamilyMart & T-Cat • Live Status'
                   : lang === 'ja'
-                  ? '7-11、FamilyMart、ヤマト黒猫宅急便公式追跡連動'
-                  : '真實藍新金流物流服務 • 支援 7-11、全家、黑貓宅急便 • 官網動態聯網查詢'}
+                  ? '7-11、FamilyMart、ヤマト宅急便公式連動'
+                  : '支援 7-11、全家、黑貓宅急便・即時貨態追蹤'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
+            className="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>

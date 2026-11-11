@@ -201,7 +201,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
   },
   {
     id: 'maker-esun-matte',
-    name: 'eSUN 易生 ePLA-Matte 莫蘭迪消光啞光耗材 (低層紋環保線盤)',
+    name: 'eSUN 易生 ePLA-Matte 消光啞光耗材 (低層紋環保線盤)',
     brand: 'eSUN 易生',
     material: 'PLA Matte',
     diameter: '1.75mm',
@@ -216,10 +216,10 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
     maxSpeed: '300 mm/s',
     rating: 4.8,
     reviewsCount: 512,
-    badge: '莫蘭迪消光',
+    badge: '低層紋消光',
     description: 'eSUN 易生經典 ePLA-Matte 消光啞光系列，低漫反射無塑膠反光感，極致隱藏層紋，支撐超好拆，列印手辦與文創模型質感絕佳。',
     features: [
-      '莫蘭迪消光霧面質感，無廉價塑膠反光，免二次打磨',
+      '細膩消光霧面質感，無廉價塑膠反光，免二次打磨',
       '懸垂列印穩定，支撐結構極易手撕剝離不留疤痕',
       '標準 200mm 線盤相容 Bambu AMS 四色自動進料器',
       '台灣現貨供應，多色齊全快速發貨'
@@ -340,7 +340,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
   },
   {
     id: 'fil-07',
-    name: 'PolyTerra PLA Matte 莫蘭迪消光霧面美學耗材',
+    name: 'PolyTerra PLA Matte 消光霧面美學耗材',
     brand: 'Polymaker',
     material: 'PLA Matte',
     diameter: '1.75mm',
@@ -356,10 +356,10 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
     rating: 4.92,
     reviewsCount: 184,
     badge: '藝術霧面首選',
-    description: 'Polymaker 經典消光霧面配方，消除塑膠反光感，呈現柔和莫蘭迪色澤，層紋自然隱形，支撐極易剝離，建築模型與公仔最愛。',
+    description: 'Polymaker 經典消光霧面配方，消除塑膠反光感，層紋自然隱形，支撐極易剝離，建築模型與公仔最愛。',
     features: [
       '低漫反射霧面質感，不反光、免打磨即具高質感',
-      '精選莫蘭迪低飽和度設計色系',
+      '高穩定消光配方，列印順暢不堵頭',
       '支撐接觸面超好拆，印件細節銳利完整',
       '完美相容拓竹 AMS 四色自動進料器'
     ],
@@ -1196,7 +1196,7 @@ export const ALL_MARKET_PRODUCTS: FilamentProduct[] = [
   },
   {
     id: 'acc-02',
-    name: '雙面金色紋理 PEI 磁性彈簧鋼板 (257x257mm 相容 X1/P1/A1)',
+    name: '雙面紋理 PEI 磁性彈簧鋼板 (257x257mm 相容 X1/P1/A1)',
     brand: '創客配件',
     material: 'Accessories',
     diameter: '1.75mm',

@@ -106,25 +106,25 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-emerald-500/20 shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-emerald-600/80 border border-emerald-400/40 text-emerald-200 flex items-center justify-center shadow-lg shrink-0">
               <Recycle className="w-5 h-5 text-emerald-300" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-black text-white tracking-tight">
-                  {lang === 'en' ? 'GodDog Spool Green Recycling Program' : lang === 'ja' ? '神狗勾 空スプール・グリーン回収プログラム' : '神狗勾創客空盤綠色回收計畫'}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-nowrap">
+                <h2 className="text-base font-black text-white tracking-tight whitespace-nowrap">
+                  {lang === 'en' ? 'Spool Green Recycling' : lang === 'ja' ? '空スプール回収計画' : '空盤綠色回收計畫'}
                 </h2>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-400 text-slate-950 text-[10px] font-black uppercase flex items-center gap-0.5">
+                <span className="px-2 py-0.5 rounded-full bg-emerald-400 text-slate-950 text-[10px] font-black uppercase flex items-center gap-0.5 whitespace-nowrap shrink-0">
                   <Leaf className="w-2.5 h-2.5" /> ESG
                 </span>
               </div>
-              <p className="text-xs text-emerald-200/80 mt-0.5">
+              <p className="text-xs text-emerald-200/80 mt-0.5 truncate">
                 {lang === 'en' 
-                  ? '20 maker points per spool • Free shipping on 3+ spools' 
+                  ? '20 pts per spool • Free shipping on 3+ spools' 
                   : lang === 'ja' 
-                  ? '1スプール回収につき20pt還元・3巻以上で送料無料' 
-                  : '每回收 1 盤回饋 20 點創客積分 • 滿 3 盤超商寄件免運'}
+                  ? '1巻20pt還元・3巻以上で送料無料' 
+                  : '每盤回饋 20 點積分・滿 3 盤超商免運寄回'}
               </p>
             </div>
           </div>
@@ -434,18 +434,18 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
                   ) : (
                     <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-dashed border-emerald-300 dark:border-emerald-800 text-center space-y-2.5">
                       <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        尚未指定 7-ELEVEN 寄件門市地址
+                        尚未指定 7-ELEVEN 寄件門市
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                        點擊下方按鈕可依縣市、行政區搜尋全台 6,000+ 間 7-11 門市：
+                        可依縣市與行政區搜尋全台 7,000+ 間 7-11 門市：
                       </p>
                       <button
                         type="button"
                         onClick={() => setIsCvsModalOpen(true)}
-                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer inline-flex items-center justify-center gap-1.5"
+                        className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap"
                       >
-                        <Store className="w-4 h-4" />
-                        <span>選擇 7-ELEVEN 寄件門市地址 (開啟全台地圖/選單)</span>
+                        <Store className="w-4 h-4 shrink-0" />
+                        <span>選擇 7-ELEVEN 寄件門市</span>
                       </button>
                       <div className="pt-1">
                         <input
