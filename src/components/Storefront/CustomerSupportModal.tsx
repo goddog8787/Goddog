@@ -81,13 +81,35 @@ export function cleanChatText(rawText: string): string {
   return cleaned;
 }
 
-const DEFAULT_WELCOME_MESSAGE: ChatMessage = {
-  id: 'welcome-init',
-  sender: 'ai',
-  text: '您好！我是神狗勾 3D 智能顧問。\n\n無論是 PLA+、PETG、TPU 還是碳纖維線材的切片推薦溫度、速度、拓竹 AMS 供料設定或列印故障排查，請隨時告訴我！',
-  timestamp: Date.now(),
-  modelUsed: 'Gemini 3.8 Flash',
-};
+function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
+  if (lang === 'en') {
+    return {
+      id: 'welcome-init',
+      sender: 'ai',
+      text: "Hey there! I'm the GodDog 3D Filament & Slicing Specialist.\n\nWhether you need dialed-in nozzle & bed temps for PLA+, PETG-HF, TPU 95A, or Carbon Fiber, Bambu Lab AMS tips, or help fixing stringing and warping—just ask away!",
+      timestamp: Date.now(),
+      modelUsed: 'Gemini 3.8 Flash',
+    };
+  }
+  if (lang === 'ja') {
+    return {
+      id: 'welcome-init',
+      sender: 'ai',
+      text: 'こんにちは！神狗勾 (GodDog) 3Dフィラメント専属AIアドバイザーです。\n\nPLA+・PETG・TPU・炭素繊維フィラメントの最適な温度設定やスライサー調整、Bambu Lab AMSでの給紙のコツ、糸引き・反り対策など、何でもお気軽にご相談ください！',
+      timestamp: Date.now(),
+      modelUsed: 'Gemini 3.8 Flash',
+    };
+  }
+  return {
+    id: 'welcome-init',
+    sender: 'ai',
+    text: '您好！我是神狗勾 3D 智能顧問。\n\n無論是 PLA+、PETG、TPU 還是碳纖維線材的切片推薦溫度、速度、拓竹 AMS 供料設定或列印故障排查，請隨時告訴我！',
+    timestamp: Date.now(),
+    modelUsed: 'Gemini 3.8 Flash',
+  };
+}
+
+const DEFAULT_WELCOME_MESSAGE: ChatMessage = getWelcomeMessage('zh-TW');
 
 // Intelligent built-in 3D printing engineering engine for zero-failure client replies
 function generateClientExpertReply(text: string): { reply: string; modelUsed: string; solution?: DiagnosticSolution } {
@@ -328,6 +350,33 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     initialLoadedRef.current = false;
   }, [activeChatUserId]);
 
+  // Automatically adapt the initial/welcome AI greeting whenever the user switches language
+  useEffect(() => {
+    setMessages((prev) => {
+      if (!prev || prev.length === 0) return [getWelcomeMessage(lang)];
+      return prev.map((m, idx) => {
+        if (
+          idx === 0 &&
+          m.sender === 'ai' &&
+          (m.id === 'welcome-init' ||
+            String(m.id).startsWith('reset-welcome-') ||
+            m.text.includes('我是神狗勾 3D') ||
+            m.text.includes('GodDog 3D Filament & Slicing') ||
+            m.text.includes('3Dフィラメント専属AIアドバイザー') ||
+            m.text.includes('記憶已重新整理') ||
+            m.text.includes('Conversation history cleared') ||
+            m.text.includes('会話履歴をリセットしました'))
+        ) {
+          return {
+            ...m,
+            text: getWelcomeMessage(lang).text,
+          };
+        }
+        return m;
+      });
+    });
+  }, [lang]);
+
   // Persist messages ONLY to the currently loaded customer's isolated storage
   useEffect(() => {
     if (messages && messages.length > 0 && loadedChatUserIdRef.current === activeChatUserId) {
@@ -375,7 +424,12 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   const handleCopyParams = (id: string, solution?: DiagnosticSolution) => {
     if (!solution?.recommendedAdjustment) return;
     const adj = solution.recommendedAdjustment;
-    const text = `【神狗勾 3D 切片推薦參數】\n• 噴嘴/熱床溫度: ${adj.temperature || '未指定'}\n• 列印速度: ${adj.speed || '未指定'}\n• 回抽設定: ${adj.retraction || '未指定'}\n• 冷卻風扇: ${adj.cooling || '未指定'}`;
+    const text =
+      lang === 'en'
+        ? `[GodDog 3D Recommended Slicer Profile]\n• Nozzle / Bed Temp: ${adj.temperature || 'N/A'}\n• Print Speed: ${adj.speed || 'N/A'}\n• Retraction: ${adj.retraction || 'N/A'}\n• Part Cooling Fan: ${adj.cooling || 'N/A'}`
+        : lang === 'ja'
+        ? `【神狗勾 3D 推奨スライサー設定】\n• ノズル/ベッド温度: ${adj.temperature || '未指定'}\n• 造形速度: ${adj.speed || '未指定'}\n• リトラクション: ${adj.retraction || '未指定'}\n• 冷却ファン: ${adj.cooling || '未指定'}`
+        : `【神狗勾 3D 切片推薦參數】\n• 噴嘴/熱床溫度: ${adj.temperature || '未指定'}\n• 列印速度: ${adj.speed || '未指定'}\n• 回抽設定: ${adj.retraction || '未指定'}\n• 冷卻風扇: ${adj.cooling || '未指定'}`;
     navigator.clipboard?.writeText(text);
     setCopiedParamId(id);
     setTimeout(() => setCopiedParamId(null), 2000);
@@ -383,11 +437,17 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
   // Reset conversation memory
   const handleResetConversation = () => {
+    const resetText =
+      lang === 'en'
+        ? "Conversation history cleared! What filament, printer setup, or slicer setting can I help you dial in today?"
+        : lang === 'ja'
+        ? '会話履歴をリセットしました！今日はどのフィラメントや3Dプリンターの設定についてご相談されますか？'
+        : '記憶已重新整理！我已為您開啟全新對話視窗。請問今天想了解哪一款線材或諮詢哪台 3D 印表機的切片與列印設定呢？';
     const freshMessages: ChatMessage[] = [
       {
         id: 'reset-welcome-' + Date.now(),
         sender: 'ai',
-        text: '記憶已重新整理！我已為您開啟全新對話視窗。請問今天想了解哪一款線材或諮詢哪台 3D 印表機的切片與列印設定呢？',
+        text: resetText,
         timestamp: Date.now(),
       },
     ];
@@ -506,7 +566,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     try {
       // Only use local offline rule engine if user explicitly selected 'local-expert'
       if (selectedModel === 'local-expert') {
-        const fallback = generateSmart3DExpertReply(text, storeContextPayload);
+        const fallback = generateSmart3DExpertReply(text, storeContextPayload, lang);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiMsgId
@@ -515,7 +575,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                   text: fallback.reply,
                   solution: fallback.solution,
                   isLoading: false,
-                  modelUsed: '神狗勾 3D 專家顧問',
+                  modelUsed: fallback.modelUsed,
                 }
               : m
           )
@@ -536,12 +596,19 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               membershipTier: userTier,
               messages: historyPayload,
               storeContext: storeContextPayload,
+              lang,
             }),
           });
 
           if (streamRes.status === 403) {
             const errJson = await streamRes.json().catch(() => ({}));
-            const forbiddenMsg = errJson?.reply || '【會員權限提示】此高階旗艦模型僅限 PLUS 付費會員使用，請切換至 Flash 推薦模型或至會員中心升級！';
+            const forbiddenMsg =
+              errJson?.reply ||
+              (lang === 'en'
+                ? '[Membership Notice] This flagship Pro model is exclusive to PLUS members. Please switch to the recommended Flash model or upgrade in your Member Center!'
+                : lang === 'ja'
+                ? '【会員ランク制限】この上位ProモデルはPLUS会員限定です。推奨のFlashモデルに切り替えるか、会員センターでアップグレードしてください！'
+                : '【會員權限提示】此高階旗艦模型僅限 PLUS 付費會員使用，請切換至 Flash 推薦模型或至會員中心升級！');
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === aiMsgId
@@ -549,7 +616,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                       ...m,
                       text: forbiddenMsg,
                       isLoading: false,
-                      modelUsed: '權限攔截 (403)',
+                      modelUsed: lang === 'en' ? 'Access Restricted (403)' : lang === 'ja' ? 'アクセス制限 (403)' : '權限攔截 (403)',
                     }
                   : m
               )
@@ -627,6 +694,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               membershipTier: userTier,
               messages: historyPayload,
               storeContext: storeContextPayload,
+              lang,
             }),
           });
 
@@ -657,14 +725,15 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         }
       }
 
-      // 2. Direct Browser Gemini / Custom Proxy API call (uses key stored in Firestore settings/ai_config, localStorage, or GitHub Secret)
+      // 2. Direct Browser Gemini / Custom Proxy API call
       try {
         const directReply = await callDirectBrowserGemini(
           text,
           historyPayload,
           selectedModel,
           storeContextPayload,
-          controller.signal
+          controller.signal,
+          lang
         );
         if (directReply) {
           setMessages((prev) =>
@@ -685,7 +754,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         if (directErr?.name === 'AbortError') throw directErr;
       }
 
-      // 3. Firestore Real-Time AI Live Bridge (connects goddog.space directly to the live Gemini 3 Flash backend via shared Cloud Firestore with streaming chunks)
+      // 3. Firestore Real-Time AI Live Bridge
       try {
         const bridgeReply = await requestGeminiViaFirestoreBridge({
           message: text,
@@ -693,6 +762,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
           history: historyPayload,
           storeContext: storeContextPayload,
           signal: controller.signal,
+          lang,
           onChunk: (streamedSoFar) => {
             setMessages((prev) =>
               prev.map((m) =>
@@ -730,7 +800,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       // 4. Built-in 3D Printing Expert Knowledge Engine (offline fallback)
       if (controller.signal.aborted) return;
 
-      const expertResult = generateSmart3DExpertReply(text, storeContextPayload);
+      const expertResult = generateSmart3DExpertReply(text, storeContextPayload, lang);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
@@ -748,7 +818,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       if (err?.name === 'AbortError') {
         return;
       }
-      const fallbackResult = generateSmart3DExpertReply(text, storeContextPayload);
+      const fallbackResult = generateSmart3DExpertReply(text, storeContextPayload, lang);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
@@ -772,7 +842,12 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   const handleQuickDiagnose = async (category: string) => {
     if (isLoading) return;
 
-    const userTxt = `排查列印異常：${category}`;
+    const userTxt =
+      lang === 'en'
+        ? `Troubleshoot print issue: ${category}`
+        : lang === 'ja'
+        ? `造形トラブル診断：${category}`
+        : `排查列印異常：${category}`;
     const userMsgId = `usr-diag-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const aiMsgId = `ai-diag-${Date.now() + 1}-${Math.random().toString(36).substring(2, 7)}`;
 
@@ -798,7 +873,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     const apiBase = getBackendApiBase();
 
     try {
-      if (!isStaticHostingEnv()) {
+      if (lang === 'zh-TW' && !isStaticHostingEnv()) {
         const res = await fetch(`${apiBase}/api/ai/support-diagnose`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -806,6 +881,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
             issueType: category,
             filamentType: activeViewingProduct?.material || 'PLA / PETG / TPU',
             description: `創客排查問題：${category}`,
+            lang,
           }),
         });
         const contentType = res.headers.get('content-type') || '';
@@ -832,31 +908,65 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
           return;
         }
       }
-      throw new Error('Use client diagnostic engine');
+      throw new Error('Use localized client diagnostic engine');
     } catch {
-      const diagResult = generateSmart3DExpertReply(category, {
-        viewingProduct: activeViewingProduct,
-      });
+      const diagResult = generateSmart3DExpertReply(
+        category,
+        { viewingProduct: activeViewingProduct },
+        lang
+      );
       setMessages((prev) =>
         prev.map((m) =>
           m.id === aiMsgId
             ? {
                 ...m,
                 text: cleanChatText(diagResult.reply),
-                solution: diagResult.solution || {
-                  solutions: [
-                    '以 99% 異丙醇或洗碗精徹底清洗熱床表面，消除指紋油脂',
-                    '微調 Z-Offset 降低 0.03mm-0.05mm 增強首層擠出壓實感',
-                    '切片設定首層列印速度降至 25-30 mm/s，首層完全關閉風扇',
-                    '開啟切片裙邊 (Brim) 5mm-8mm 以擴大與熱床的抓附面積',
-                  ],
-                  recommendedAdjustment: {
-                    temperature: '噴嘴 215-225°C / 熱床 60-65°C',
-                    speed: '首層 30 mm/s (其餘層 200-300 mm/s)',
-                    retraction: '近端 0.8mm @ 35mm/s / 遠端 4.5mm',
-                    cooling: '首層 0% (第 3 層後開啟至 100%)',
-                  },
-                },
+                solution:
+                  diagResult.solution ||
+                  (lang === 'en'
+                    ? {
+                        solutions: [
+                          'Wash Textured PEI plate with warm water and dish soap to remove skin oils',
+                          'Lower Z-Offset by 0.03–0.05mm for firmer first-layer squish',
+                          'Set first layer speed to 25–30 mm/s and keep cooling fan at 0% for Layer 1–2',
+                          'Enable 5–8mm Outer Brim in slicer to anchor corners down',
+                        ],
+                        recommendedAdjustment: {
+                          temperature: 'Nozzle 215–225°C / Bed 60–65°C',
+                          speed: 'First Layer 30 mm/s (Other layers 200–300 mm/s)',
+                          retraction: 'Direct 0.8mm @ 35mm/s / Bowden 4.5mm',
+                          cooling: 'Layer 1–2: 0% (100% from Layer 3)',
+                        },
+                      }
+                    : lang === 'ja'
+                    ? {
+                        solutions: [
+                          'PEIプレートをぬるま湯と中性洗剤で洗浄し、皮脂や指紋を完全に除去する',
+                          'Zオフセットを0.03〜0.05mm下げて1層目の定着力を高める',
+                          '初層速度を25〜30 mm/sに落とし、1〜2層目は冷却ファンをOFFにする',
+                          'スライサーで5〜8mmの外側ブリム（Brim）を有効にして反りを防ぐ',
+                        ],
+                        recommendedAdjustment: {
+                          temperature: 'ノズル 215〜225°C / ベッド 60〜65°C',
+                          speed: '1層目 30 mm/s（2層目以降 200〜300 mm/s）',
+                          retraction: 'ダイレクト式 0.8mm @ 35mm/s',
+                          cooling: '1〜2層目 0%（3層目以降 100%）',
+                        },
+                      }
+                    : {
+                        solutions: [
+                          '以 99% 異丙醇或洗碗精徹底清洗熱床表面，消除指紋油脂',
+                          '微調 Z-Offset 降低 0.03mm-0.05mm 增強首層擠出壓實感',
+                          '切片設定首層列印速度降至 25-30 mm/s，首層完全關閉風扇',
+                          '開啟切片裙邊 (Brim) 5mm-8mm 以擴大與熱床的抓附面積',
+                        ],
+                        recommendedAdjustment: {
+                          temperature: '噴嘴 215-225°C / 熱床 60-65°C',
+                          speed: '首層 30 mm/s (其餘層 200-300 mm/s)',
+                          retraction: '近端 0.8mm @ 35mm/s / 遠端 4.5mm',
+                          cooling: '首層 0% (第 3 層後開啟至 100%)',
+                        },
+                      }),
                 isLoading: false,
                 modelUsed: currentModelObj.name,
               }
@@ -905,10 +1015,10 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               type="button"
               onClick={onClose}
               className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors cursor-pointer shrink-0"
-              title="關閉並返回商城主頁"
+              title={lang === 'en' ? 'Close and return to store' : lang === 'ja' ? '閉じてショップに戻る' : '關閉並返回商城主頁'}
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">返回主頁</span>
+              <span className="hidden sm:inline">{lang === 'en' ? 'Back' : lang === 'ja' ? '戻る' : '返回主頁'}</span>
             </button>
 
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center shadow-xs shrink-0">
@@ -918,15 +1028,15 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 overflow-hidden">
                 <h3 className="font-black text-[11px] sm:text-sm text-white tracking-tight truncate shrink-0">
-                  {lang === 'en' ? 'GodDog 3D AI Advisor' : lang === 'ja' ? '神狗勾 3D AIアドバイザー' : '神狗勾 3D 智能顧問'}
+                  {lang === 'en' ? 'GodDog 3D AI Specialist' : lang === 'ja' ? '神狗勾 3D AIアドバイザー' : '神狗勾 3D 智能顧問'}
                 </h3>
-                <span className="hidden xs:flex items-center gap-1 text-[8px] sm:text-[9px] bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
+                <span className="hidden sm:flex items-center gap-1 text-[8px] sm:text-[9px] bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
                   <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   <span>{lang === 'en' ? 'Online' : lang === 'ja' ? 'オンライン' : '在線'}</span>
                 </span>
               </div>
               <p className="text-[9px] sm:text-[10px] text-indigo-200/80 truncate opacity-80">
-                {lang === 'en' ? '3D Printing Filament & Slicing Advice' : lang === 'ja' ? '3Dプリント材料相談＆スライサー設定' : '3D 列印材料諮詢與切片設定'}
+                {lang === 'en' ? 'Filament Selection & Slicer Tuning' : lang === 'ja' ? 'フィラメント相談＆スライサー設定診断' : '3D 列印材料諮詢與切片設定'}
               </p>
             </div>
           </div>
@@ -979,7 +1089,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
             <button
               type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              title={isExpanded ? '切換為小視窗' : '放大為寬螢幕視窗'}
+              title={isExpanded ? (lang === 'en' ? 'Compact window' : lang === 'ja' ? 'コンパクト表示' : '切換為小視窗') : (lang === 'en' ? 'Expand window' : lang === 'ja' ? 'ワイド表示' : '放大為寬螢幕視窗')}
               className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
             >
               {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
@@ -991,11 +1101,11 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('printcore_show_chat_widget'));
               }}
-              title="在畫面上開啟/還原 AI 客服可調位置懸浮球"
+              title={lang === 'en' ? 'Show floating AI button' : lang === 'ja' ? 'フローティングAIボタンを表示' : '在畫面上開啟/還原 AI 客服可調位置懸浮球'}
               className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white text-[10px] font-bold transition-colors cursor-pointer"
             >
               <Bot className="w-3 h-3 text-sky-200" />
-              <span>懸浮球</span>
+              <span>{lang === 'en' ? 'Widget' : lang === 'ja' ? 'ウィジェット' : '懸浮球'}</span>
             </button>
 
             {/* Close Button */}
@@ -1003,7 +1113,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               id="close-customer-support-modal-btn"
               onClick={onClose}
               className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/10 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors"
-              title="關閉客服視窗 (亦可點擊背景空白處)"
+              title={lang === 'en' ? 'Close window' : lang === 'ja' ? 'ウィンドウを閉じる' : '關閉客服視窗 (亦可點擊背景空白處)'}
             >
               <X className="w-4 h-4" />
             </button>
@@ -1022,8 +1132,12 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                   <Cpu className="w-3.5 h-3.5" />
                 </div>
                 <div>
-                  <h4 className="font-bold text-xs sm:text-sm text-white">自選 AI 顧問回覆模型</h4>
-                  <p className="text-[10px] text-slate-400">所有切換自動儲存於瀏覽器，下輪對話立即生效</p>
+                  <h4 className="font-bold text-xs sm:text-sm text-white">
+                    {lang === 'en' ? 'Select AI Engine' : lang === 'ja' ? 'AI応答モデルの選択' : '自選 AI 顧問回覆模型'}
+                  </h4>
+                  <p className="text-[10px] text-slate-400">
+                    {lang === 'en' ? 'Saved automatically for your next message' : lang === 'ja' ? '選択内容は自動保存され、次の会話から適用されます' : '所有切換自動儲存於瀏覽器，下輪對話立即生效'}
+                  </p>
                 </div>
               </div>
               <button
@@ -1079,7 +1193,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
           <div className="px-3 sm:px-4 py-2 bg-indigo-50/90 border-b border-indigo-100 flex items-center justify-between text-xs text-indigo-900 shrink-0">
             <div className="flex items-center gap-2 truncate">
               <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white font-bold text-[10px] shrink-0">
-                目前討論商品
+                {lang === 'en' ? 'Active Spool' : lang === 'ja' ? '相談中の商品' : '目前討論商品'}
               </span>
               <span className="font-bold truncate text-[11px] sm:text-xs">
                 {activeViewingProduct.name} ({activeViewingProduct.material})
@@ -1093,41 +1207,43 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               onClick={() => setActiveViewingProduct(null)}
               className="text-[11px] text-indigo-500 hover:text-indigo-800 ml-2 shrink-0 underline cursor-pointer"
             >
-              切換一般諮詢
+              {lang === 'en' ? 'General Chat' : lang === 'ja' ? '一般相談へ切替' : '切換一般諮詢'}
             </button>
           </div>
         )}
 
         {/* Quick Symptoms buttons */}
         <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto text-xs scrollbar-none shrink-0">
-          <span className="text-slate-400 font-semibold shrink-0 text-[11px] ml-0.5">常見排查速診：</span>
+          <span className="text-slate-400 font-semibold shrink-0 text-[11px] ml-0.5">
+            {lang === 'en' ? 'Quick Fix:' : lang === 'ja' ? 'トラブル診断：' : '常見排查速診：'}
+          </span>
           <button
             disabled={isLoading}
-            onClick={() => handleQuickDiagnose('首層不黏/嚴重翹邊 (Warping)')}
+            onClick={() => handleQuickDiagnose(lang === 'en' ? 'First-layer warping & poor bed adhesion (Warping)' : lang === 'ja' ? '1層目の剥がれ・反り (Warping)' : '首層不黏/嚴重翹邊 (Warping)')}
             className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
           >
-            首層脫落翹邊
+            {lang === 'en' ? 'Bed Warping' : lang === 'ja' ? '1層目の剥がれ・反り' : '首層脫落翹邊'}
           </button>
           <button
             disabled={isLoading}
-            onClick={() => handleQuickDiagnose('劇烈拉絲/蜘蛛絲 (Stringing)')}
+            onClick={() => handleQuickDiagnose(lang === 'en' ? 'Heavy stringing & oozing (Stringing)' : lang === 'ja' ? '糸引き・クモの巣現象 (Stringing)' : '劇烈拉絲/蜘蛛絲 (Stringing)')}
             className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
           >
-            劇烈拉絲蜘蛛絲
+            {lang === 'en' ? 'Fine Stringing' : lang === 'ja' ? '糸引き・クモの巣' : '劇烈拉絲蜘蛛絲'}
           </button>
           <button
             disabled={isLoading}
-            onClick={() => handleQuickDiagnose('噴嘴堵塞/喀喀齒輪打滑 (Clogged Nozzle)')}
+            onClick={() => handleQuickDiagnose(lang === 'en' ? 'Clogged nozzle & extruder clicking (Clogged Nozzle)' : lang === 'ja' ? 'ノズル詰まり・ギア空回り (Clogged Nozzle)' : '噴嘴堵塞/喀喀齒輪打滑 (Clogged Nozzle)')}
             className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
           >
-            噴嘴堵塞打滑
+            {lang === 'en' ? 'Nozzle Clog' : lang === 'ja' ? 'ノズル詰まり' : '噴嘴堵塞打滑'}
           </button>
           <button
             disabled={isLoading}
-            onClick={() => handleQuickDiagnose('層間剝離脆弱 (Layer Delamination)')}
+            onClick={() => handleQuickDiagnose(lang === 'en' ? 'Weak layer bonding & splitting (Layer Delamination)' : lang === 'ja' ? '層間剥離・割れ (Layer Delamination)' : '層間剝離脆弱 (Layer Delamination)')}
             className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
           >
-            層間開裂脆弱
+            {lang === 'en' ? 'Layer Splitting' : lang === 'ja' ? '層間剥離・割れ' : '層間開裂脆弱'}
           </button>
         </div>
 
@@ -1158,7 +1274,13 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                   {m.isLoading ? (
                     <div className="flex items-center gap-2.5 text-indigo-600 py-1">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
-                      <span className="text-xs font-medium">AI 顧問正在調取上下文並計算切片參數與排查清單...</span>
+                      <span className="text-xs font-medium">
+                        {lang === 'en'
+                          ? 'Dialing in slicer parameters & troubleshooting checklist...'
+                          : lang === 'ja'
+                          ? 'スライサー推奨値とトラブル診断リストを作成中...'
+                          : 'AI 顧問正在調取上下文並計算切片參數與排查清單...'}
+                      </span>
                     </div>
                   ) : (
                     <>
@@ -1173,10 +1295,20 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-1.5 text-indigo-950 font-bold text-[11px] sm:text-xs">
                                   <Wrench className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                                  <span>🔧 列印與切片參數確認清單 (點擊逐項勾選確認)：</span>
+                                  <span>
+                                    {lang === 'en'
+                                      ? '🔧 Slicer & Print Verification Checklist:'
+                                      : lang === 'ja'
+                                      ? '🔧 スライサー＆造形チェックリスト：'
+                                      : '🔧 列印與切片參數確認清單 (點擊逐項勾選確認)：'}
+                                  </span>
                                 </div>
                                 <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
-                                  已確認 {m.solution.solutions.filter((_, i) => checkedSteps[`${m.id}-step-${i}`]).length} / {m.solution.solutions.length} 項
+                                  {lang === 'en'
+                                    ? `${m.solution.solutions.filter((_, i) => checkedSteps[`${m.id}-step-${i}`]).length} / ${m.solution.solutions.length} Checked`
+                                    : lang === 'ja'
+                                    ? `${m.solution.solutions.filter((_, i) => checkedSteps[`${m.id}-step-${i}`]).length} / ${m.solution.solutions.length} 確認済`
+                                    : `已確認 ${m.solution.solutions.filter((_, i) => checkedSteps[`${m.id}-step-${i}`]).length} / ${m.solution.solutions.length} 項`}
                                 </span>
                               </div>
 
@@ -1220,7 +1352,13 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                               <div className="flex items-center justify-between">
                                 <span className="font-bold text-slate-900 text-[11px] sm:text-xs flex items-center gap-1.5">
                                   <Sparkles className="w-3 h-3 text-amber-500" />
-                                  <span>切片黃金推薦參數：</span>
+                                  <span>
+                                    {lang === 'en'
+                                      ? 'Recommended Slicer Settings:'
+                                      : lang === 'ja'
+                                      ? '推奨スライサーパラメータ：'
+                                      : '切片黃金推薦參數：'}
+                                  </span>
                                 </span>
                                 <button
                                   type="button"
@@ -1230,12 +1368,16 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                                   {copiedParamId === (m.id || `${idx}`) ? (
                                     <>
                                       <Check className="w-3 h-3 text-emerald-600" />
-                                      <span className="text-emerald-700">已複製參數</span>
+                                      <span className="text-emerald-700">
+                                        {lang === 'en' ? 'Copied!' : lang === 'ja' ? 'コピー完了' : '已複製參數'}
+                                      </span>
                                     </>
                                   ) : (
                                     <>
                                       <Copy className="w-3 h-3" />
-                                      <span>一鍵複製參數</span>
+                                      <span>
+                                        {lang === 'en' ? 'Copy Settings' : lang === 'ja' ? '設定をコピー' : '一鍵複製參數'}
+                                      </span>
                                     </>
                                   )}
                                 </button>
@@ -1244,25 +1386,33 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700 font-mono text-[11px]">
                                 {m.solution.recommendedAdjustment.temperature && (
                                   <div className="p-2 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <span className="text-slate-400 font-sans block text-[10px]">溫度設定 (噴嘴/熱床)</span>
+                                    <span className="text-slate-400 font-sans block text-[10px]">
+                                      {lang === 'en' ? 'Temperature (Nozzle / Bed)' : lang === 'ja' ? '温度設定 (ノズル/ベッド)' : '溫度設定 (噴嘴/熱床)'}
+                                    </span>
                                     <span className="font-bold text-slate-900">{m.solution.recommendedAdjustment.temperature}</span>
                                   </div>
                                 )}
                                 {m.solution.recommendedAdjustment.speed && (
                                   <div className="p-2 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <span className="text-slate-400 font-sans block text-[10px]">列印速度設定</span>
+                                    <span className="text-slate-400 font-sans block text-[10px]">
+                                      {lang === 'en' ? 'Print Speed' : lang === 'ja' ? '造形速度' : '列印速度設定'}
+                                    </span>
                                     <span className="font-bold text-slate-900">{m.solution.recommendedAdjustment.speed}</span>
                                   </div>
                                 )}
                                 {m.solution.recommendedAdjustment.retraction && (
                                   <div className="p-2 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <span className="text-slate-400 font-sans block text-[10px]">回抽長度與速度</span>
+                                    <span className="text-slate-400 font-sans block text-[10px]">
+                                      {lang === 'en' ? 'Retraction' : lang === 'ja' ? 'リトラクション' : '回抽長度與速度'}
+                                    </span>
                                     <span className="font-bold text-slate-900">{m.solution.recommendedAdjustment.retraction}</span>
                                   </div>
                                 )}
                                 {m.solution.recommendedAdjustment.cooling && (
                                   <div className="p-2 bg-white rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <span className="text-slate-400 font-sans block text-[10px]">冷卻風扇配置</span>
+                                    <span className="text-slate-400 font-sans block text-[10px]">
+                                      {lang === 'en' ? 'Part Cooling Fan' : lang === 'ja' ? '冷却ファン' : '冷卻風扇配置'}
+                                    </span>
                                     <span className="font-bold text-slate-900">{m.solution.recommendedAdjustment.cooling}</span>
                                   </div>
                                 )}
@@ -1277,7 +1427,9 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                         <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
                           <div className="flex items-center gap-1.5 font-medium">
                             <Cpu className="w-3 h-3 text-indigo-500" />
-                            <span className="text-slate-400">回覆模型：</span>
+                            <span className="text-slate-400">
+                              {lang === 'en' ? 'Model:' : lang === 'ja' ? '応答モデル：' : '回覆模型：'}
+                            </span>
                             <span className="text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
                               {m.modelUsed || currentModelObj.name}
                             </span>

@@ -7,9 +7,9 @@ import { User, Sparkles, MapPin, Share2, CreditCard, Gift,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { auth, logOut, signInWithGoogle } from '../../lib/firebase';
-import { isMockOrder, confirmOrderReceipt } from '../../lib/orderVerification';
-import {  OrderModal, NotificationModal , PrinterModal, AddressModal, ReferralModal, AchievementModal, SettingsModal, HistoryModal, CouponModal, FAQModal  } from './ProfileModals';
-import { getStoredRecentlyViewedSync } from '../../lib/customerPersistence';
+import { isMockOrder, confirmOrderReceipt, getGenuineUserOrders } from '../../lib/orderVerification';
+import { OrderModal, NotificationModal, PrinterModal, AddressModal, ReferralModal, AchievementModal, SettingsModal, HistoryModal, CouponModal, FAQModal, classifyOrderStatusLabel } from './ProfileModals';
+import { getStoredRecentlyViewedSync, loadCustomerUserData } from '../../lib/customerPersistence';
 import { LanguageCode } from '../../types';
 
 export interface ProfilePageProps {
@@ -24,6 +24,7 @@ export interface ProfilePageProps {
   onOpenTracking?: (trackingNumber: string) => void;
   onOpenProductDetail?: (product: any) => void;
   onAddToCart?: (product: any) => void;
+  onOpenSupport?: (prompt?: string) => void;
   lang?: LanguageCode;
 }
 
@@ -39,25 +40,61 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onOpenTracking,
   onOpenProductDetail,
   onAddToCart,
+  onOpenSupport,
   lang = 'zh-TW',
 }) => {
   const safeOrders = Array.isArray(orders) ? orders : [];
+  const navigate = useNavigate();
+  const [toastMsg, setToastMsg] = useState('');
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [persistedOrders, setPersistedOrders] = useState<any[]>([]);
+  const [printerGarageCount, setPrinterGarageCount] = useState<number>(0);
+  const pendingRefCode = typeof window !== 'undefined' ? localStorage.getItem('printcore_referral_code') : null;
+
+  useEffect(() => {
+    let active = true;
+    getGenuineUserOrders(safeOrders)
+      .then((res) => {
+        if (active && Array.isArray(res)) {
+          setPersistedOrders(res);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [safeOrders, member?.id, member?.email, activeModal]);
+
+  useEffect(() => {
+    const uid = member?.id || auth.currentUser?.uid;
+    loadCustomerUserData(uid, 'printers')
+      .then((list) => {
+        if (Array.isArray(list)) setPrinterGarageCount(list.length);
+      })
+      .catch(() => {});
+  }, [member?.id, activeModal]);
 
   const genuineMemberOrders = React.useMemo(() => {
     const currentUid = (member?.id && !member.id.startsWith('guest')) ? member.id : auth.currentUser?.uid;
     const currentEmail = (member?.email || auth.currentUser?.email || '').trim().toLowerCase();
     if (!currentUid && !currentEmail) return [];
 
-    return safeOrders.filter((o: any) => {
-      if (isMockOrder(o)) return false;
+    const map = new Map<string, any>();
+    [...persistedOrders, ...safeOrders].forEach((o: any) => {
+      if (!o || isMockOrder(o)) return;
       const orderUid = (o as any).userId;
       const orderEmail = (o.customerEmail || '').trim().toLowerCase();
-
-      if (currentUid && orderUid && orderUid === currentUid) return true;
-      if (currentEmail && orderEmail && orderEmail === currentEmail) return true;
-      return false;
+      const belongs =
+        (currentUid && orderUid && orderUid === currentUid) ||
+        (currentEmail && orderEmail && orderEmail === currentEmail);
+      if (belongs) {
+        const key = o.id || o.orderNumber;
+        if (key) map.set(key, o);
+      }
     });
-  }, [safeOrders, member?.id, member?.email]);
+    return Array.from(map.values());
+  }, [safeOrders, persistedOrders, member?.id, member?.email]);
 
   const ordersCount = genuineMemberOrders.length;
   const totalSpent = genuineMemberOrders.reduce((sum, o) => sum + (Number(o.totalAmount || o.total) || 0), 0);
@@ -90,13 +127,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     titleColorClass = 'bg-emerald-400/10 border-emerald-400/30 text-emerald-300';
     titleIconClass = 'text-emerald-300';
   }
-
-
-  
-  const navigate = useNavigate();
-  const [toastMsg, setToastMsg] = useState('');
-  const [activeModal, setActiveModal] = useState<string | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const handleReset = () => setActiveModal(null);
@@ -195,6 +225,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="absolute -top-16 -right-16 w-44 h-44 bg-gradient-to-br from-amber-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
           <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-gradient-to-tr from-sky-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
 
+          {pendingRefCode && (
+            <div className="mb-5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-2">
+              <Share2 className="w-4 h-4 shrink-0 text-emerald-500" />
+              <span>
+                已自動套用好友邀請碼 <strong className="font-mono underline">{pendingRefCode}</strong>！完成註冊並下單首購即贈 300 狗勾幣！
+              </span>
+            </div>
+          )}
+
           <div className="relative mx-auto w-20 h-20 mb-5 rounded-3xl bg-gradient-to-br from-amber-400/20 via-orange-400/10 to-indigo-500/20 border border-amber-400/30 flex items-center justify-center shadow-inner">
             <Gift className="w-10 h-10 text-amber-500 dark:text-amber-400 animate-bounce" />
           </div>
@@ -219,15 +258,39 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 mb-6 text-left border border-slate-100 dark:border-slate-800 space-y-2.5">
             <div className="flex items-center gap-3 text-xs text-slate-700 dark:text-slate-200">
               <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-500 flex items-center justify-center font-bold text-xs shrink-0">🪙</span>
-              <span><strong>100 點狗狗幣紅利：</strong>全館耗材無門檻折抵現金</span>
+              <span>
+                {lang === 'en' ? (
+                  <><strong>100 G-Coin Bonus:</strong> Instant cash discount across all filaments</>
+                ) : lang === 'ja' ? (
+                  <><strong>100 G-Coin特典：</strong>全フィラメントで使える即時割引ポイント</>
+                ) : (
+                  <><strong>100 點狗狗幣紅利：</strong>全館耗材無門檻折抵現金</>
+                )}
+              </span>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-700 dark:text-slate-200">
               <span className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-500 flex items-center justify-center font-bold text-xs shrink-0">📦</span>
-              <span><strong>訂單隨時追蹤：</strong>即時查詢 7-11 / 全家超商物流進度</span>
+              <span>
+                {lang === 'en' ? (
+                  <><strong>Real-Time Order Tracking:</strong> Track 7-11, FamilyMart & Home Delivery status</>
+                ) : lang === 'ja' ? (
+                  <><strong>リアルタイム配送追跡：</strong>コンビニ受取・宅配便の進捗をいつでも確認</>
+                ) : (
+                  <><strong>訂單隨時追蹤：</strong>即時查詢 7-11 / 全家超商物流進度</>
+                )}
+              </span>
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-700 dark:text-slate-200">
               <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">👑</span>
-              <span><strong>專屬創客權益：</strong>解鎖專利切片參數下載與 VIP 折扣</span>
+              <span>
+                {lang === 'en' ? (
+                  <><strong>Exclusive Maker Perks:</strong> Unlock pro slicer profiles & VIP discounts</>
+                ) : lang === 'ja' ? (
+                  <><strong>メイカー限定特典：</strong>専用スライサープロファイルとVIP割引を解放</>
+                ) : (
+                  <><strong>專屬創客權益：</strong>解鎖專利切片參數下載與 VIP 折扣</>
+                )}
+              </span>
             </div>
           </div>
 
@@ -243,7 +306,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
               </svg>
-              <span>{isGoogleSigningIn ? '正在開啟 Google 登入...' : '使用 Google 帳號快速登入'}</span>
+              <span>
+                {isGoogleSigningIn
+                  ? lang === 'en' ? 'Opening Google Sign-In...' : lang === 'ja' ? 'Googleログインを起動中...' : '正在開啟 Google 登入...'
+                  : lang === 'en' ? 'Continue with Google' : lang === 'ja' ? 'Googleアカウントで続行' : '使用 Google 帳號快速登入'}
+              </span>
             </button>
 
             <button
@@ -251,12 +318,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 px-4 rounded-2xl transition-all shadow-lg shadow-indigo-600/20 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
             >
               <User className="w-4 h-4" />
-              <span>使用電子信箱 登入 / 註冊</span>
+              <span>{lang === 'en' ? 'Sign In / Register with Email' : lang === 'ja' ? 'メールアドレスでログイン / 登録' : '使用電子信箱 登入 / 註冊'}</span>
             </button>
           </div>
 
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-5">
-            登入即表示您同意神狗勾商城的 <a href="/terms" className="underline hover:text-indigo-400">服務條款</a> 與 <a href="/privacy-policy" className="underline hover:text-indigo-400">隱私權政策</a>
+            {lang === 'en' ? (
+              <>By signing in, you agree to GodDog 3D’s <a href="/terms" className="underline hover:text-indigo-400">Terms of Service</a> and <a href="/privacy-policy" className="underline hover:text-indigo-400">Privacy Policy</a></>
+            ) : lang === 'ja' ? (
+              <>ログインすることで、神狗勾3Dの<a href="/terms" className="underline hover:text-indigo-400">利用規約</a>および<a href="/privacy-policy" className="underline hover:text-indigo-400">プライバシーポリシー</a>に同意したものとみなされます</>
+            ) : (
+              <>登入即表示您同意神狗勾商城的 <a href="/terms" className="underline hover:text-indigo-400">服務條款</a> 與 <a href="/privacy-policy" className="underline hover:text-indigo-400">隱私權政策</a></>
+            )}
           </p>
         </div>
       </div>
@@ -376,20 +449,28 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         {/* Order Management Section */}
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
           <div className="flex items-center justify-between mb-5">
-            <h3 className="font-black text-slate-900 text-lg">{lang === 'en' ? 'My Orders' : lang === 'ja' ? 'マイ注文' : '我的訂單'}</h3>
-            <button onClick={() => openModal("orders")} className="text-xs font-bold text-slate-400 flex items-center hover:text-indigo-600 transition-colors cursor-pointer">
+            <div className="flex items-center gap-2">
+              <h3 className="font-black text-slate-900 text-lg">{lang === 'en' ? 'My Orders' : lang === 'ja' ? 'マイ注文' : '我的訂單'}</h3>
+              {ordersCount > 0 && (
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
+                  共 {ordersCount} 筆
+                </span>
+              )}
+            </div>
+            <button onClick={() => openModal("orders", "all")} className="text-xs font-bold text-slate-400 flex items-center hover:text-indigo-600 transition-colors cursor-pointer">
               {lang === 'en' ? 'View All' : lang === 'ja' ? 'すべて見る' : '查看全部'} <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex justify-between items-start px-2">
+          <div className="flex justify-between items-start px-1">
             {[
-              { icon: CreditCard, label: lang === 'en' ? 'Unpaid' : lang === 'ja' ? '未払い' : '待付款', count: genuineMemberOrders.filter((o:any) => o.status === 'unpaid' || o.orderStatus === 'unpaid').length, tabId: 'unpaid' },
-              { icon: Package, label: lang === 'en' ? 'Processing' : lang === 'ja' ? '発送準備中' : '待出貨', count: genuineMemberOrders.filter((o:any) => o.status === 'processing' || o.orderStatus === 'processing' || o.orderStatus === 'paid' || o.orderStatus === 'picking').length, tabId: 'processing' },
-              { icon: Clock, label: lang === 'en' ? 'Shipping' : lang === 'ja' ? '配送中' : '運送中', count: genuineMemberOrders.filter((o:any) => o.status === 'shipping' || o.orderStatus === 'shipping' || o.orderStatus === 'shipped').length, tabId: 'shipping' },
-              { icon: ShieldCheck, label: lang === 'en' ? 'Returns' : lang === 'ja' ? '返品・交換' : '退換貨', count: genuineMemberOrders.filter((o:any) => o.status === 'returning' || o.orderStatus === 'returning').length, tabId: 'returning' },
+              { icon: CreditCard, label: lang === 'en' ? 'Unpaid' : lang === 'ja' ? '未払い' : '待付款', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '待付款').length, tabId: 'unpaid' },
+              { icon: Package, label: lang === 'en' ? 'Processing' : lang === 'ja' ? '発送準備中' : '待出貨', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '待出貨').length, tabId: 'processing' },
+              { icon: Clock, label: lang === 'en' ? 'Shipping' : lang === 'ja' ? '配送中' : '運送中', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '運送中').length, tabId: 'shipping' },
+              { icon: CheckCircle2, label: lang === 'en' ? 'Completed' : lang === 'ja' ? '完了' : '已完成', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '已完成').length, tabId: 'done' },
+              { icon: ShieldCheck, label: lang === 'en' ? 'Returns' : lang === 'ja' ? '返品・交換' : '退換貨', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '退換貨').length, tabId: 'returning' },
             ].map((item, i) => (
-              <button key={i} onClick={() => openModal('orders', item.tabId)} className="flex flex-col items-center gap-2.5 relative group cursor-pointer">
-                <div className="w-12 h-12 rounded-2xl bg-slate-50 text-slate-500 flex items-center justify-center group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all duration-300 group-hover:-translate-y-1">
+              <button key={i} onClick={() => openModal('orders', item.tabId)} className="flex flex-col items-center gap-2 relative group cursor-pointer flex-1">
+                <div className="w-11 h-11 rounded-2xl bg-slate-50 text-slate-500 flex items-center justify-center group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all duration-300 group-hover:-translate-y-1 relative">
                   <item.icon className="w-5 h-5" />
                   {item.count > 0 && (
                     <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
@@ -408,17 +489,24 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none translate-x-4 translate-y-4">
             <Printer className="w-32 h-32" />
           </div>
-          <div className="relative z-10 flex items-center justify-between">
+          <div className="relative z-10 flex items-center justify-between gap-3">
             <div>
-              <h3 className="font-black text-lg mb-1 flex items-center gap-2">
+              <h3 className="font-black text-lg mb-1 flex items-center gap-2 flex-wrap">
                 <Printer className="w-5 h-5 text-indigo-300" />
-                {lang === 'en' ? 'My Printer Garage' : lang === 'ja' ? 'マイプリンターガレージ' : '我的列印機車庫'}
+                <span>{lang === 'en' ? 'My Printer Garage' : lang === 'ja' ? 'マイプリンターガレージ' : '我的列印機車庫'}</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-indigo-100 font-bold">
+                  {printerGarageCount > 0 ? `已綁定 ${printerGarageCount} 台` : '收錄 15 大廠牌全機型'}
+                </span>
               </h3>
               <p className="text-indigo-200 text-xs leading-relaxed">
-                {lang === 'en' ? 'Configure your 3D printer for optimal filament tuning profiles!' : lang === 'ja' ? 'プリンター機種を設定して最適なフィラメント設定を取得！' : '設定您的 3D 列印機型號，獲取最精準的耗材參數建議！'}
+                {lang === 'en'
+                  ? 'Select Brand & Model (Bambu, Creality Ender~K3, SparkX i8, H3C, Infimech MX Pro & more)!'
+                  : lang === 'ja'
+                  ? 'ブランドから機種を選択して最適なスライサー設定を取得！'
+                  : '先選廠牌再選機型（含拓竹、Ender~K2/K3、SparkX i8、H3C、Infimech MX Pro 等全系列）！'}
               </p>
             </div>
-            <button onClick={() => openModal("printers")} className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-sm font-bold backdrop-blur-sm transition-colors cursor-pointer">
+            <button onClick={() => openModal("printers")} className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-sm font-bold backdrop-blur-sm transition-colors cursor-pointer shrink-0">
               {lang === 'en' ? 'Manage' : lang === 'ja' ? '管理' : '管理機台'}
             </button>
           </div>
@@ -432,9 +520,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           <div className="divide-y divide-slate-50">
             {[
               { icon: Sparkles, label: lang === 'en' ? 'My Subscriptions' : lang === 'ja' ? 'サブスク管理' : '我的訂閱管理', desc: lang === 'en' ? 'Billing cycle, points, plan changes' : lang === 'ja' ? '契約期間、ポイント残高、プラン変更' : '查看週期、剩餘點數、變更或取消方案', color: 'text-indigo-600', bg: 'bg-indigo-50', action: () => navigate('/subscription') },
-              { icon: Medal, label: lang === 'en' ? 'Maker Achievements' : lang === 'ja' ? 'メイカーアチーブメント' : '創客成就', desc: lang === 'en' ? 'Unlock badges and secret discounts' : lang === 'ja' ? '限定バッジと特別割引を獲得' : '解鎖專屬徽章與隱藏折扣', color: 'text-amber-500', bg: 'bg-amber-50', action: () => openModal('achievements') },
+              { icon: Medal, label: lang === 'en' ? 'Maker Achievements' : lang === 'ja' ? 'メイカーアチーブメント' : '創客成就', desc: lang === 'en' ? 'Unlock badges and secret discounts' : lang === 'ja' ? '限定バッジと特別割引を獲得' : '即時偵測 12 項徽章進度與領取里程碑神券', color: 'text-amber-500', bg: 'bg-amber-50', action: () => openModal('achievements') },
               { icon: MapPin, label: lang === 'en' ? 'Saved Addresses' : lang === 'ja' ? '配送先住所' : '地址資訊', desc: lang === 'en' ? 'Manage shipping and billing addresses' : lang === 'ja' ? '配送先とお届け先住所の管理' : '管理您的常用收件與發票地址', color: 'text-sky-500', bg: 'bg-sky-50', action: () => openModal('address') },
-              { icon: Share2, label: lang === 'en' ? 'Refer & Earn' : lang === 'ja' ? '友達紹介' : '推廣賺現金', desc: lang === 'en' ? 'Invite friends, earn $300 reward each' : lang === 'ja' ? '友達招待で両方に$300プレゼント' : '邀請好友下單，雙方各得 $300', color: 'text-emerald-500', bg: 'bg-emerald-50', action: () => openModal('referral') },
+              { icon: Share2, label: lang === 'en' ? 'Refer & Earn' : lang === 'ja' ? '友達紹介' : '推廣賺現金', desc: lang === 'en' ? 'Unique link • Verified on registration & order' : lang === 'ja' ? '専用リンク・登録＆注文完了で両方に$300' : '每人專屬連結・好友完成註冊＋首單即發放 $300', color: 'text-emerald-500', bg: 'bg-emerald-50', action: () => openModal('referral') },
               { 
                 icon: History, 
                 label: lang === 'en' ? 'Recently Viewed' : lang === 'ja' ? '最近閲覧した商品' : '最近瀏覽', 
@@ -472,6 +560,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="divide-y divide-slate-50">
             {[
+              ...((member?.email || auth.currentUser?.email || '').trim().toLowerCase() === 'babe0615@gmail.com'
+                ? [
+                    {
+                      icon: ShieldCheck,
+                      label: lang === 'en' ? 'Admin Portal (Owner Only)' : lang === 'ja' ? '管理パネル（オーナー専用）' : '進入營運管理後台（管理員專屬）',
+                      action: () => navigate('/admin'),
+                    },
+                  ]
+                : []),
               { icon: HeadphonesIcon, label: lang === 'en' ? 'Contact Support' : lang === 'ja' ? 'お問い合わせ' : '聯絡客服中心', action: () => navigate('/contact') },
               { icon: Bell, label: lang === 'en' ? 'Notifications' : lang === 'ja' ? '通知設定' : '通知設定', action: () => openModal('notifications') },
               { icon: HelpCircle, label: lang === 'en' ? 'Frequently Asked Questions (FAQ)' : lang === 'ja' ? 'よくある質問 (FAQ)' : '常見問題 (FAQ)', action: () => openModal('faq') },
@@ -515,8 +612,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           onClose={() => setActiveModal(null)}
           initialTab={orderTab}
           orders={genuineMemberOrders}
+          setOrders={setOrders}
           member={member}
+          setMember={setMember}
           onOpenTracking={onOpenTracking}
+          onOpenSupport={onOpenSupport}
           onConfirmReceipt={async (orderId) => {
             if (setOrders) {
               await confirmOrderReceipt(orderId, orders, setOrders);
@@ -530,9 +630,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <PrinterModal isOpen={activeModal === 'printers'} onClose={() => setActiveModal(null)} member={member} />
         <AddressModal isOpen={activeModal === 'address'} onClose={() => setActiveModal(null)} member={member} />
         <ReferralModal isOpen={activeModal === 'referral'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
-        <AchievementModal isOpen={activeModal === 'achievements'} onClose={() => setActiveModal(null)} member={member} orders={genuineMemberOrders} />
+        <AchievementModal isOpen={activeModal === 'achievements'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} orders={genuineMemberOrders} />
         <SettingsModal isOpen={activeModal === 'settings'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
         <FAQModal isOpen={activeModal === 'faq'} onClose={() => setActiveModal(null)} />
+        <NotificationModal isOpen={activeModal === 'notifications'} onClose={() => setActiveModal(null)} member={member} />
         <HistoryModal 
           isOpen={activeModal === 'history'} 
           onClose={() => setActiveModal(null)} 

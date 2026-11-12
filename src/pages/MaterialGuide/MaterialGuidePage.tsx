@@ -424,7 +424,23 @@ export const MaterialGuidePage: React.FC<MaterialGuidePageProps> = ({
                       {badgeText}
                     </span>
                     <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100">
-                      {mat.name}
+                      {activeLang === 'en'
+                        ? mat.id === 'petg-hf'
+                          ? 'PETG / PETG-HF High-Flow Tough'
+                          : mat.id === 'pa6-cf'
+                          ? 'PA6-CF Aerospace Carbon Nylon'
+                          : mat.id === 'tpu-95a'
+                          ? 'TPU 95A High-Elasticity Flexible'
+                          : mat.name
+                        : activeLang === 'ja'
+                        ? mat.id === 'petg-hf'
+                          ? 'PETG / PETG-HF 高流動・高靭性'
+                          : mat.id === 'pa6-cf'
+                          ? 'PA6-CF 航空グレード炭素繊維ナイロン'
+                          : mat.id === 'tpu-95a'
+                          ? 'TPU 95A 高弾性・耐衝撃フレキシブル'
+                          : mat.name
+                        : mat.name}
                     </h2>
                   </div>
                 </div>

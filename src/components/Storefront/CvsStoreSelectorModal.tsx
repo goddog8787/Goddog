@@ -249,7 +249,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-xs animate-in fade-in duration-200">
       <div
         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col h-[92vh] sm:h-[86vh] overflow-hidden text-slate-900 dark:text-slate-100"
         onClick={(e) => e.stopPropagation()}

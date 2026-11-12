@@ -81,6 +81,7 @@ import {
 } from './types';
 import confetti from 'canvas-confetti';
 import { translations, translateMaterial, translateProductName } from './utils/i18n';
+import { processDomSubtree } from './utils/domAutoTranslator';
 import { subscribeToProductStats } from './lib/reviewPersistence';
 import {
   loadPersistedProductsSync,
@@ -90,6 +91,7 @@ import {
 import { 
   saveOrderToFirestore, 
   saveUserProfileToFirestore, 
+  processReferralOrderReward,
   subscribeToAuth,
   logOut,
   saveMonetizationConfigToFirestore,
@@ -188,19 +190,19 @@ function ReferralHandler() {
   const navigate = useNavigate();
   useEffect(() => {
     if (code) {
-      localStorage.setItem('printcore_referral_code', code);
+      localStorage.setItem('printcore_referral_code', code.trim().toUpperCase());
     }
-    // Automatically log out so they can register as a new user with the code
+    // Automatically log out so they can register/sign-in as the referred user with the code
     const clearSession = async () => {
-       try {
-         await logOut();
-         clearStoredCustomerSession();
-       } catch(e) {}
-       navigate('/', { replace: true });
+      try {
+        await logOut();
+        clearStoredCustomerSession();
+      } catch (e) {}
+      navigate('/profile?referral_invited=1', { replace: true });
     };
     clearSession();
   }, [code, navigate]);
-  return null; // Let the effect handle the navigation after logout
+  return null;
 }
 
 export default function App() {
@@ -266,6 +268,44 @@ export default function App() {
       window.removeEventListener('storage', handleLangSync);
     };
   }, []);
+
+  // Universal DOM & Attribute Reactive Language Adaptation (zh-TW / en / ja)
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang = lang === 'en' ? 'en' : lang === 'ja' ? 'ja' : 'zh-TW';
+    document.title =
+      lang === 'en'
+        ? 'GodDog 3D | High-Speed 3D Filaments & Smart Slicing Store'
+        : lang === 'ja'
+        ? '神狗勾 3D | 高速3Dプリントフィラメント＆スマート素材選定ストア'
+        : '神狗勾耗材 3D列印線材旗艦館 | PLA・PETG・高速線材與智能選材商城';
+
+    let rafId: number | null = null;
+    const runScan = () => {
+      processDomSubtree(document.body, lang);
+    };
+
+    runScan();
+
+    const observer = new MutationObserver(() => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        runScan();
+        rafId = null;
+      });
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
+  }, [lang]);
 
   // Storewide Announcement & Broadcast State
   const [announcement, setAnnouncement] = useState<StoreAnnouncementConfig>(getStoreAnnouncementConfig());
@@ -539,6 +579,12 @@ export default function App() {
       return false;
     }
   });
+
+  const isOwnerAdmin = Boolean(
+    isLoggedIn &&
+    ((member?.email && member.email.trim().toLowerCase() === 'babe0615@gmail.com') ||
+      (auth.currentUser?.email && auth.currentUser.email.trim().toLowerCase() === 'babe0615@gmail.com'))
+  );
 
   // Maker & Storefront Enhancement States
   const [isFilamentLabOpen, setIsFilamentLabOpen] = useState(false);
@@ -1362,7 +1408,7 @@ export default function App() {
       }
     }
     setProducts(nextCatalog);
-    // Add loyalty points to member profile
+    // Add loyalty points to member profile & verify Stage 2 Referral Reward (Registered + First Order Completed)
     if (isLoggedIn && activeUid) {
       const updatedMember = sanitizeCustomerProfile({
         ...member,
@@ -1383,10 +1429,38 @@ export default function App() {
         totalSpent: updatedMember.totalSpent || 0,
         isLoggedIn: true,
       });
+
+      // Stage 2 Referral Verification: Only when a referred registered user completes a real order
+      processReferralOrderReward(updatedMember, orderWithOwner)
+        .then((refRes) => {
+          if (refRes?.rewarded && refRes.updatedBuyerProfile) {
+            const rewardedMember = sanitizeCustomerProfile(refRes.updatedBuyerProfile);
+            setMember(rewardedMember);
+            saveStoredCustomerSession({
+              id: rewardedMember.id,
+              name: rewardedMember.name,
+              email: rewardedMember.email,
+              tier: rewardedMember.tier,
+              points: rewardedMember.points,
+              totalSpent: rewardedMember.totalSpent || 0,
+              isLoggedIn: true,
+            });
+            setToastNotification({
+              type: 'success',
+              message: `🎁 首購推薦達標！您與推薦人「${refRes.referrerName || '好友'}」已各獲得 300 點狗勾幣（NT$300）獎勵！`,
+            });
+          }
+        })
+        .catch(console.warn);
     }
     setToastNotification({
       type: 'success',
-      message: `🎉 訂單 ${newOrder.orderNumber} 成立！已永久保存至您的雲端購買紀錄與物流查詢。`,
+      message:
+        lang === 'en'
+          ? `🎉 Order ${newOrder.orderNumber} placed! Saved to your order history & live tracking.`
+          : lang === 'ja'
+          ? `🎉 ご注文 ${newOrder.orderNumber} が確定しました！購入履歴と配送追跡に保存されました。`
+          : `🎉 訂單 ${newOrder.orderNumber} 成立！已永久保存至您的雲端購買紀錄與物流查詢。`,
     });
   };
 
@@ -1412,7 +1486,7 @@ export default function App() {
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
-    <div className="min-h-screen bg-slate-100/60 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200">
+    <div key={lang} className="min-h-screen bg-slate-100/60 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200">
       <ScrollToTop />
       {/* Universal Top Navigation with Unified Real-time Marquee */}
       <Navbar
@@ -1501,6 +1575,10 @@ export default function App() {
               if (full) {
                 handleAddToCart(full, full.colors[0], full.diameter, 1);
               }
+            }}
+            onOpenSupport={(promptText) => {
+              if (promptText) setSupportInitialPrompt(promptText);
+              setIsCustomerSupportOpen(true);
             }}
           /></>} />
           <Route path="/subscription" element={<><SEO title={lang === 'en' ? 'Subscription Plans - GodDog 3D' : lang === 'ja' ? '定期便・サブスク管理 - 神狗勾 3D' : '我的訂閱管理 - 神狗勾 3D'} description={lang === 'en' ? 'Manage your 3D printing maker VIP subscription, check remaining billing cycles, G-coin points and plans.' : lang === 'ja' ? '3DプリントメーカーVIP定期便プランの管理、残存期間、G-Coin残高、プラン更新設定。' : '管理您的 3D 列印創客 VIP 訂閱方案、查詢剩餘週期、點數餘額與續約設定。'} url="/subscription" /><SubscriptionPage member={member} setMember={setMember} onLoginClick={() => setIsAuthOpen(true)} lang={lang} /></>} />
@@ -1629,7 +1707,7 @@ export default function App() {
               <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-20 pointer-events-none hidden lg:block bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-500 via-cyan-500/20 to-transparent"></div>
             </section>
 
-            {/* App Services Matrix ("金剛區" - 5 Major Features Row) */}
+            {/* App Services Matrix ("金剛區" - 4 Major Features Row) */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700/80 shadow-2xs">
               <div className="grid grid-cols-4 gap-1.5 sm:gap-4">
                 {/* 1. AI Bot Chat (AI 機器人聊天) */}
@@ -1642,11 +1720,11 @@ export default function App() {
                     <Bot className="w-5 h-5 text-sky-200" />
                     <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-800 animate-pulse" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 break-words max-w-full">
-                    {t.aiSupport || (lang === 'en' ? 'AI Support' : lang === 'ja' ? 'AIサポート' : 'AI 機器人')}
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 whitespace-nowrap">
+                    {lang === 'en' ? 'AI Support' : lang === 'ja' ? 'AIサポート' : 'AI 機器人'}
                   </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block">
-                    {lang === 'en' ? 'Smart Support' : lang === 'ja' ? 'スマート排査' : '智能客服/排查'}
+                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
+                    {lang === 'en' ? 'Smart Support' : lang === 'ja' ? 'スマート診断' : '智能客服/排查'}
                   </span>
                 </button>
 
@@ -1659,15 +1737,15 @@ export default function App() {
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center text-white shadow-md shadow-cyan-500/20 group-hover:scale-105 transition-transform">
                     <Wrench className="w-5 h-5 text-cyan-200" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-cyan-600 break-words max-w-full">
-                    {t.makerTools || (lang === 'en' ? 'Maker Lab' : lang === 'ja' ? 'メイカーラボ' : '創客工具')}
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-cyan-600 whitespace-nowrap">
+                    {lang === 'en' ? 'Maker Lab' : lang === 'ja' ? '計算ツール' : '創客工具'}
                   </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block">
+                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
                     {lang === 'en' ? 'Cost & Volume' : lang === 'ja' ? '見積・残量' : '報價/餘量'}
                   </span>
                 </button>
 
-                {/* 4. Spool Recycling */}
+                {/* 3. Spool Recycling */}
                 <button
                   id="quick-action-recycle"
                   onClick={() => setIsRecycleOpen(true)}
@@ -1676,15 +1754,15 @@ export default function App() {
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
                     <Recycle className="w-5 h-5 text-emerald-200" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 break-words max-w-full">
-                    {t.spoolRecycleBtn || (lang === 'en' ? 'Spool Rewards' : lang === 'ja' ? '空スプール還元' : '空盤換幣')}
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 whitespace-nowrap">
+                    {lang === 'en' ? 'Eco Spool' : lang === 'ja' ? '空盤還元' : '空盤換幣'}
                   </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block">
+                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
                     {lang === 'en' ? 'Cash Rewards' : lang === 'ja' ? 'ポイント還元' : '折抵現金'}
                   </span>
                 </button>
 
-                {/* 5. Product Compare */}
+                {/* 4. Product Compare */}
                 <button
                   id="quick-action-compare"
                   onClick={() => setIsCompareModalOpen(true)}
@@ -1698,10 +1776,10 @@ export default function App() {
                       {comparisonIds.length}
                     </span>
                   )}
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 break-words max-w-full">
-                    {t.specCompare || (lang === 'en' ? 'Compare' : lang === 'ja' ? '比較' : '規格對比')}
+                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 whitespace-nowrap">
+                    {lang === 'en' ? 'Compare' : lang === 'ja' ? 'スペック比較' : '規格對比'}
                   </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block">
+                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
                     {lang === 'en' ? 'Side-by-side' : lang === 'ja' ? 'スペック横断' : '多款橫向PK'}
                   </span>
                 </button>
@@ -1988,9 +2066,9 @@ export default function App() {
               />
             )}
           </div>
-        ) : (
+        ) : isOwnerAdmin ? (
           /* ================================================================= */
-          /* INTERNAL MANAGEMENT ADMIN DASHBOARD                               */
+          /* INTERNAL MANAGEMENT ADMIN DASHBOARD (babe0615@gmail.com ONLY)     */
           /* ================================================================= */
           <AdminDashboard
             products={products}
@@ -2007,6 +2085,44 @@ export default function App() {
             isSyncingAdSense={isSyncingAdSense}
             lastSyncedTime={adSenseConfig.lastSyncedAt}
           />
+        ) : (
+          <div className="max-w-lg mx-auto my-16 px-4">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center shadow-xl space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-600 flex items-center justify-center mx-auto">
+                <ShieldCheck className="w-7 h-7" />
+              </div>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white">
+                {lang === 'en'
+                  ? 'Administrator Access Restricted'
+                  : lang === 'ja'
+                  ? '管理者アクセス制限'
+                  : '後台管理權限受限'}
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                {lang === 'en'
+                  ? 'This management portal is strictly restricted to the authorized Google owner account. Please sign in with the designated administrator account or return to the store.'
+                  : lang === 'ja'
+                  ? '管理パネルは指定されたGoogleオーナーアカウント専用です。認証された管理者アカウントでログインするか、ストアへお戻りください。'
+                  : '此營運管理後台僅限官方指定管理員 Google 帳號登入存取，一般訪客與其他帳號無法進入。'}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2.5 justify-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold cursor-pointer transition-colors"
+                >
+                  {lang === 'en' ? 'Return to Store' : lang === 'ja' ? 'ストアに戻る' : '返回商城首頁'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAuthOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-sm"
+                >
+                  {lang === 'en' ? 'Admin Google Sign-In' : lang === 'ja' ? '管理者Googleログイン' : '使用管理員 Google 帳號登入'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
           </>}
         />
@@ -2020,34 +2136,26 @@ export default function App() {
 
       <Footer lang={lang} />
       
-      {/* Global Toast Notification */}
+      {/* Global Toast Notification - Top floating non-blocking layer (z-[110]) so it never occludes CartDrawer or bottom buttons */}
       <AnimatePresence>
         {toastMsg && (
-          <motion.div
-            key={toastMsg.id}
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-            drag
-            dragConstraints={{ top: 0, bottom: 0, left: 0, right: 0 }}
-            dragElastic={0.6}
-            onDragEnd={(e, { offset, velocity }) => {
-              if (
-                Math.abs(offset.x) > 60 ||
-                Math.abs(offset.y) > 60 ||
-                Math.abs(velocity.x) > 400 ||
-                Math.abs(velocity.y) > 400
-              ) {
-                setToastMsg(null);
-              }
-            }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 lg:left-auto lg:translate-x-0 lg:right-6 z-[9999] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700 max-w-sm w-[calc(100%-3rem)] lg:w-auto cursor-grab active:cursor-grabbing touch-none"
-          >
-            <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-              <ShoppingCart className="w-4 h-4" />
-            </div>
-            <p className="text-sm font-semibold leading-snug">{toastMsg.text}</p>
-          </motion.div>
+          <div className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-[110] pointer-events-none w-[calc(100%-2rem)] max-w-sm flex justify-center">
+            <motion.div
+              key={toastMsg.id}
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15, transition: { duration: 0.15 } }}
+              onClick={() => setToastMsg(null)}
+              className="pointer-events-auto bg-slate-900/95 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-slate-700 cursor-pointer"
+            >
+              <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <ShoppingCart className="w-3.5 h-3.5" />
+              </div>
+              <p className="text-xs sm:text-sm font-semibold leading-snug truncate max-w-[260px]">
+                {toastMsg.text.replace(/神狗勾\s*/g, '').replace(/莫蘭迪\s*/g, '')}
+              </p>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -2065,7 +2173,13 @@ export default function App() {
           onQuickCheckout={handleQuickCheckout}
           onAskAI={(p) => {
             setViewingProduct(null);
-            setSupportInitialPrompt(`我想了解【${p.name}】(${p.material}) 的最佳切片參數、噴嘴溫度與相容性建議！`);
+            const promptText =
+              lang === 'en'
+                ? `What are the best slicer settings, nozzle/bed temps, and printer compatibility tips for ${p.name} (${p.material})?`
+                : lang === 'ja'
+                ? `【${p.name}】(${p.material}) の最適なスライサー設定、ノズル・ベッド温度、対応機種のポイントを教えてください！`
+                : `我想了解【${p.name}】(${p.material}) 的最佳切片參數、噴嘴溫度與相容性建議！`;
+            setSupportInitialPrompt(promptText);
             setIsCustomerSupportOpen(true);
           }}
           onReviewSubmitted={handleReviewSubmitted}
@@ -2115,6 +2229,7 @@ export default function App() {
           isOpen={isAIAdvisorOpen}
           onClose={() => setIsAIAdvisorOpen(false)}
           products={products}
+          lang={lang}
           onAddToCart={(p, c, d) => handleAddToCart(p, c, d, 1)}
           onOpenSupportWithPrompt={(prompt) => {
             setSupportInitialPrompt(prompt);
@@ -2140,6 +2255,8 @@ export default function App() {
           onClose={() => setIsSubscriptionOpen(false)}
           member={member}
           setMember={setMember}
+          lang={lang}
+          currency={currency}
         />
       )}
 
@@ -2149,6 +2266,7 @@ export default function App() {
           onClose={() => setIsLoyaltyOpen(false)}
           member={member}
           currency={currency}
+          lang={lang}
           orders={currentCustomerOrders}
           onOpenTrackingWithCode={(trackingCode) => {
             setTrackingNumberInput(trackingCode);
@@ -2168,12 +2286,14 @@ export default function App() {
         cartItems={cartItems}
         member={isLoggedIn ? member : undefined}
         initialPrompt={supportInitialPrompt}
+        lang={lang}
       />
 
       {isAuthOpen && (
         <AuthModal
           isOpen={isAuthOpen}
           onClose={() => setIsAuthOpen(false)}
+          lang={lang}
           onLoginSuccess={(user) => {
             const cleanUid = normalizeCustomerId(user.id) || 'usr_' + Date.now();
             setIsLoggedIn(true);
@@ -2278,6 +2398,7 @@ export default function App() {
           onClose={() => setIsRecycleOpen(false)}
           member={member}
           onRewardPoints={handleRewardPoints}
+          lang={lang}
         />
       )}
 
@@ -2285,6 +2406,7 @@ export default function App() {
       <DraggableChatWidget
         onOpenSupport={() => setIsCustomerSupportOpen(true)}
         onOpenAdvisor={() => setIsAIAdvisorOpen(true)}
+        lang={lang}
       />
 
       {/* Floating Sticky Comparison Indicator Bar (Positioned gracefully above bottom nav without blocking center button) */}
@@ -2320,8 +2442,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Mobile App Bottom Navigation Tab Bar (Standard Mobile Experience) - Hidden during Checkout */}
-      {!isCheckoutOpen && (
+      {/* Mobile App Bottom Navigation Tab Bar (Standard Mobile Experience) - Hidden during Cart or Checkout */}
+      {!isCheckoutOpen && !isCartOpen && (
         <nav
           id="mobile-bottom-nav-bar"
           className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/98 dark:bg-slate-900/98 backdrop-blur-md border-t border-slate-200 dark:border-slate-700/90 py-1 px-1.5 shadow-2xl flex items-center justify-around pb-[max(0.5rem,env(safe-area-inset-bottom))] safe-area-bottom"

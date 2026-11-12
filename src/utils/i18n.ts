@@ -1,4 +1,5 @@
 import { LanguageCode, CurrencyCode, FilamentProduct, ColorOption } from '../types';
+import { PRODUCT_CATALOG_I18N, EXACT_COLOR_I18N } from './productCatalogI18n';
 
 export const currencyRates: Record<CurrencyCode, { symbol: string; rate: number; label: string }> = {
   TWD: { symbol: 'NT$', rate: 1, label: '新台幣 (TWD)' },
@@ -996,15 +997,33 @@ const PHRASE_DICTIONARY: Array<{ zh: RegExp | string; en: string; ja: string }> 
  * Translate a single color name
  */
 export function translateColorName(colorName: string, lang: LanguageCode): string {
-  if (lang === 'zh-TW') return colorName;
+  if (!colorName) return '';
+  const trimmed = colorName.trim();
 
-  // Check if it has english already, e.g. "消光黑 (Matte Black)"
-  const parenMatch = colorName.match(/\(([^)]+)\)/);
-  if (lang === 'en' && parenMatch && parenMatch[1]) {
+  if (EXACT_COLOR_I18N[trimmed]) {
+    return lang === 'zh-TW' ? EXACT_COLOR_I18N[trimmed].zh : EXACT_COLOR_I18N[trimmed][lang];
+  }
+
+  if (lang === 'zh-TW') {
+    return trimmed.replace(/\s+[A-Za-z][A-Za-z0-9\s-]*$/, '').replace(/莫蘭迪/g, '').trim() || trimmed;
+  }
+
+  // Check if it has english in parens, e.g. "消光黑 (Matte Black)"
+  const parenMatch = trimmed.match(/\(([^)]+)\)/);
+  if (lang === 'en' && parenMatch && parenMatch[1] && /[A-Za-z]/.test(parenMatch[1])) {
     return parenMatch[1].trim();
   }
 
-  const cleanChinese = colorName.replace(/\s*\([^)]*\)/g, '').trim();
+  // Check if it has trailing English words, e.g. "消光極地白 Matte White"
+  const trailingEnMatch = trimmed.match(/\s+([A-Za-z][A-Za-z0-9\s-]+)$/);
+  if (lang === 'en' && trailingEnMatch && trailingEnMatch[1]) {
+    return trailingEnMatch[1].trim();
+  }
+
+  const cleanChinese = trimmed
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/\s+[A-Za-z][A-Za-z0-9\s-]*$/, '')
+    .trim();
 
   // Direct lookup
   if (COLOR_DICTIONARY[cleanChinese]) {
@@ -1016,6 +1035,10 @@ export function translateColorName(colorName: string, lang: LanguageCode): strin
     if (cleanChinese.includes(key)) {
       return val[lang];
     }
+  }
+
+  if (trailingEnMatch && trailingEnMatch[1]) {
+    return trailingEnMatch[1].trim();
   }
 
   return cleanChinese;
@@ -1209,20 +1232,48 @@ export function translateProductName(
  */
 export function translateProduct(product: FilamentProduct, lang: LanguageCode): FilamentProduct {
   if (!product) return product;
-  if (lang === 'zh-TW') return product;
+  if (lang === 'zh-TW') {
+    return {
+      ...product,
+      colors: (product.colors || []).map(c => ({
+        ...c,
+        name: translateColorName(c?.name || '', 'zh-TW')
+      }))
+    };
+  }
 
-  const rawBrand = product.brand || '神狗勾';
-  const translatedBrand = BRAND_DICTIONARY[rawBrand]?.[lang] || (rawBrand === '神狗勾' ? (lang === 'en' ? 'GodDog' : 'GodDog (神狗勾)') : rawBrand);
-  const translatedName = translateProductName(product.name || '', lang, rawBrand, product.material || '', product.weight || '');
-  const translatedMaterial = translateMaterial(product.material || '', lang);
-  const translatedBadge = translateBadge(product.badge, lang);
-  const translatedSpoolType = translateSpoolType(product.spoolType, lang);
-  const translatedDescription = translateText(product.description || '', lang);
-  const translatedFeatures = (product.features || []).map(f => translateText(f || '', lang));
+  const catalogOverride = PRODUCT_CATALOG_I18N[product.id]?.[lang];
   const translatedColors = (product.colors || []).map(c => ({
     ...c,
     name: translateColorName(c?.name || '', lang)
   }));
+  const translatedMaterial = translateMaterial(product.material || '', lang);
+
+  if (catalogOverride) {
+    return {
+      ...product,
+      name: catalogOverride.name,
+      brand: catalogOverride.brand,
+      material: translatedMaterial,
+      badge: catalogOverride.badge || translateBadge(product.badge, lang),
+      spoolType: catalogOverride.spoolType || translateSpoolType(product.spoolType, lang),
+      weight: catalogOverride.weight || product.weight,
+      nozzleTemp: catalogOverride.nozzleTemp || product.nozzleTemp,
+      bedTemp: catalogOverride.bedTemp || product.bedTemp,
+      maxSpeed: catalogOverride.maxSpeed || product.maxSpeed,
+      description: catalogOverride.description,
+      features: catalogOverride.features,
+      colors: translatedColors,
+    };
+  }
+
+  const rawBrand = product.brand || '神狗勾';
+  const translatedBrand = BRAND_DICTIONARY[rawBrand]?.[lang] || (rawBrand === '神狗勾' ? (lang === 'en' ? 'GodDog' : 'GodDog') : rawBrand);
+  const translatedName = translateProductName(product.name || '', lang, rawBrand, product.material || '', product.weight || '');
+  const translatedBadge = translateBadge(product.badge, lang);
+  const translatedSpoolType = translateSpoolType(product.spoolType, lang);
+  const translatedDescription = translateText(product.description || '', lang);
+  const translatedFeatures = (product.features || []).map(f => translateText(f || '', lang));
 
   // Speed and Temp Specs localization
   let translatedSpeed = product.maxSpeed || '';
@@ -1247,9 +1298,9 @@ export function translateProduct(product: FilamentProduct, lang: LanguageCode): 
   let translatedTemp = product.nozzleTemp || '';
   if (translatedTemp && typeof translatedTemp === 'string') {
     if (lang === 'en') {
-      translatedTemp = translatedTemp.replace(/常溫\s*\(免加熱\)/g, 'Room Temp (Unheated)');
+      translatedTemp = translatedTemp.replace(/常溫\s*\(免加熱\)|常溫免加熱/g, 'Room Temp (Unheated)');
     } else if (lang === 'ja') {
-      translatedTemp = translatedTemp.replace(/常溫\s*\(免加熱\)/g, '常温 (加熱不要)');
+      translatedTemp = translatedTemp.replace(/常溫\s*\(免加熱\)|常溫免加熱/g, '常温 (加熱不要)');
     }
   }
 

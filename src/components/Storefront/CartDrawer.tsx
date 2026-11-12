@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, 
   Trash2, 
@@ -16,7 +17,7 @@ import {
   Check
 } from 'lucide-react';
 import { CartItem, ColorOption, CurrencyCode, LanguageCode, MemberProfile } from '../../types';
-import { formatPrice, translations, translateProductName, translateColorName } from '../../utils/i18n';
+import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 
 interface CartDrawerProps {
@@ -120,16 +121,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   ];
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div 
-      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end cursor-pointer select-none"
+      className="fixed inset-0 z-[85] overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可關閉購物車"
     >
       <div 
-        className="w-full max-w-md bg-white h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between animate-slide-in-right cursor-default select-text overflow-hidden"
+        className="relative w-full max-w-md bg-white h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between animate-slide-in-right cursor-default select-text overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header (Slim & Crisp) */}
@@ -250,7 +251,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
                         <h4 className="font-bold text-slate-900 text-xs break-words leading-snug">
-                          {translateProductName(item.product.name, lang, item.product.brand, item.product.material, item.product.weight).replace(/莫蘭迪\s*/g, '')}
+                          {translateProduct(item.product, lang).name.replace(/莫蘭迪\s*/g, '')}
                         </h4>
                         <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
                           {item.product.colors && item.product.colors.length > 1 && onUpdateColor ? (
@@ -258,14 +259,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                               type="button"
                               onClick={() => setEditingColorItemIdx(idx)}
                               className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 text-[11px] font-semibold text-slate-700 hover:text-indigo-700 transition-colors cursor-pointer"
-                              title="點擊更換此商品顏色"
+                              title={lang === 'en' ? 'Click to change color' : lang === 'ja' ? 'クリックして色を変更' : '點擊更換此商品顏色'}
                             >
                               <span
                                 className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
                                 style={{ backgroundColor: item.selectedColor.hex }}
                               />
                               <span className="truncate max-w-[120px]">
-                                {translateColorName(item.selectedColor.name, lang).replace(/\s+[A-Za-z\s-]+$/, '').trim() || translateColorName(item.selectedColor.name, lang)}
+                                {translateColorName(item.selectedColor.name, lang)}
                               </span>
                               <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
                             </button>
@@ -276,7 +277,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                 style={{ backgroundColor: item.selectedColor.hex }}
                               />
                               <span className="truncate max-w-[130px]">
-                                {translateColorName(item.selectedColor.name, lang).replace(/\s+[A-Za-z\s-]+$/, '').trim() || translateColorName(item.selectedColor.name, lang)}
+                                {translateColorName(item.selectedColor.name, lang)}
                               </span>
                             </div>
                           )}
@@ -574,7 +575,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         {/* 購物車內：從下往上彈出的更換顏色小視窗 (Bottom Sheet) */}
         {editingColorItemIdx !== null && cartItems[editingColorItemIdx] && (
           <div
-            className="absolute inset-0 z-30 bg-slate-900/50 backdrop-blur-xs flex items-end justify-center animate-fade-in"
+            className="absolute inset-0 z-[90] bg-slate-900/50 backdrop-blur-xs flex items-end justify-center animate-fade-in"
             onClick={() => setEditingColorItemIdx(null)}
           >
             <div
@@ -585,10 +586,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-xs font-black text-slate-900 truncate">
-                    更換商品顏色規格
+                    {lang === 'en' ? 'Switch Color Option' : lang === 'ja' ? '商品のカラー変更' : '更換商品顏色規格'}
                   </div>
                   <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                    {translateProductName(cartItems[editingColorItemIdx].product.name, lang, cartItems[editingColorItemIdx].product.brand, cartItems[editingColorItemIdx].product.material, cartItems[editingColorItemIdx].product.weight).replace(/莫蘭迪\s*/g, '')}
+                    {translateProduct(cartItems[editingColorItemIdx].product, lang).name.replace(/莫蘭迪\s*/g, '')}
                   </p>
                 </div>
                 <button
@@ -603,7 +604,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="p-4 overflow-y-auto grid grid-cols-2 gap-2">
                 {(cartItems[editingColorItemIdx].product.colors || []).map((colorOption) => {
                   const isCurrent = cartItems[editingColorItemIdx].selectedColor.name === colorOption.name;
-                  const cleanColorLabel = translateColorName(colorOption.name, lang).replace(/\s+[A-Za-z\s-]+$/, '').trim() || translateColorName(colorOption.name, lang);
+                  const cleanColorLabel = translateColorName(colorOption.name, lang);
                   return (
                     <button
                       key={colorOption.name}
@@ -614,7 +615,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         }
                         setEditingColorItemIdx(null);
                       }}
-                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-colors cursor-pointer ${
                         isCurrent
                           ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 ring-1 ring-indigo-600'
                           : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
@@ -638,6 +639,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

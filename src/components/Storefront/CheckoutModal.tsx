@@ -24,7 +24,7 @@ import {
   PaymentGateway, 
   ShippingMethod 
 } from '../../types';
-import { formatPrice, translations, translateProductName } from '../../utils/i18n';
+import { formatPrice, translations, translateProductName, translateProduct } from '../../utils/i18n';
 import { auth } from '../../lib/firebase';
 import { 
   downloadOrderProofJSON, 
@@ -366,7 +366,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[70] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[95] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可返回主頁面"
     >
@@ -383,15 +383,29 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-nowrap">
                 <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-none whitespace-nowrap">
-                  {createdOrder ? '訂單支付成功' : '訂單結帳支付'}
+                  {createdOrder
+                    ? lang === 'en'
+                      ? 'Payment Authorized'
+                      : lang === 'ja'
+                      ? 'お支払い完了'
+                      : '訂單支付成功'
+                    : lang === 'en'
+                    ? 'Order Checkout'
+                    : lang === 'ja'
+                    ? 'ご注文・お支払い'
+                    : '訂單結帳支付'}
                 </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold whitespace-nowrap shrink-0">
                   <Lock className="w-2.5 h-2.5 shrink-0" />
-                  藍新 SSL 加密
+                  {lang === 'en' ? 'SSL Secured' : lang === 'ja' ? 'SSL暗号化' : '藍新 SSL 加密'}
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-                支援信用卡・LINE Pay・Apple Pay・ATM・超商條碼
+                {lang === 'en'
+                  ? 'Credit Card · LINE Pay · Apple Pay · ATM · CVS'
+                  : lang === 'ja'
+                  ? 'クレジットカード・LINE Pay・Apple Pay・ATM・コンビニ決済'
+                  : '支援信用卡・LINE Pay・Apple Pay・ATM・超商條碼'}
               </p>
             </div>
           </div>
@@ -860,7 +874,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   {/* Items preview list (Clean 1-2 line layout without redundant parentheses) */}
                   <div className="max-h-52 overflow-y-auto space-y-2 pr-1 mb-4">
                     {cartItems.map((item) => {
-                      const cleanItemName = translateProductName(item.product.name, item.product.brand, item.product.material, item.product.weight, lang)
+                      const translatedItem = translateProduct(item.product, lang);
+                      const cleanItemName = (translatedItem.name || translateProductName(item.product.name, item.product.brand, item.product.material, item.product.weight, lang))
                         .replace(/神狗勾\s*/g, '')
                         .replace(/莫蘭迪\s*/g, '')
                         .replace(/\s*[\(（][^\)）]*[\)）]\s*$/g, '')

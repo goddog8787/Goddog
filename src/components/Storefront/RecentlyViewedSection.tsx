@@ -214,7 +214,7 @@ export const RecentlyViewedSection: React.FC<RecentlyViewedSectionProps> = ({
 
                   <button
                     onClick={(e) => handleAdd(item, e)}
-                    className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    className={`min-w-[58px] px-2 py-1 rounded-lg text-[11px] font-bold transition-colors duration-200 flex items-center justify-center gap-1 cursor-pointer shrink-0 whitespace-nowrap ${
                       addedIds[item.id]
                         ? 'bg-emerald-600 text-white shadow-xs'
                         : 'bg-slate-100 dark:bg-slate-700 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-slate-200'
@@ -223,7 +223,7 @@ export const RecentlyViewedSection: React.FC<RecentlyViewedSectionProps> = ({
                       ? (lang === 'en' ? 'Added' : lang === 'ja' ? '追加済み' : '已加入') 
                       : (lang === 'en' ? 'Quick Add' : lang === 'ja' ? 'クイック追加' : '快速加購')}
                   >
-                    <ShoppingCart className="w-3 h-3" />
+                    <ShoppingCart className="w-3 h-3 shrink-0" />
                     <span>{addedIds[item.id] 
                       ? (lang === 'en' ? 'Added' : lang === 'ja' ? '済' : '已加') 
                       : (lang === 'en' ? 'Add' : lang === 'ja' ? '追加' : '加購')}</span>

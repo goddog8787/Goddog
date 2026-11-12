@@ -25,7 +25,7 @@ export const TrustCertModal: React.FC<TrustCertModalProps> = ({ isOpen, onClose 
 
   return (
     <div 
-      className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in select-none cursor-pointer"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in select-none cursor-pointer"
       onClick={onClose}
       title="點擊背景空白處關閉"
     >

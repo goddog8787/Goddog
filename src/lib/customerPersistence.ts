@@ -1,5 +1,5 @@
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { db, auth, generateUserReferralCode, saveUserProfileToFirestore } from './firebase';
 import { CartItem, Order, MemberProfile } from '../types';
 import { isMockOrder } from './orderVerification';
 
@@ -603,9 +603,11 @@ export async function loadCustomerOrders(userId: string | null | undefined): Pro
           pointsDeduction: d.pointsDeduction || 0,
           pointsEarned: d.pointsEarned || 0,
           total: d.totalAmount || 0,
-          paymentGateway: d.paymentMethod || 'ecpay_credit',
-          paymentStatus: 'paid',
-          orderStatus: (d.status as any) || 'paid',
+          paymentGateway: d.paymentMethod || d.paymentGateway || 'ecpay_credit',
+          paymentStatus:
+            d.paymentStatus ||
+            (String(d.status || d.orderStatus || '').toLowerCase() === 'unpaid' ? 'unpaid' : 'paid'),
+          orderStatus: (d.orderStatus || d.status || 'paid') as any,
           trackingNumber: d.trackingNumber || '',
           invoiceNumber: d.invoiceNumber || `TW-${Date.now().toString().substring(5)}`,
           invoiceType: d.invoiceType || 'cloud',
@@ -1083,16 +1085,36 @@ export async function loadCustomerProfileDoc(
             : Array.isArray(localCached?.coupons)
             ? localCached.coupons
             : [],
+        referralCode:
+          rootData.referralCode ||
+          subProfile?.referralCode ||
+          localCached?.referralCode ||
+          generateUserReferralCode(cleanUid, rootData.email || fallbackUser?.email || ''),
       });
+
+      // If user has a pending referral code in localStorage and hasn't bound a referrer yet, bind it now
+      if (localStorage.getItem('printcore_referral_code') && !merged.referredBy) {
+        const syncedWithRef = await saveUserProfileToFirestore(merged);
+        if (syncedWithRef) {
+          localStorage.setItem(`printcore_user_profile_${cleanUid}`, JSON.stringify(syncedWithRef));
+          return sanitizeCustomerProfile(syncedWithRef);
+        }
+      }
 
       localStorage.setItem(`printcore_user_profile_${cleanUid}`, JSON.stringify(merged));
       return merged;
     } else if (localCached) {
-      // Push local cached profile to Firestore
-      await saveCustomerProfileDoc(cleanUid, localCached);
-      return localCached;
+      // Push local cached profile to Firestore (and bind referral if pending)
+      const withRefCode = {
+        ...localCached,
+        referralCode:
+          localCached.referralCode ||
+          generateUserReferralCode(cleanUid, localCached.email || fallbackUser?.email || ''),
+      };
+      const synced = await saveUserProfileToFirestore(withRefCode);
+      return sanitizeCustomerProfile(synced || withRefCode);
     } else {
-      // Brand new user — initialize clean profile once
+      // Brand new user — initialize clean profile once with unique referralCode & referral binding
       const initialProfile: MemberProfile = {
         id: cleanUid,
         name: fallbackUser?.displayName || fallbackUser?.email?.split('@')[0] || '創客會員',
@@ -1102,7 +1124,7 @@ export async function loadCustomerProfileDoc(
         points: typeof fallbackUser?.points === 'number' ? fallbackUser.points : 120,
         totalSpent: 0,
         ordersCount: 0,
-        referralCode: `MAKER-${cleanUid.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()}`,
+        referralCode: generateUserReferralCode(cleanUid, fallbackUser?.email || ''),
         birthday: '',
         subscriptionPlan: 'None',
         subscriptionStatus: 'inactive',
@@ -1111,8 +1133,8 @@ export async function loadCustomerProfileDoc(
         subscriptionHistory: [],
         coupons: [],
       };
-      await saveCustomerProfileDoc(cleanUid, initialProfile);
-      return initialProfile;
+      const synced = await saveUserProfileToFirestore(initialProfile);
+      return sanitizeCustomerProfile(synced || initialProfile);
     }
   } catch (error) {
     console.warn('Firestore load profile fallback:', error);

@@ -13,6 +13,8 @@ import {
 } from 'firebase/auth';
 import {
   getFirestore,
+  initializeFirestore,
+  setLogLevel,
   doc,
   getDocFromServer,
   collection,
@@ -26,6 +28,13 @@ import {
   onSnapshot,
   Firestore,
 } from 'firebase/firestore';
+
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignore if setLogLevel is unavailable
+}
+
 const firebaseConfig: Record<string, string> = {
   projectId: 'goddog-shop',
   appId: '1:470116154074:web:6b5fe2382911d3fc3ec3e3',
@@ -85,19 +94,25 @@ try {
   }
 }
 
-// Initialize Firestore with auto-detect long polling for iframe & mobile network stability
+// Initialize Firestore with long polling for iframe & mobile network stability
 export const db: Firestore = (() => {
   const dbId = (firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.trim().length > 0)
     ? firebaseConfig.firestoreDatabaseId
     : undefined;
   try {
-    return (getFirestore as any)(app, dbId);
-  } catch (e) {
+    return dbId
+      ? initializeFirestore(app, { experimentalForceLongPolling: true }, dbId)
+      : initializeFirestore(app, { experimentalForceLongPolling: true });
+  } catch {
     try {
-      return getFirestore(app);
-    } catch (e2) {
-      console.warn('Firestore initialization fallback to offline mock:', e2);
-      return {} as any;
+      return (getFirestore as any)(app, dbId);
+    } catch (e) {
+      try {
+        return getFirestore(app);
+      } catch (e2) {
+        console.warn('Firestore initialization fallback to offline mock:', e2);
+        return {} as any;
+      }
     }
   }
 })();
@@ -115,20 +130,14 @@ export const auth: Auth = (() => {
   }
 })();
 
-// Connection test on app boot
+// Non-blocking connection check on app boot
 async function testConnection() {
   try {
     if (db && typeof db === 'object' && Object.keys(db).length > 0) {
       await getDocFromServer(doc(db, 'test', 'connection'));
-      console.log('✅ Firebase Firestore connected successfully to database:', firebaseConfig.firestoreDatabaseId);
     }
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    } else {
-      // In development or when rules restrict read to test doc, note connection status
-      console.log('Firebase connection initialized:', (error as Error)?.message || error);
-    }
+  } catch {
+    // Gracefully operate in cached/local-synced mode when Firestore is unreachable or restricted by security rules
   }
 }
 testConnection();
@@ -542,9 +551,53 @@ export async function saveOrderToFirestore(order: any, userId?: string) {
   }
 }
 
+export function generateUserReferralCode(uid: string, email?: string): string {
+  const seed = `${uid || ''}-${email || 'goddog'}`.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  let hash = 2166136261;
+  const fullStr = `${uid || 'user'}:${email || 'maker'}`;
+  for (let i = 0; i < fullStr.length; i++) {
+    hash ^= fullStr.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hashHex = (hash >>> 0).toString(36).toUpperCase().padStart(4, '0').slice(0, 4);
+  const prefix = seed.slice(0, 3).padEnd(3, 'X');
+  return `GD${prefix}${hashHex}`;
+}
+
+async function findReferrerDocByCode(refCodeRaw: string, excludeUid: string) {
+  const refCode = (refCodeRaw || '').trim().toUpperCase();
+  if (!refCode) return null;
+
+  const q = query(collection(db, 'users'), where('referralCode', '==', refCode));
+  let refSnap = await getDocs(q);
+  if (refSnap.empty && refCodeRaw.trim() !== refCode) {
+    const qCase = query(collection(db, 'users'), where('referralCode', '==', refCodeRaw.trim()));
+    refSnap = await getDocs(qCase);
+  }
+  if (refSnap.empty) {
+    const q2 = query(collection(db, 'users'), where('id', '==', refCodeRaw.trim()));
+    refSnap = await getDocs(q2);
+  }
+  if (!refSnap.empty) {
+    const found = refSnap.docs.find((d) => d.id !== excludeUid);
+    if (found) return found;
+  }
+
+  // Also check direct document ID if someone used their UID as referral link
+  try {
+    if (refCodeRaw.trim() !== excludeUid) {
+      const directRef = doc(db, 'users', refCodeRaw.trim());
+      const directSnap = await getDoc(directRef);
+      if (directSnap.exists()) return directSnap;
+    }
+  } catch {}
+
+  return null;
+}
+
 // Firestore User Profile Persistence Helper (Never overwrites existing points/tier/coupons with initial defaults)
 export async function saveUserProfileToFirestore(profile: any) {
-  if (!profile?.id) return;
+  if (!profile?.id || profile.id === 'guest') return;
   try {
     // Also check local user cache in case Firestore is offline
     let localExisting: any = null;
@@ -557,6 +610,11 @@ export async function saveUserProfileToFirestore(profile: any) {
     const snap = await getDoc(userRef);
     const isNew = !snap.exists() && !localExisting;
     const existingData = snap.exists() ? snap.data() : (localExisting || {});
+
+    const deterministicCode = generateUserReferralCode(
+      profile.id,
+      profile.email || existingData.email
+    );
 
     const userDoc: any = {
       ...existingData,
@@ -572,57 +630,104 @@ export async function saveUserProfileToFirestore(profile: any) {
           ? existingData.points
           : 120,
       createdAt: isNew ? new Date().toISOString() : (existingData.createdAt || new Date().toISOString()),
+      referralCode:
+        existingData.referralCode ||
+        (profile.referralCode && profile.referralCode !== 'guest' ? profile.referralCode : '') ||
+        deterministicCode,
+      referredBy: profile.referredBy || existingData.referredBy || null,
+      referredByCode: profile.referredByCode || existingData.referredByCode || null,
+      referredByName: profile.referredByName || existingData.referredByName || null,
+      referralOrderCompleted:
+        Boolean(profile.referralOrderCompleted) || Boolean(existingData.referralOrderCompleted),
+      referrals: Math.max(
+        Number(profile.referrals || 0),
+        Number(profile.referralsCount || 0),
+        Number(existingData.referrals || 0),
+        Number(existingData.referralsCount || 0)
+      ),
+      referralsCount: Math.max(
+        Number(profile.referrals || 0),
+        Number(profile.referralsCount || 0),
+        Number(existingData.referrals || 0),
+        Number(existingData.referralsCount || 0)
+      ),
+      pendingReferrals:
+        typeof profile.pendingReferrals === 'number'
+          ? profile.pendingReferrals
+          : Number(existingData.pendingReferrals || 0),
+      referralEarnings:
+        typeof profile.referralEarnings === 'number'
+          ? profile.referralEarnings
+          : Number(existingData.referralEarnings || 0),
+      referralRecords: Array.isArray(profile.referralRecords)
+        ? profile.referralRecords
+        : Array.isArray(existingData.referralRecords)
+        ? existingData.referralRecords
+        : [],
     };
 
-    // Keep existing referral code or generate a new one
-    if (isNew || !existingData.referralCode) {
-      userDoc.referralCode =
-        profile.referralCode ||
-        existingData.referralCode ||
-        Math.random().toString(36).substring(2, 8).toUpperCase();
-    } else {
-      userDoc.referralCode = existingData.referralCode;
-    }
+    // STAGE 1 OF REFERRAL: Bind referral code upon registration/login if not yet bound.
+    // IMPORTANT: Do NOT issue the $300 reward yet! The reward is unlocked ONLY after the referred user places & pays for an order.
+    const pendingRefCode = localStorage.getItem('printcore_referral_code');
+    if (
+      pendingRefCode &&
+      !userDoc.referredBy &&
+      pendingRefCode.trim().toUpperCase() !== userDoc.referralCode.toUpperCase() &&
+      pendingRefCode.trim() !== profile.id
+    ) {
+      const referrerDoc = await findReferrerDocByCode(pendingRefCode, profile.id);
+      if (referrerDoc && referrerDoc.id !== profile.id) {
+        const referrerData = referrerDoc.data() || {};
+        userDoc.referredBy = referrerDoc.id;
+        userDoc.referredByCode = referrerData.referralCode || pendingRefCode.trim().toUpperCase();
+        userDoc.referredByName = referrerData.name || '創客好友';
+        userDoc.referralRegisteredAt = new Date().toISOString();
+        userDoc.referralOrderCompleted = false;
 
-    // Process referral reward only if brand new user
-    if (isNew) {
-      const refCode = localStorage.getItem('printcore_referral_code');
-      if (refCode && refCode !== userDoc.referralCode) {
-        const q = query(collection(db, 'users'), where('referralCode', '==', refCode));
-        let refSnap = await getDocs(q);
-        if (refSnap.empty) {
-          const q2 = query(collection(db, 'users'), where('id', '==', refCode));
-          refSnap = await getDocs(q2);
-        }
-        if (!refSnap.empty) {
-          const referrerDoc = refSnap.docs[0];
-          userDoc.referredBy = referrerDoc.id;
-          userDoc.points = (userDoc.points || 0) + 300;
+        const existingRecords: any[] = Array.isArray(referrerData.referralRecords)
+          ? referrerData.referralRecords
+          : [];
+        const alreadyListed = existingRecords.some((r) => r.inviteeId === profile.id);
+        const updatedRecords = alreadyListed
+          ? existingRecords
+          : [
+              {
+                inviteeId: profile.id,
+                inviteeName: userDoc.name || '新註冊好友',
+                inviteeEmail: userDoc.email || '',
+                status: 'registered_pending_order',
+                registeredAt: new Date().toISOString(),
+                rewardAmount: 300,
+              },
+              ...existingRecords,
+            ];
 
-          await updateDoc(referrerDoc.ref, {
-            points: (referrerDoc.data().points || 0) + 300,
-            referralEarnings: (referrerDoc.data().referralEarnings || 0) + 300,
-            referrals: (referrerDoc.data().referrals || 0) + 1,
-          });
+        const pendingCount = updatedRecords.filter(
+          (r) => r.status === 'registered_pending_order'
+        ).length;
 
-          await addDoc(collection(db, 'users', referrerDoc.id, 'notifications'), {
-            title: '邀請成功獎勵！',
-            message: `有新朋友使用了您的專屬推薦碼，您已獲得 $300 推廣收益與 300 點狗勾幣！`,
-            read: false,
-            createdAt: new Date().toISOString(),
-            type: 'reward',
-          });
+        await updateDoc(referrerDoc.ref, {
+          pendingReferrals: Math.max(pendingCount, Number(referrerData.pendingReferrals || 0) + (alreadyListed ? 0 : 1)),
+          referralRecords: updatedRecords,
+        });
 
-          await addDoc(collection(db, 'users', profile.id, 'notifications'), {
-            title: '新人推薦碼獎勵！',
-            message: `歡迎加入！由於您使用了推薦碼，系統已發放 300 點狗勾幣至您的帳戶！`,
-            read: false,
-            createdAt: new Date().toISOString(),
-            type: 'reward',
-          });
+        await addDoc(collection(db, 'users', referrerDoc.id, 'notifications'), {
+          title: '好友已透過您的專屬連結完成註冊！',
+          message: `好友「${userDoc.name}」已透過您的專屬邀請連結完成註冊綁定！待好友完成首筆訂單付款後，系統將自動發放 $300 推廣獎勵與 300 點狗勾幣至您的帳戶。`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          type: 'reward',
+        });
 
-          localStorage.removeItem('printcore_referral_code');
-        }
+        await addDoc(collection(db, 'users', profile.id, 'notifications'), {
+          title: '推薦碼綁定成功！完成首購即領 $300 獎勵',
+          message: `您已成功綁定「${userDoc.referredByName}」的專屬推薦連結（${userDoc.referredByCode}）！完成首筆訂單結帳付款後，您與好友將立即各得 300 點狗勾幣（價值 NT$300）獎勵！`,
+          read: false,
+          createdAt: new Date().toISOString(),
+          type: 'reward',
+        });
+
+        localStorage.removeItem('printcore_referral_code');
       }
     }
 
@@ -635,6 +740,217 @@ export async function saveUserProfileToFirestore(profile: any) {
     return userDoc;
   } catch (error) {
     console.warn('Firestore user profile sync fallback:', error);
+  }
+}
+
+// Manual referral code binding helper (for registered users who haven't placed their first referral order yet)
+export async function bindReferralCodeForUser(
+  userId: string,
+  inputCode: string
+): Promise<{ ok: boolean; message: string; updatedProfile?: any }> {
+  if (!userId || userId === 'guest') {
+    return { ok: false, message: '請先登入或註冊會員帳號後再綁定推薦碼！' };
+  }
+  const cleanCode = (inputCode || '').trim().toUpperCase();
+  if (!cleanCode) {
+    return { ok: false, message: '請輸入有效的推薦碼！' };
+  }
+
+  try {
+    const userRef = doc(db, 'users', userId);
+    const userSnap = await getDoc(userRef);
+    const userData = userSnap.exists() ? userSnap.data() : {};
+
+    if (userData.referredBy) {
+      return {
+        ok: false,
+        message: `您的帳號已綁定推薦人（${userData.referredByCode || userData.referredByName || '已綁定'}），每個帳號限綁定一次。`,
+      };
+    }
+
+    if (
+      (userData.referralCode && userData.referralCode.toUpperCase() === cleanCode) ||
+      userId === inputCode.trim()
+    ) {
+      return { ok: false, message: '無法綁定自己的推薦碼喔！請輸入好友的專屬推薦碼。' };
+    }
+
+    const referrerDoc = await findReferrerDocByCode(cleanCode, userId);
+    if (!referrerDoc || referrerDoc.id === userId) {
+      return { ok: false, message: '找不到此推薦碼對應的會員帳號，請確認推薦碼是否正確。' };
+    }
+
+    localStorage.setItem('printcore_referral_code', cleanCode);
+    const updated = await saveUserProfileToFirestore({
+      ...userData,
+      id: userId,
+    });
+    return {
+      ok: true,
+      message: `成功綁定「${referrerDoc.data()?.name || '創客好友'}」的推薦碼！完成首筆訂單付款即可解鎖 300 狗勾幣獎勵！`,
+      updatedProfile: updated,
+    };
+  } catch (error) {
+    console.warn('bindReferralCodeForUser failed:', error);
+    return { ok: false, message: '綁定推薦碼時發生連線異常，請稍後再試。' };
+  }
+}
+
+// STAGE 2 OF REFERRAL: Verify both Registration AND Paid/Confirmed Order before issuing $300 reward to Referrer & Invitee
+export async function processReferralOrderReward(
+  buyerProfile: any,
+  order: any
+): Promise<{
+  rewarded: boolean;
+  referrerName?: string;
+  rewardPoints?: number;
+  updatedBuyerProfile?: any;
+}> {
+  if (!buyerProfile || !buyerProfile.id || buyerProfile.id === 'guest' || !order) {
+    return { rewarded: false };
+  }
+
+  // Only award when the order is paid or confirmed (not unpaid pending ATM)
+  const orderStatus = String(order.orderStatus || order.status || '').toLowerCase();
+  const paymentStatus = String(order.paymentStatus || '').toLowerCase();
+  const isUnpaid =
+    paymentStatus === 'unpaid' ||
+    orderStatus === 'unpaid' ||
+    orderStatus === 'pending_payment' ||
+    orderStatus === '待付款';
+  if (isUnpaid) {
+    return { rewarded: false };
+  }
+
+  try {
+    const buyerRef = doc(db, 'users', buyerProfile.id);
+    const buyerSnap = await getDoc(buyerRef);
+    const buyerData = buyerSnap.exists() ? buyerSnap.data() : buyerProfile;
+
+    let referredByUid = buyerData.referredBy || buyerProfile.referredBy;
+    const alreadyCompleted =
+      Boolean(buyerData.referralOrderCompleted) || Boolean(buyerProfile.referralOrderCompleted);
+
+    // If user still had a pending referral code in localStorage at checkout time, bind it first
+    const pendingRefCode = localStorage.getItem('printcore_referral_code');
+    if (!referredByUid && pendingRefCode && !alreadyCompleted) {
+      const synced = await saveUserProfileToFirestore(buyerProfile);
+      if (synced?.referredBy) {
+        referredByUid = synced.referredBy;
+      }
+    }
+
+    if (!referredByUid || referredByUid === buyerProfile.id || alreadyCompleted) {
+      return { rewarded: false };
+    }
+
+    const referrerRef = doc(db, 'users', referredByUid);
+    const referrerSnap = await getDoc(referrerRef);
+    if (!referrerSnap.exists()) {
+      return { rewarded: false };
+    }
+
+    const referrerData = referrerSnap.data() || {};
+    const orderNum = order.orderNumber || order.id || `ORD-${Date.now()}`;
+    const nowIso = new Date().toISOString();
+
+    // 1. Update Referrer's earnings (+300 cash reward, +300 G-Coins, +1 completed referral)
+    const existingRecords: any[] = Array.isArray(referrerData.referralRecords)
+      ? referrerData.referralRecords
+      : [];
+    let foundRecord = false;
+    const updatedRecords = existingRecords.map((rec) => {
+      if (rec.inviteeId === buyerProfile.id) {
+        foundRecord = true;
+        return {
+          ...rec,
+          status: 'order_completed_rewarded',
+          orderNumber: orderNum,
+          orderAmount: order.totalAmount || order.total || 0,
+          completedAt: nowIso,
+          rewardAmount: 300,
+        };
+      }
+      return rec;
+    });
+    if (!foundRecord) {
+      updatedRecords.unshift({
+        inviteeId: buyerProfile.id,
+        inviteeName: buyerData.name || buyerProfile.name || '創客好友',
+        inviteeEmail: buyerData.email || buyerProfile.email || '',
+        status: 'order_completed_rewarded',
+        registeredAt: buyerData.createdAt || nowIso,
+        completedAt: nowIso,
+        orderNumber: orderNum,
+        orderAmount: order.totalAmount || order.total || 0,
+        rewardAmount: 300,
+      });
+    }
+
+    const newCompletedCount = Math.max(
+      Number(referrerData.referrals || 0) + 1,
+      Number(referrerData.referralsCount || 0) + 1,
+      updatedRecords.filter((r) => r.status === 'order_completed_rewarded').length
+    );
+    const newPendingCount = updatedRecords.filter(
+      (r) => r.status === 'registered_pending_order'
+    ).length;
+
+    await updateDoc(referrerRef, {
+      points: Number(referrerData.points || 0) + 300,
+      referralEarnings: Number(referrerData.referralEarnings || 0) + 300,
+      referrals: newCompletedCount,
+      referralsCount: newCompletedCount,
+      pendingReferrals: newPendingCount,
+      referralRecords: updatedRecords,
+    });
+
+    // 2. Update Buyer's profile (+300 G-Coins & mark referralOrderCompleted = true)
+    const newBuyerPoints = Number(buyerProfile.points ?? buyerData.points ?? 0) + 300;
+    const updatedBuyerProfile = {
+      ...buyerData,
+      ...buyerProfile,
+      points: newBuyerPoints,
+      referredBy: referredByUid,
+      referralOrderCompleted: true,
+      referralOrderNumber: orderNum,
+      referralRewardClaimedAt: nowIso,
+    };
+
+    await setDoc(buyerRef, updatedBuyerProfile, { merge: true });
+    try {
+      localStorage.setItem(
+        `printcore_user_profile_${buyerProfile.id}`,
+        JSON.stringify(updatedBuyerProfile)
+      );
+    } catch {}
+
+    // 3. Send notifications to both Referrer & Invitee
+    await addDoc(collection(db, 'users', referredByUid, 'notifications'), {
+      title: '🎉 邀請好友首購達標！$300 獎勵已入帳',
+      message: `您邀請的好友「${buyerProfile.name || buyerData.name || '創客會員'}」已完成註冊並成功下單（訂單編號：${orderNum}），系統已發放 NT$300 推廣獎金與 300 點狗勾幣至您的帳戶！`,
+      read: false,
+      createdAt: nowIso,
+      type: 'reward',
+    });
+
+    await addDoc(collection(db, 'users', buyerProfile.id, 'notifications'), {
+      title: '🎁 首購推薦獎勵 300 點狗勾幣已入帳！',
+      message: `感謝您透過好友「${referrerData.name || '創客好友'}」的推薦註冊並完成首筆訂單（${orderNum}），300 點狗勾幣（價值 NT$300）已自動發放至您的會員帳戶！`,
+      read: false,
+      createdAt: nowIso,
+      type: 'reward',
+    });
+
+    return {
+      rewarded: true,
+      referrerName: referrerData.name || '創客好友',
+      rewardPoints: 300,
+      updatedBuyerProfile,
+    };
+  } catch (error) {
+    console.warn('processReferralOrderReward error:', error);
+    return { rewarded: false };
   }
 }
 
@@ -669,13 +985,11 @@ export async function loadMonetizationConfigFromFirestore(): Promise<any | null>
 
 // Firestore Official AI Config Persistence Helper (syncs Admin Gemini Key & Base URL to goddog.space via Firestore without exposing keys in GitHub)
 export async function saveAIConfigToFirestore(config: {
-  geminiApiKey?: string;
   apiBaseUrl?: string;
   activeModel?: string;
 }) {
   try {
     const payload = {
-      geminiApiKey: (config.geminiApiKey || '').trim(),
       apiBaseUrl: (config.apiBaseUrl || '').trim(),
       activeModel: config.activeModel || 'gemini-3.8-flash',
       updatedAt: new Date().toISOString(),
@@ -689,7 +1003,6 @@ export async function saveAIConfigToFirestore(config: {
 }
 
 export async function loadAIConfigFromFirestore(): Promise<{
-  geminiApiKey?: string;
   apiBaseUrl?: string;
   activeModel?: string;
 } | null> {
@@ -697,14 +1010,13 @@ export async function loadAIConfigFromFirestore(): Promise<{
     const snap = await getDoc(doc(db, 'settings', 'ai_config'));
     if (snap.exists()) {
       const data = snap.data();
-      if (data?.geminiApiKey && typeof window !== 'undefined') {
-        localStorage.setItem('god_dog_gemini_key', data.geminiApiKey);
-        localStorage.setItem('printcore_gemini_key', data.geminiApiKey);
-      }
       if (data?.apiBaseUrl && typeof window !== 'undefined') {
         localStorage.setItem('god_dog_ai_base_url', data.apiBaseUrl);
       }
-      return data as any;
+      return {
+        apiBaseUrl: data?.apiBaseUrl,
+        activeModel: data?.activeModel || 'gemini-3.8-flash',
+      };
     }
   } catch (error) {
     // Ignore permission or offline errors silently

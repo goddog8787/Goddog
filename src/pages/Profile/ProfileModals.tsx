@@ -1,16 +1,72 @@
-import { getDocs, query, collection, where, orderBy, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { loadCustomerUserData, saveCustomerUserData, loadCustomerRecentlyViewed, clearCustomerRecentlyViewed, deleteSingleCustomerRecentlyViewed, getStoredRecentlyViewedSync } from '../../lib/customerPersistence';
-import { isMockOrder } from '../../lib/orderVerification';
+import { getDocs, getDoc, setDoc, query, collection, where, orderBy, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import {
+  loadCustomerUserData,
+  saveCustomerUserData,
+  loadCustomerRecentlyViewed,
+  clearCustomerRecentlyViewed,
+  deleteSingleCustomerRecentlyViewed,
+  getStoredRecentlyViewedSync,
+  saveCustomerOrderRecord,
+} from '../../lib/customerPersistence';
+import { isMockOrder, getGenuineUserOrders } from '../../lib/orderVerification';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { formatPrice, translateProductName, translateMaterial } from '../../utils/i18n';
 import { LanguageCode, CurrencyCode } from '../../types';
+import {
+  PRINTER_BRANDS,
+  PRINTER_PROFILES,
+  PrinterProfile,
+  findPrinterProfile,
+  getPrintersByBrand,
+} from '../../data/printerProfiles';
+import {
+  auth,
+  db,
+  generateUserReferralCode,
+  saveUserProfileToFirestore,
+  bindReferralCodeForUser,
+  processReferralOrderReward,
+} from '../../lib/firebase';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useNavigate } from "react-router-dom";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { auth } from "../../lib/firebase";
-import { X, MapPin, Printer, Package, Copy, Share2, Medal, Lock, Bell, Check, Edit2, Trash2, Plus, ArrowRight, ShieldCheck, Clock, CreditCard, ShoppingCart, Gift, Ticket, Download, ChevronDown, Star, Zap, Palette, Layers, Users, Calendar, Sliders, Truck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import {
+  X,
+  MapPin,
+  Printer,
+  Package,
+  Copy,
+  Share2,
+  Medal,
+  Lock,
+  Bell,
+  Check,
+  Edit2,
+  Trash2,
+  Plus,
+  ArrowRight,
+  ShieldCheck,
+  Clock,
+  CreditCard,
+  ShoppingCart,
+  Gift,
+  Ticket,
+  Download,
+  ChevronDown,
+  Star,
+  Zap,
+  Palette,
+  Layers,
+  Users,
+  Calendar,
+  Sliders,
+  Truck,
+  Sparkles,
+  RefreshCw,
+  MessageSquare,
+} from 'lucide-react';
 import { OrderCertificateModal } from '../../components/Storefront/OrderCertificateModal';
 import { LogisticsTimelineModal } from '../../components/Storefront/LogisticsTimelineModal';
 
@@ -22,7 +78,7 @@ const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
         <motion.div initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} className="fixed inset-x-0 bottom-0 z-50 bg-slate-50 rounded-t-[32px] overflow-hidden flex flex-col max-w-xl mx-auto shadow-2xl" style={{ maxHeight: '90vh' }}>
           <div className="flex items-center justify-between px-6 py-5 bg-white border-b border-slate-100 shrink-0">
             <h3 className="font-black text-lg text-slate-900">{title}</h3>
-            <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors">
+            <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -35,198 +91,694 @@ const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
   </AnimatePresence>
 );
 
+export function classifyOrderStatusLabel(o: any): '待付款' | '待出貨' | '運送中' | '已完成' | '退換貨' {
+  const s = String(o?.orderStatus || o?.status || '').toLowerCase();
+  const pay = String(o?.paymentStatus || '').toLowerCase();
+  if (
+    s === 'returning' ||
+    s === 'returned' ||
+    s === 'return_requested' ||
+    s === 'refunded' ||
+    s === 'cancelled' ||
+    s === '退換貨'
+  ) {
+    return '退換貨';
+  }
+  if (pay === 'unpaid' || s === 'unpaid' || s === 'pending_payment' || s === '待付款') {
+    return '待付款';
+  }
+  if (s === 'completed' || s === 'delivered' || s === '已完成') {
+    return '已完成';
+  }
+  if (s === 'shipping' || s === 'shipped' || s === 'in_transit' || s === '運送中') {
+    return '運送中';
+  }
+  return '待出貨';
+}
 
 export const OrderModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   initialTab?: string;
   orders?: any[];
+  setOrders?: (orders: any) => void;
   member?: any;
+  setMember?: (member: any) => void;
   onConfirmReceipt?: (orderId: string) => Promise<void> | void;
   onGoReview?: (productId: string) => void;
   onOpenTracking?: (trackingNumber: string) => void;
-}> = ({ isOpen, onClose, initialTab = 'all', orders = [], member, onConfirmReceipt, onGoReview, onOpenTracking }) => {
+  onOpenSupport?: (prompt?: string) => void;
+}> = ({
+  isOpen,
+  onClose,
+  initialTab = 'all',
+  orders = [],
+  setOrders,
+  member,
+  setMember,
+  onConfirmReceipt,
+  onGoReview,
+  onOpenTracking,
+  onOpenSupport,
+}) => {
   const [tab, setTab] = useState(initialTab);
+  const [syncedOrders, setSyncedOrders] = useState<any[]>([]);
   const [selectedCertOrder, setSelectedCertOrder] = useState<any | null>(null);
   const [selectedLogisticsOrder, setSelectedLogisticsOrder] = useState<any | null>(null);
   const [isConfirmingId, setIsConfirmingId] = useState<string | null>(null);
+  const [isPayingId, setIsPayingId] = useState<string | null>(null);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string>('');
+  const [reviewingOrder, setReviewingOrder] = useState<any | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewText, setReviewText] = useState<string>('');
+  const [afterSalesOrder, setAfterSalesOrder] = useState<any | null>(null);
+  const [afterSalesReason, setAfterSalesReason] = useState<string>('線材規格/顏色換貨申請');
+  const [afterSalesNote, setAfterSalesNote] = useState<string>('');
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3200);
+  };
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedText(text);
     setTimeout(() => setCopiedText(null), 2000);
   };
-  
+
   useEffect(() => {
     if (isOpen) {
       setTab(initialTab);
     }
   }, [isOpen, initialTab]);
 
-  const tabs = [{ id: 'all', label: '全部' }, { id: 'unpaid', label: '待付款' }, { id: 'processing', label: '待出貨' }, { id: 'shipping', label: '運送中' }, { id: 'done', label: '已完成' }, { id: 'returning', label: '退換貨' }];
-  
-  const mappedOrders = orders.filter(o => !isMockOrder(o)).map(o => {
-    const s = (o.orderStatus || o.status || '').toLowerCase();
-    const isDone = s === 'completed' || s === 'delivered' || s === '已完成';
-    const isShip = s === 'shipping' || s === 'shipped' || s === '運送中';
-    const isProc = s === 'processing' || s === 'picking' || s === 'paid' || s === '待出貨';
-    const isRet = s === 'returning' || s === '退換貨';
-    const isUnpaid = s === 'unpaid' || s === '待付款';
-
-    return {
-      raw: o,
-      id: o.orderNumber || o.id,
-      status: isUnpaid ? '待付款' : 
-              isProc ? '待出貨' : 
-              isShip ? '運送中' : 
-              isRet ? '退換貨' : '已完成',
-      date: new Date(o.createdAt || Date.now()).toLocaleDateString(),
-      items: o.items?.map((item:any) => item.name) || [],
-      total: o.totalAmount || o.total || o.subtotal || 0,
-      color: isUnpaid ? 'text-rose-600' : isDone ? 'text-emerald-600' : 'text-indigo-600',
-      bg: isUnpaid ? 'bg-rose-50' : isDone ? 'bg-emerald-50' : 'bg-indigo-50',
-      canConfirm: isShip || isProc,
-      isDone: isDone,
+  // Real-time merge of in-memory orders + localStorage orders + Firestore orders
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    getGenuineUserOrders(orders)
+      .then((cloudMerged) => {
+        if (cancelled) return;
+        const map = new Map<string, any>();
+        for (const o of orders) {
+          if (o && !isMockOrder(o)) {
+            map.set(o.orderNumber || o.id, o);
+          }
+        }
+        for (const co of cloudMerged) {
+          if (co && !isMockOrder(co)) {
+            const key = co.orderNumber || co.id;
+            const existing = map.get(key);
+            map.set(key, existing ? { ...co, ...existing } : co);
+          }
+        }
+        const mergedList = Array.from(map.values()).sort(
+          (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        );
+        setSyncedOrders(mergedList);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
     };
-  });
+  }, [isOpen, orders, member?.id]);
 
-  const filtered = tab === 'all' ? mappedOrders : mappedOrders.filter(o => {
-    if (tab === 'unpaid') return o.status === '待付款';
-    if (tab === 'processing') return o.status === '待出貨';
-    if (tab === 'shipping') return o.status === '運送中';
-    if (tab === 'done') return o.status === '已完成';
-    if (tab === 'returning') return o.status === '退換貨';
-    return true;
-  });
+  const effectiveOrders = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const o of syncedOrders) {
+      if (o && !isMockOrder(o)) map.set(o.orderNumber || o.id, o);
+    }
+    for (const o of orders) {
+      if (o && !isMockOrder(o)) {
+        const key = o.orderNumber || o.id;
+        map.set(key, { ...(map.get(key) || {}), ...o });
+      }
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+  }, [orders, syncedOrders]);
 
-  const handleConfirm = async (orderId: string) => {
-    if (!onConfirmReceipt) return;
+  const mappedOrders = useMemo(() => {
+    return effectiveOrders.map((o) => {
+      const statusLabel = classifyOrderStatusLabel(o);
+      const isDone = statusLabel === '已完成';
+      const isShip = statusLabel === '運送中';
+      const isProc = statusLabel === '待出貨';
+      const isRet = statusLabel === '退換貨';
+      const isUnpaid = statusLabel === '待付款';
+
+      return {
+        raw: o,
+        id: o.orderNumber || o.id,
+        status: statusLabel,
+        date: new Date(o.createdAt || Date.now()).toLocaleString('zh-TW', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        items: Array.isArray(o.items) ? o.items : [],
+        total: Number(o.totalAmount ?? o.total ?? o.subtotal ?? 0),
+        color: isUnpaid
+          ? 'text-rose-600'
+          : isDone
+          ? 'text-emerald-600'
+          : isRet
+          ? 'text-amber-700'
+          : 'text-indigo-600',
+        bg: isUnpaid
+          ? 'bg-rose-50 border border-rose-200'
+          : isDone
+          ? 'bg-emerald-50 border border-emerald-200'
+          : isRet
+          ? 'bg-amber-50 border border-amber-200'
+          : 'bg-indigo-50 border border-indigo-200',
+        canConfirm: isShip || isProc,
+        isDone,
+        isRet,
+        isUnpaid,
+      };
+    });
+  }, [effectiveOrders]);
+
+  const statusCounts = useMemo(() => {
+    return {
+      all: mappedOrders.length,
+      unpaid: mappedOrders.filter((o) => o.status === '待付款').length,
+      processing: mappedOrders.filter((o) => o.status === '待出貨').length,
+      shipping: mappedOrders.filter((o) => o.status === '運送中').length,
+      done: mappedOrders.filter((o) => o.status === '已完成').length,
+      returning: mappedOrders.filter((o) => o.status === '退換貨').length,
+    };
+  }, [mappedOrders]);
+
+  const tabs = [
+    { id: 'all', label: '全部', count: statusCounts.all },
+    { id: 'unpaid', label: '待付款', count: statusCounts.unpaid },
+    { id: 'processing', label: '待出貨', count: statusCounts.processing },
+    { id: 'shipping', label: '運送中', count: statusCounts.shipping },
+    { id: 'done', label: '已完成', count: statusCounts.done },
+    { id: 'returning', label: '退換貨', count: statusCounts.returning },
+  ];
+
+  const filtered =
+    tab === 'all'
+      ? mappedOrders
+      : mappedOrders.filter((o) => {
+          if (tab === 'unpaid') return o.status === '待付款';
+          if (tab === 'processing') return o.status === '待出貨';
+          if (tab === 'shipping') return o.status === '運送中';
+          if (tab === 'done') return o.status === '已完成';
+          if (tab === 'returning') return o.status === '退換貨';
+          return true;
+        });
+
+  const persistOrderStateUpdate = async (targetOrder: any, patch: Record<string, any>) => {
+    const updatedOrder = {
+      ...targetOrder,
+      ...patch,
+    };
+    setSyncedOrders((prev) =>
+      prev.map((o) =>
+        o.id === targetOrder.id || o.orderNumber === targetOrder.orderNumber ? updatedOrder : o
+      )
+    );
+    if (setOrders) {
+      setOrders((prev: any[]) =>
+        Array.isArray(prev)
+          ? prev.map((o) =>
+              o.id === targetOrder.id || o.orderNumber === targetOrder.orderNumber
+                ? updatedOrder
+                : o
+            )
+          : [updatedOrder]
+      );
+    }
+    if (member?.id && member.id !== 'guest') {
+      saveCustomerOrderRecord(member.id, updatedOrder).catch(() => {});
+    }
+    try {
+      await setDoc(
+        doc(db, 'orders', targetOrder.id || targetOrder.orderNumber),
+        {
+          ...updatedOrder,
+          status: patch.orderStatus || updatedOrder.orderStatus || updatedOrder.status,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch {}
+    return updatedOrder;
+  };
+
+  const handlePayNow = async (rawOrder: any) => {
+    setIsPayingId(rawOrder.id || rawOrder.orderNumber);
+    try {
+      const updated = await persistOrderStateUpdate(rawOrder, {
+        paymentStatus: 'paid',
+        orderStatus: 'picking',
+        status: 'picking',
+        paidAt: new Date().toISOString(),
+      });
+      showToast(`✅ 訂單 ${rawOrder.orderNumber || rawOrder.id} 付款成功！已進入揀貨待出貨狀態。`);
+
+      // Also verify Stage 2 referral reward if this user was referred and just paid for their first order
+      if (member?.id && member.id !== 'guest') {
+        const refRes = await processReferralOrderReward(member, updated);
+        if (refRes?.rewarded && refRes.updatedBuyerProfile && setMember) {
+          setMember(refRes.updatedBuyerProfile);
+          showToast(`🎁 付款成功並解鎖好友首購推薦獎勵 +300 點狗勾幣！`);
+        }
+      }
+    } finally {
+      setIsPayingId(null);
+    }
+  };
+
+  const handleConfirm = async (orderId: string, rawOrder: any) => {
     setIsConfirmingId(orderId);
     try {
-      await onConfirmReceipt(orderId);
+      if (onConfirmReceipt) {
+        await onConfirmReceipt(orderId);
+      }
+      await persistOrderStateUpdate(rawOrder, {
+        orderStatus: 'delivered',
+        status: 'delivered',
+        paymentStatus: 'paid',
+        deliveredAt: new Date().toISOString(),
+      });
+      showToast(`🎉 已確認收貨！訂單移至「已完成」，您現在可以評價商品領取積分！`);
     } finally {
       setIsConfirmingId(null);
     }
   };
 
+  const handleSubmitOrderReview = async () => {
+    if (!reviewingOrder) return;
+    const newReviewsCount = Number(member?.reviewsCount || 0) + 1;
+    const rewardPts = 30;
+    try {
+      const localRevCount =
+        parseInt(localStorage.getItem(`printcore_reviews_count_${member?.id || 'guest'}`) || '0', 10) || 0;
+      localStorage.setItem(
+        `printcore_reviews_count_${member?.id || 'guest'}`,
+        String(Math.max(newReviewsCount, localRevCount + 1))
+      );
+    } catch {}
+
+    await persistOrderStateUpdate(reviewingOrder, {
+      isReviewed: true,
+      reviewRating,
+      reviewComment: reviewText || '出料非常順暢，線徑精準不卡頭，值得推薦！',
+      reviewedAt: new Date().toISOString(),
+    });
+
+    if (member && setMember) {
+      const updatedMember = {
+        ...member,
+        reviewsCount: newReviewsCount,
+        points: Number(member.points || 0) + rewardPts,
+      };
+      setMember(updatedMember);
+      saveUserProfileToFirestore(updatedMember);
+    }
+
+    showToast(`⭐ 感謝您的五星評價！已獲得 +${rewardPts} 點狗勾幣並更新「評價達人」成就進度！`);
+    setReviewingOrder(null);
+    setReviewText('');
+  };
+
+  const handleSubmitAfterSales = async () => {
+    if (!afterSalesOrder) return;
+    const updated = await persistOrderStateUpdate(afterSalesOrder, {
+      orderStatus: 'returning',
+      status: 'returning',
+      afterSalesReason,
+      afterSalesNote: afterSalesNote || '申請售後換貨服務',
+      afterSalesRequestedAt: new Date().toISOString(),
+    });
+    showToast(`📋 訂單 ${updated.orderNumber || updated.id} 已提交售後申請，客服專員將優先為您處理！`);
+    setAfterSalesOrder(null);
+    setAfterSalesNote('');
+    setTab('returning');
+  };
+
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="我的訂單">
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${tab === t.id ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>{t.label}</button>
+      {toastMsg && (
+        <div className="mb-4 p-3 rounded-2xl bg-slate-900 text-white text-xs font-bold flex items-center gap-2 shadow-lg">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      <div className="flex gap-2 mb-5 overflow-x-auto pb-2 scrollbar-hide">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+              tab === t.id
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+            }`}
+          >
+            <span>{t.label}</span>
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                tab === t.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {t.count}
+            </span>
+          </button>
         ))}
       </div>
+
+      {/* Inline Review Form Modal */}
+      {reviewingOrder && (
+        <div className="mb-5 p-4 bg-amber-50/90 border border-amber-200 rounded-2xl space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+              <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
+              <span>評價訂單 {reviewingOrder.orderNumber || reviewingOrder.id}（贈 +30 狗勾幣）</span>
+            </h4>
+            <button
+              onClick={() => setReviewingOrder(null)}
+              className="text-xs text-slate-400 hover:text-slate-700 font-bold cursor-pointer"
+            >
+              關閉
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setReviewRating(star)}
+                className="p-1 cursor-pointer"
+              >
+                <Star
+                  className={`w-5 h-5 ${
+                    star <= reviewRating ? 'fill-amber-400 text-amber-500' : 'text-slate-300'
+                  }`}
+                />
+              </button>
+            ))}
+            <span className="text-xs font-bold text-amber-800 ml-1">{reviewRating}.0 顆星好評</span>
+          </div>
+          <textarea
+            value={reviewText}
+            onChange={(e) => setReviewText(e.target.value)}
+            rows={2}
+            placeholder="分享您的列印體驗（例如：首層附著力佳、線徑穩定無氣泡...）"
+            className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-amber-500"
+          />
+          <div className="flex justify-end gap-2">
+            {reviewingOrder.items?.[0]?.productId && onGoReview && (
+              <button
+                type="button"
+                onClick={() => {
+                  const pid = reviewingOrder.items[0].productId;
+                  setReviewingOrder(null);
+                  onClose();
+                  onGoReview(pid);
+                }}
+                className="px-3 py-1.5 bg-white border border-amber-300 text-amber-800 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                前往商品頁完整曬圖
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSubmitOrderReview}
+              className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+            >
+              送出評價領 +30 幣
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Inline After-Sales Request Form */}
+      {afterSalesOrder && (
+        <div className="mb-5 p-4 bg-rose-50/90 border border-rose-200 rounded-2xl space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-black text-rose-950">
+              申請售後退換貨（訂單：{afterSalesOrder.orderNumber || afterSalesOrder.id}）
+            </h4>
+            <button
+              onClick={() => setAfterSalesOrder(null)}
+              className="text-xs text-slate-400 hover:text-slate-700 font-bold cursor-pointer"
+            >
+              關閉
+            </button>
+          </div>
+          <select
+            value={afterSalesReason}
+            onChange={(e) => setAfterSalesReason(e.target.value)}
+            className="w-full p-2.5 bg-white border border-rose-200 rounded-xl text-xs font-bold text-slate-800"
+          >
+            <option value="線材規格/顏色換貨申請">線材規格 / 顏色換貨申請</option>
+            <option value="真空鋁箔袋受損免費補換">真空鋁箔袋受潮或受損免費補換</option>
+            <option value="7天鑑賞期退貨退款申請">7 天鑑賞期退貨退款申請</option>
+            <option value="列印卡料技術檢測與換新">列印卡料技術檢測與換新</option>
+          </select>
+          <textarea
+            value={afterSalesNote}
+            onChange={(e) => setAfterSalesNote(e.target.value)}
+            rows={2}
+            placeholder="請簡述欲更換的顏色或問題狀況，客服將為您安排免費逆物流收件..."
+            className="w-full p-2.5 bg-white border border-rose-200 rounded-xl text-xs text-slate-800"
+          />
+          <div className="flex justify-end gap-2">
+            {onOpenSupport && (
+              <button
+                type="button"
+                onClick={() => {
+                  const num = afterSalesOrder.orderNumber || afterSalesOrder.id;
+                  setAfterSalesOrder(null);
+                  onClose();
+                  onOpenSupport(`您好，我想針對訂單【${num}】辦理售後服務（原因：${afterSalesReason}）`);
+                }}
+                className="px-3 py-1.5 bg-white border border-rose-300 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>轉接線上客服</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleSubmitAfterSales}
+              className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl cursor-pointer"
+            >
+              提交售後單
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
-        {filtered.length > 0 ? filtered.map(order => (
-          <div key={order.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-            <div className="flex justify-between items-center mb-3 pb-3 border-b border-slate-50">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-500 font-bold">{order.id}</span>
-                <button
-                  onClick={() => handleCopy(order.id)}
-                  className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                  title="複製訂單編號"
-                >
-                  {copiedText === order.id ? (
-                    <span className="text-[10px] text-emerald-600 font-bold">已複製</span>
-                  ) : (
-                    <Copy className="w-3 h-3" />
-                  )}
-                </button>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-1 rounded-md ${order.color} ${order.bg}`}>{order.status}</span>
-            </div>
-            {order.raw?.trackingNumber && order.raw.trackingNumber !== '77391829310' && !order.raw.trackingNumber.includes('77391829310') && (
-              <div className="mb-3 px-3 py-1.5 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-slate-600">
-                  <Truck className="w-3.5 h-3.5 text-indigo-600" />
-                  <span className="text-[11px] text-slate-400">物流單號：</span>
-                  <span className="font-mono font-bold text-slate-700">{order.raw.trackingNumber}</span>
+        {filtered.length > 0 ? (
+          filtered.map((order) => (
+            <div key={order.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+              <div className="flex justify-between items-center mb-3 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-mono text-slate-700 font-black truncate">{order.id}</span>
                   <button
-                    onClick={() => handleCopy(order.raw.trackingNumber)}
-                    className="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                    title="複製物流單號"
+                    onClick={() => handleCopy(order.id)}
+                    className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer shrink-0"
+                    title="複製訂單編號"
                   >
-                    {copiedText === order.raw.trackingNumber ? (
+                    {copiedText === order.id ? (
                       <span className="text-[10px] text-emerald-600 font-bold">已複製</span>
                     ) : (
                       <Copy className="w-3 h-3" />
                     )}
                   </button>
                 </div>
-                <button
-                  onClick={() => setSelectedLogisticsOrder(order.raw)}
-                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer flex items-center gap-1"
-                >
-                  <Truck className="w-3 h-3 text-indigo-600" />
-                  <span>即時物流進度 ↗</span>
-                </button>
-              </div>
-            )}
-            <div className="space-y-2 mb-4">
-              {order.items.map((item: string, idx: number) => (
-                <div key={idx} className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                  <Package className="w-4 h-4 text-slate-300" /> {item}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${order.color} ${order.bg}`}>
+                    {order.status}
+                  </span>
                 </div>
-              ))}
-            </div>
-            <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-50">
-              <span className="text-xs font-bold text-slate-400">{order.date}</span>
-              <div className="flex flex-wrap items-center gap-2">
-                {/* 物流詳情按鈕 - 點擊調用物流 API 查詢即時配送軌跡時間軸 */}
-                <button
-                  onClick={() => setSelectedLogisticsOrder(order.raw)}
-                  className="px-2.5 py-1 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200/90 text-xs font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-2xs hover:shadow-xs active:scale-95"
-                  title="點擊調用物流 API 查詢即時配送軌跡時間軸"
-                >
-                  <Truck className="w-3.5 h-3.5 text-sky-600" />
-                  <span>物流詳情</span>
-                </button>
-                <button
-                  onClick={() => setSelectedCertOrder(order.raw)}
-                  className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                  title="檢視憑證驗證與下載證明檔案"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>電子憑證</span>
-                </button>
-                {order.status === '待付款' && <button className="px-3 py-1 bg-rose-500 text-white text-xs font-bold rounded-lg hover:bg-rose-600">立即付款</button>}
-                {order.canConfirm && onConfirmReceipt && (
-                  <button
-                    onClick={() => handleConfirm(order.raw.id)}
-                    disabled={isConfirmingId === order.raw.id}
-                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-                    title="我已收到包裹，確認收貨並解鎖商品真實評價"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>{isConfirmingId === order.raw.id ? '確認中...' : '確認收貨'}</span>
-                  </button>
+              </div>
+
+              {order.raw?.trackingNumber &&
+                order.raw.trackingNumber !== '77391829310' &&
+                !order.raw.trackingNumber.includes('77391829310') && (
+                  <div className="mb-3 px-3 py-2 bg-slate-50 rounded-xl flex items-center justify-between text-xs border border-slate-100">
+                    <div className="flex items-center gap-1.5 text-slate-600 min-w-0">
+                      <Truck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span className="text-[11px] text-slate-400 shrink-0">物流單號：</span>
+                      <span className="font-mono font-bold text-slate-700 truncate">
+                        {order.raw.trackingNumber}
+                      </span>
+                      <button
+                        onClick={() => handleCopy(order.raw.trackingNumber)}
+                        className="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-colors cursor-pointer shrink-0"
+                        title="複製物流單號"
+                      >
+                        {copiedText === order.raw.trackingNumber ? (
+                          <span className="text-[10px] text-emerald-600 font-bold">已複製</span>
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => setSelectedLogisticsOrder(order.raw)}
+                      className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <span>即時貨態 ↗</span>
+                    </button>
+                  </div>
                 )}
-                {order.isDone && order.raw?.items?.[0]?.productId && onGoReview && (
+
+              {/* Rich Item List with Color, Diameter, Quantity, and Price */}
+              <div className="space-y-2.5 mb-3">
+                {order.items.map((item: any, idx: number) => {
+                  const itemName = typeof item === 'string' ? item : item.name || '神狗勾 3D 列印耗材';
+                  const itemColor = typeof item === 'object' ? item.color || item.selectedColor?.name : '';
+                  const itemHex = typeof item === 'object' ? item.colorHex || item.selectedColor?.hex : '';
+                  const itemDiameter = typeof item === 'object' ? item.diameter || item.selectedDiameter || '1.75mm' : '1.75mm';
+                  const itemQty = typeof item === 'object' ? item.quantity || 1 : 1;
+                  const itemPrice = typeof item === 'object' ? item.price || 0 : 0;
+                  const itemImg = typeof item === 'object' ? item.image || item.imageUrl : '';
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-100"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {itemImg ? (
+                          <img
+                            src={getSafeProductImageUrl(itemImg, item.material, itemName)}
+                            alt={itemName}
+                            className="w-11 h-11 rounded-lg object-cover bg-white border border-slate-200 shrink-0"
+                            onError={(e) => handleProductImageError(e, item.material, itemName)}
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                            <Package className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 truncate">{itemName}</p>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {itemColor && (
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-medium">
+                                {itemHex && (
+                                  <span
+                                    className="w-2 h-2 rounded-full border border-slate-300"
+                                    style={{ backgroundColor: itemHex }}
+                                  />
+                                )}
+                                {itemColor}
+                              </span>
+                            )}
+                            <span className="text-[10px] bg-slate-200/70 text-slate-600 px-1.5 py-0.5 rounded font-mono">
+                              {itemDiameter}
+                            </span>
+                            <span className="text-[10px] font-bold text-indigo-600">x{itemQty}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {itemPrice > 0 && (
+                        <div className="text-xs font-mono font-bold text-slate-700 shrink-0">
+                          NT$ {(itemPrice * itemQty).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {order.raw?.afterSalesReason && (
+                <div className="mb-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900">
+                  <span className="font-bold">售後進度：</span>
+                  {order.raw.afterSalesReason}（{order.raw.afterSalesNote || '客服審核處理中'}）
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between sm:justify-start gap-3">
+                  <span className="text-[11px] font-medium text-slate-400">{order.date}</span>
+                  <span className="font-black text-sm text-slate-900">
+                    總計 NT$ {order.total.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
                   <button
-                    onClick={() => {
-                      onClose();
-                      onGoReview(order.raw.items[0].productId);
-                    }}
-                    className="px-2.5 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                    title="已收貨完成，點此發表商品真實評價"
+                    onClick={() => setSelectedLogisticsOrder(order.raw)}
+                    className="px-2.5 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200/90 text-xs font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer"
                   >
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                    <span>評價商品</span>
+                    <Truck className="w-3.5 h-3.5 text-sky-600" />
+                    <span>物流詳情</span>
                   </button>
-                )}
-                {(order.status === '已完成' || order.status === '退換貨') && <button className="px-3 py-1 bg-slate-50 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-100">申請售後</button>}
-                <span className="font-black text-slate-900">NT$ {order.total.toLocaleString()}</span>
+                  <button
+                    onClick={() => setSelectedCertOrder(order.raw)}
+                    className="px-2.5 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>電子憑證</span>
+                  </button>
+
+                  {order.status === '待付款' && (
+                    <button
+                      onClick={() => handlePayNow(order.raw)}
+                      disabled={isPayingId === (order.raw.id || order.id)}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      {isPayingId === (order.raw.id || order.id) ? '付款確認中...' : '立即付款'}
+                    </button>
+                  )}
+
+                  {order.canConfirm && (
+                    <button
+                      onClick={() => handleConfirm(order.raw.id || order.id, order.raw)}
+                      disabled={isConfirmingId === (order.raw.id || order.id)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{isConfirmingId === (order.raw.id || order.id) ? '確認中...' : '確認收貨'}</span>
+                    </button>
+                  )}
+
+                  {order.isDone && (
+                    <button
+                      onClick={() => setReviewingOrder(order.raw)}
+                      className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                      <span>{order.raw?.isReviewed ? '追加評價' : '評價領 30 幣'}</span>
+                    </button>
+                  )}
+
+                  {(order.status === '已完成' || order.status === '待出貨' || order.status === '運送中') && (
+                    <button
+                      onClick={() => setAfterSalesOrder(order.raw)}
+                      className="px-2.5 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 text-xs font-bold rounded-lg cursor-pointer"
+                    >
+                      申請售後
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )) : (
-          <div className="text-center py-10">
-             <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
-               <Package className="w-8 h-8 text-slate-300" />
-             </div>
-             <p className="text-slate-400 font-bold">目前沒有相關訂單</p>
+          ))
+        ) : (
+          <div className="text-center py-10 bg-white rounded-2xl border border-slate-100">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Package className="w-8 h-8 text-slate-300" />
+            </div>
+            <p className="text-slate-500 font-bold text-sm">目前此分類沒有相關訂單</p>
+            <p className="text-xs text-slate-400 mt-1">購買商品完成結帳後，您的訂單狀態與物流單號將即時顯示於此</p>
           </div>
         )}
       </div>
@@ -245,89 +797,453 @@ export const OrderModal: React.FC<{
   );
 };
 
-export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any }> = ({ isOpen, onClose, member }) => {
+export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any }> = ({
+  isOpen,
+  onClose,
+  member,
+}) => {
   const [printers, setPrinters] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newName, setNewName] = useState('');
+
+  // Two-stage Brand -> Model selection state
+  const [selectedBrandId, setSelectedBrandId] = useState<string>('bambu');
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('bambu-x1c');
+  const [searchKeyword, setSearchKeyword] = useState<string>('');
+  const [customNickname, setCustomNickname] = useState<string>('');
+  const [selectedNozzle, setSelectedNozzle] = useState<string>('0.4mm 硬化鋼噴嘴');
+  const [preferredFilament, setPreferredFilament] = useState<string>('PLA / PETG / PLA-CF');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      loadCustomerUserData(member?.id, 'printers').then(data => {
-        if (data && data.length > 0) setPrinters(data);
-        else setPrinters([]); // Don't add mock data
+      loadCustomerUserData(member?.id, 'printers').then((data) => {
+        if (Array.isArray(data) && data.length > 0) setPrinters(data);
+        else setPrinters([]);
       });
     }
   }, [isOpen, member?.id]);
+
+  // Filtered models based on brand or search keyword
+  const brandModels = useMemo(() => {
+    const q = searchKeyword.trim().toLowerCase();
+    if (q) {
+      const found = PRINTER_PROFILES.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.brand.toLowerCase().includes(q) ||
+          p.series.toLowerCase().includes(q) ||
+          p.id.toLowerCase().includes(q)
+      );
+      return found.length > 0 ? found : PRINTER_PROFILES;
+    }
+    return getPrintersByBrand(selectedBrandId);
+  }, [selectedBrandId, searchKeyword]);
+
+  const activeProfile: PrinterProfile = useMemo(() => {
+    return findPrinterProfile(selectedProfileId);
+  }, [selectedProfileId]);
+
+  // Sync default nozzle & filament when profile changes
+  useEffect(() => {
+    if (activeProfile) {
+      setSelectedNozzle(
+        activeProfile.defaultNozzle ||
+          (activeProfile.specialNotes.includes('硬化鋼') ? '0.4mm 硬化鋼噴嘴' : '0.4mm 標準噴嘴')
+      );
+      setPreferredFilament(
+        activeProfile.defaultMaterial ||
+          (activeProfile.enclosure === 'full' ? 'PLA / PETG / ABS / ASA / CF' : 'PLA / Matte PLA / PETG')
+      );
+    }
+  }, [activeProfile]);
 
   const saveToDb = (newPrinters: any[]) => {
     setPrinters(newPrinters);
     saveCustomerUserData(member?.id, 'printers', newPrinters);
   };
 
-  const handleAdd = () => {
-    if (!newName.trim()) return;
-    saveToDb([...printers, { id: Date.now(), name: newName, type: '自訂機台', current: printers.length === 0 }]);
-    setNewName('');
+  const handleAddPrinter = () => {
+    const profile = activeProfile;
+    const displayTitle = customNickname.trim()
+      ? `${profile.name} (${customNickname.trim()})`
+      : profile.name;
+
+    const newEntry = {
+      id: Date.now(),
+      profileId: profile.id,
+      brandId: profile.brandId,
+      brand: profile.brand,
+      name: displayTitle,
+      series: profile.series,
+      type: `${profile.type}・${
+        profile.enclosure === 'full' ? '全封箱保溫' : profile.enclosure === 'optional' ? '可選封箱' : '開放式機身'
+      }`,
+      nozzle: selectedNozzle,
+      material: preferredFilament,
+      maxSpeedMmS: profile.maxSpeedMmS,
+      maxNozzleTemp: profile.maxNozzleTemp,
+      maxBedTemp: profile.maxBedTemp,
+      multiColorSupport: profile.multiColorSupport,
+      retraction: profile.recommendedRetraction?.pla || '0.8mm @ 35mm/s',
+      specialNotes: profile.specialNotes,
+      current: printers.length === 0,
+    };
+
+    saveToDb([...printers, newEntry]);
+    setCustomNickname('');
+    setSearchKeyword('');
     setIsAdding(false);
   };
 
   const handleSetDefault = (id: number) => {
-    saveToDb(printers.map(p => ({ ...p, current: p.id === id })));
+    saveToDb(printers.map((p) => ({ ...p, current: p.id === id })));
   };
 
   const handleDelete = (id: number) => {
-    saveToDb(printers.filter(p => p.id !== id));
+    const remaining = printers.filter((p) => p.id !== id);
+    if (remaining.length > 0 && !remaining.some((p) => p.current)) {
+      remaining[0].current = true;
+    }
+    saveToDb(remaining);
   };
-return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="我的列印機車庫">
-      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-6 flex gap-3">
-        <Printer className="w-6 h-6 text-indigo-600 shrink-0" />
-        <p className="text-sm text-indigo-800 font-medium">設定您的機台，系統在您購物時將自動過濾並提供最精準的參數建議！</p>
+
+  return (
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="我的 3D 列印機車庫">
+      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-5 flex items-start gap-3">
+        <Printer className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+        <div className="text-xs text-indigo-900 leading-relaxed">
+          <p className="font-bold">已完整收錄市面 {PRINTER_BRANDS.length} 大廠牌、{PRINTER_PROFILES.length} 款熱門與經典機型系譜！</p>
+          <p className="text-indigo-700/80 mt-0.5">
+            支援先選品牌再選機型（含拓竹 H2D/X1C/A1、創想 Ender 初代至最新 K2/K3、SparkX i8、H3C、Infimech MX Pro、Anycubic K3/S1、QIDI Plus 4、Voron 等），綁定後可自動帶入切片參數與成就偵測！
+          </p>
+        </div>
       </div>
-      
-      <div className="space-y-4 mb-6">
+
+      {/* Saved Printers List */}
+      <div className="space-y-3.5 mb-5">
         {printers.map((p) => (
-          <div key={p.id} className={`bg-white p-4 rounded-2xl border ${p.current ? 'border-indigo-500 shadow-md shadow-indigo-100' : 'border-slate-200 shadow-sm'}`}>
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h4 className="font-black text-slate-900">{p.name}</h4>
-                <p className="text-xs text-slate-500 mt-1">{p.type}</p>
+          <div
+            key={p.id}
+            className={`bg-white p-4 rounded-2xl border transition-all ${
+              p.current ? 'border-indigo-500 shadow-md shadow-indigo-100/60' : 'border-slate-200 shadow-xs'
+            }`}
+          >
+            <div className="flex justify-between items-start gap-2 mb-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {p.brand && (
+                    <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-md">
+                      {p.brand}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
+                    {p.type || '高速機型'}
+                  </span>
+                  {p.maxSpeedMmS && (
+                    <span className="text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md">
+                      {p.maxSpeedMmS} mm/s
+                    </span>
+                  )}
+                </div>
+                <h4 className="font-black text-slate-900 text-sm sm:text-base mt-1.5 leading-snug">
+                  {p.name}
+                </h4>
               </div>
-              <button onClick={() => handleDelete(p.id)} className="text-slate-300 hover:text-rose-500 transition-colors p-1">
+              <button
+                onClick={() => handleDelete(p.id)}
+                className="text-slate-300 hover:text-rose-500 transition-colors p-1 cursor-pointer shrink-0"
+                title="移除此機台"
+              >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            {p.current ? (
-              <div className="bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-2 rounded-xl flex items-center justify-center gap-1">
-                <Check className="w-4 h-4" /> 當前預設使用機台
+
+            {/* Hardware Spec Grid */}
+            <div className="grid grid-cols-2 gap-2 text-xs mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <div>
+                <span className="text-[10px] text-slate-400 block">噴嘴與熱端配置</span>
+                <span className="font-bold text-slate-800">{p.nozzle || '0.4mm 標準噴嘴'}</span>
               </div>
-            ) : (
-              <button onClick={() => handleSetDefault(p.id)} className="w-full text-xs font-bold text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 px-3 py-2 rounded-xl transition-colors">
-                設為預設機台
+              <div>
+                <span className="text-[10px] text-slate-400 block">主力適配耗材</span>
+                <span className="font-bold text-indigo-700">{p.material || 'PLA / PETG'}</span>
+              </div>
+              {p.maxNozzleTemp && (
+                <div>
+                  <span className="text-[10px] text-slate-400 block">最高噴嘴 / 熱床溫控</span>
+                  <span className="font-mono font-bold text-slate-700">
+                    {p.maxNozzleTemp}°C / {p.maxBedTemp || 100}°C
+                  </span>
+                </div>
+              )}
+              {p.retraction && (
+                <div>
+                  <span className="text-[10px] text-slate-400 block">預設建議回抽</span>
+                  <span className="font-mono font-bold text-slate-700">{p.retraction}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              {p.current ? (
+                <div className="flex-1 bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-xs">
+                  <Check className="w-4 h-4" />
+                  <span>當前主力預設機台</span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleSetDefault(p.id)}
+                  className="flex-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 px-3 py-2 rounded-xl transition-colors cursor-pointer"
+                >
+                  設為主力預設機台
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `機型：${p.name}\n結構：${p.type}\n噴嘴：${p.nozzle || '0.4mm'}\n最高溫控：${p.maxNozzleTemp || 300}°C / ${p.maxBedTemp || 100}°C\n建議回抽：${p.retraction || '0.8mm @ 35mm/s'}\n主力耗材：${p.material || 'PLA/PETG'}`;
+                  navigator.clipboard.writeText(text);
+                  setCopiedId(String(p.id));
+                  setTimeout(() => setCopiedId(null), 2000);
+                }}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                {copiedId === String(p.id) ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-emerald-700">已複製規格</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>複製規格</span>
+                  </>
+                )}
               </button>
-            )}
+            </div>
           </div>
         ))}
+
+        {printers.length === 0 && !isAdding && (
+          <div className="text-center py-8 bg-white rounded-2xl border border-slate-100 p-4">
+            <Printer className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+            <p className="font-bold text-slate-600 text-sm">您的列印車庫尚未登錄機台</p>
+            <p className="text-xs text-slate-400 mt-1">新增機台可自動匹配噴嘴溫度與回抽參數，登錄 2 台以上還能解鎖「設備控」創客成就！</p>
+          </div>
+        )}
       </div>
 
+      {/* Add Printer Form: Step 1 (Brand) -> Step 2 (Model) */}
       {isAdding ? (
-        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-          <input 
-            type="text" 
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="輸入機台型號 (例: Ender 3 V2)" 
-            className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 mb-3"
-            autoFocus
-          />
-          <div className="flex gap-2">
-            <button onClick={() => setIsAdding(false)} className="flex-1 py-3 text-slate-500 font-bold bg-white border border-slate-300 rounded-xl">取消</button>
-            <button onClick={handleAdd} className="flex-1 py-3 text-white font-bold bg-slate-900 rounded-xl hover:bg-slate-800">儲存機台</button>
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-indigo-200 shadow-lg space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+              <Plus className="w-4 h-4 text-indigo-600" />
+              <span>新增愛機至車庫（先選品牌・再選機型）</span>
+            </h4>
+            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+              全機型資料庫
+            </span>
+          </div>
+
+          {/* Fast Keyword Search */}
+          <div>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1">
+              🔍 快速關鍵字搜尋（支援輸入 SparkX i8、H3C、K3、K2、Infimech MX Pro、Ender-3、Plus 4 等）：
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchKeyword}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchKeyword(val);
+                  if (val.trim()) {
+                    const matched = findPrinterProfile(val);
+                    if (matched) {
+                      setSelectedBrandId(matched.brandId);
+                      setSelectedProfileId(matched.id);
+                    }
+                  }
+                }}
+                placeholder="輸入機型關鍵字立即定位..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none focus:border-indigo-500"
+              />
+              {searchKeyword && (
+                <button
+                  type="button"
+                  onClick={() => setSearchKeyword('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold cursor-pointer"
+                >
+                  清除
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Step 1: Select Brand Pills + Dropdown */}
+          <div>
+            <label className="text-[11px] font-black text-slate-800 block mb-1.5">
+              步驟一：先選擇 3D 印表機品牌
+            </label>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-2 scrollbar-hide">
+              {PRINTER_BRANDS.map((b) => {
+                const count = getPrintersByBrand(b.id).length;
+                const active = selectedBrandId === b.id && !searchKeyword;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      setSearchKeyword('');
+                      setSelectedBrandId(b.id);
+                      const list = getPrintersByBrand(b.id);
+                      if (list.length > 0) setSelectedProfileId(list[0].id);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      active
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{b.icon}</span>
+                    <span>{b.shortName}</span>
+                    <span className="text-[10px] opacity-75">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <select
+              value={selectedBrandId}
+              onChange={(e) => {
+                const bid = e.target.value;
+                setSearchKeyword('');
+                setSelectedBrandId(bid);
+                const list = getPrintersByBrand(bid);
+                if (list.length > 0) setSelectedProfileId(list[0].id);
+              }}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
+            >
+              <option value="all">🌐 顯示全部品牌 ({PRINTER_PROFILES.length} 款機型)</option>
+              {PRINTER_BRANDS.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.icon} {b.name} — {b.description}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Step 2: Select Specific Printer Model */}
+          <div>
+            <label className="text-[11px] font-black text-slate-800 block mb-1.5">
+              步驟二：再選擇機型型號（目前顯示 {brandModels.length} 款可選）
+            </label>
+            <select
+              value={selectedProfileId}
+              onChange={(e) => {
+                const pid = e.target.value;
+                setSelectedProfileId(pid);
+                const prof = findPrinterProfile(pid);
+                if (prof && selectedBrandId !== 'all') {
+                  setSelectedBrandId(prof.brandId);
+                }
+              }}
+              className="w-full px-3.5 py-2.5 rounded-xl border-2 border-indigo-300 bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
+            >
+              {brandModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  【{m.series}】{m.name}（{m.type} / {m.enclosure === 'full' ? '全封箱' : '開放式'} / {m.maxSpeedMmS}mm/s）
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Auto-detected Hardware Spec Preview Card */}
+          <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-1.5 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-black text-indigo-950">{activeProfile.name}</span>
+              <span className="text-[10px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded-full">
+                極速 {activeProfile.maxSpeedMmS} mm/s
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
+              <span>結構：<strong>{activeProfile.type}</strong></span>
+              <span>艙體：<strong>{activeProfile.enclosure === 'full' ? '全封箱恆溫' : activeProfile.enclosure === 'optional' ? '可加裝封箱' : '開放式'}</strong></span>
+              <span>最高溫：<strong>{activeProfile.maxNozzleTemp}°C / {activeProfile.maxBedTemp}°C</strong></span>
+              <span>多色：<strong>{activeProfile.multiColorSupport}</strong></span>
+            </div>
+            <p className="text-[11px] text-indigo-800/90 leading-snug pt-0.5">
+              💡 {activeProfile.specialNotes}
+            </p>
+          </div>
+
+          {/* Optional Customization: Nozzle, Preferred Material & Nickname */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">噴嘴口徑與材質：</label>
+              <select
+                value={selectedNozzle}
+                onChange={(e) => setSelectedNozzle(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-white"
+              >
+                <option value="0.4mm 硬化鋼噴嘴">0.4mm 硬化鋼噴嘴 (耐磨直印碳纖)</option>
+                <option value="0.4mm 標準黃銅/不銹鋼噴嘴">0.4mm 標準黃銅/不銹鋼噴嘴</option>
+                <option value="0.2mm 精細微縮噴嘴">0.2mm 精細公仔微縮噴嘴</option>
+                <option value="0.6mm 大流量耐磨硬化鋼噴嘴">0.6mm 大流量耐磨硬化鋼噴嘴</option>
+                <option value="0.8mm 超大流量原型噴嘴">0.8mm 超大流量快速原型噴嘴</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">常印主力耗材：</label>
+              <input
+                type="text"
+                value={preferredFilament}
+                onChange={(e) => setPreferredFilament(e.target.value)}
+                placeholder="例：PLA / PETG / PLA-CF"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-white"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1">
+              機台自訂暱稱或備註（選填，若品牌未列出亦可直接填寫自訂型號）：
+            </label>
+            <input
+              type="text"
+              value={customNickname}
+              onChange={(e) => setCustomNickname(e.target.value)}
+              placeholder="例如：書房一號機、改裝 E3D Revo 熱端..."
+              className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setIsAdding(false)}
+              className="flex-1 py-3 text-slate-600 font-bold bg-slate-100 hover:bg-slate-200 rounded-xl text-xs cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleAddPrinter}
+              className="flex-1 py-3 text-white font-bold bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs shadow-md cursor-pointer"
+            >
+              儲存並加入車庫
+            </button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setIsAdding(true)} className="w-full py-4 border-2 border-dashed border-slate-300 rounded-2xl text-slate-500 font-bold hover:bg-slate-100 hover:border-slate-400 transition-colors flex items-center justify-center gap-2">
-          <Plus className="w-5 h-5" /> 新增 3D 列印機
+        <button
+          type="button"
+          onClick={() => setIsAdding(true)}
+          className="w-full py-4 border-2 border-dashed border-indigo-300 bg-indigo-50/40 rounded-2xl text-indigo-700 font-black hover:bg-indigo-50 hover:border-indigo-400 transition-colors flex items-center justify-center gap-2 cursor-pointer text-sm"
+        >
+          <Plus className="w-5 h-5" />
+          <span>新增 3D 列印機（先選品牌再選機型）</span>
         </button>
       )}
     </ModalWrapper>
@@ -384,9 +1300,9 @@ return (
             </div>
             <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50">
               {!a.isDefault && (
-                <button onClick={() => handleSetDefault(a.id)} className="flex-1 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100">設為預設</button>
+                <button onClick={() => handleSetDefault(a.id)} className="flex-1 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 cursor-pointer">設為預設</button>
               )}
-              <button onClick={() => handleDelete(a.id)} className="flex-1 py-2 text-xs font-bold text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 flex items-center justify-center gap-1">
+              <button onClick={() => handleDelete(a.id)} className="flex-1 py-2 text-xs font-bold text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 flex items-center justify-center gap-1 cursor-pointer">
                 <Trash2 className="w-3 h-3" /> 刪除
               </button>
             </div>
@@ -403,12 +1319,12 @@ return (
           <input type="text" placeholder="聯絡電話" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500" />
           <textarea placeholder="詳細地址" value={form.addr} onChange={e => setForm({...form, addr: e.target.value})} rows={3} className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500 resize-none" />
           <div className="flex gap-2 pt-2">
-            <button onClick={() => setIsAdding(false)} className="flex-1 py-3 text-slate-500 font-bold bg-white border border-slate-300 rounded-xl">取消</button>
-            <button onClick={handleAdd} className="flex-1 py-3 text-white font-bold bg-slate-900 rounded-xl hover:bg-slate-800">儲存地址</button>
+            <button onClick={() => setIsAdding(false)} className="flex-1 py-3 text-slate-500 font-bold bg-white border border-slate-300 rounded-xl cursor-pointer">取消</button>
+            <button onClick={handleAdd} className="flex-1 py-3 text-white font-bold bg-slate-900 rounded-xl hover:bg-slate-800 cursor-pointer">儲存地址</button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setIsAdding(true)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2">
+        <button onClick={() => setIsAdding(true)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 cursor-pointer">
           <Plus className="w-5 h-5" /> 新增收件地址
         </button>
       )}
@@ -417,86 +1333,363 @@ return (
 };
 
 
-export const ReferralModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any; setMember?: (m:any)=>void }> = ({ isOpen, onClose, member, setMember }) => {
-  const [copied, setCopied] = useState(false);
+export const ReferralModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  member?: any;
+  setMember?: (m: any) => void;
+}> = ({ isOpen, onClose, member, setMember }) => {
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
-    const link = `https://goddog.space/r/${member?.referralCode || member?.id || 'guest'}`;
-  
-  const handleCopy = () => {
-    navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const [syncingCloud, setSyncingCloud] = useState(false);
+  const [friendCodeInput, setFriendCodeInput] = useState('');
+  const [bindStatusMsg, setBindStatusMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isBinding, setIsBinding] = useState(false);
+
+  // Deterministic, guaranteed-unique referral code tied strictly to this user's UID & email
+  const uniqueReferralCode = useMemo(() => {
+    if (member?.referralCode && member.referralCode !== 'guest') {
+      return member.referralCode;
+    }
+    if (member?.id && member.id !== 'guest') {
+      return generateUserReferralCode(member.id, member.email);
+    }
+    return 'GDGUEST01';
+  }, [member?.id, member?.email, member?.referralCode]);
+
+  const originUrl =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://goddog.space';
+  const inviteLink = `${originUrl}/r/${uniqueReferralCode}`;
+
+  // Sync latest referral records & earnings from Firestore when modal opens
+  const refreshReferralStatsFromCloud = useCallback(async () => {
+    if (!member?.id || member.id === 'guest') return;
+    setSyncingCloud(true);
+    try {
+      const snap = await getDoc(doc(db, 'users', member.id));
+      if (snap.exists()) {
+        const data = snap.data();
+        const ensuredCode = data.referralCode || uniqueReferralCode;
+        if (!data.referralCode) {
+          await setDoc(doc(db, 'users', member.id), { referralCode: ensuredCode }, { merge: true });
+        }
+        if (setMember) {
+          setMember((prev: any) => ({
+            ...prev,
+            ...data,
+            id: member.id,
+            referralCode: ensuredCode,
+          }));
+        }
+      } else {
+        const saved = await saveUserProfileToFirestore({
+          ...member,
+          referralCode: uniqueReferralCode,
+        });
+        if (saved && setMember) {
+          setMember(saved);
+        }
+      }
+    } catch (e) {
+      console.warn('Referral cloud sync fallback:', e);
+    } finally {
+      setSyncingCloud(false);
+    }
+  }, [member, setMember, uniqueReferralCode]);
+
+  useEffect(() => {
+    if (isOpen) {
+      refreshReferralStatsFromCloud();
+    }
+  }, [isOpen, refreshReferralStatsFromCloud]);
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(inviteLink);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
-  
-  const referralCount = member?.referrals || 0;
-  const referralEarnings = member?.referralEarnings || 0;
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(uniqueReferralCode);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const referralRecords: any[] = Array.isArray(member?.referralRecords)
+    ? member.referralRecords
+    : [];
+  const completedReferrals = Math.max(
+    Number(member?.referrals || 0),
+    Number(member?.referralsCount || 0),
+    referralRecords.filter((r) => r.status === 'order_completed_rewarded').length
+  );
+  const pendingReferrals = Math.max(
+    Number(member?.pendingReferrals || 0),
+    referralRecords.filter((r) => r.status === 'registered_pending_order').length
+  );
+  const referralEarnings = Number(member?.referralEarnings || 0);
 
   const handleWithdraw = async () => {
     if (referralEarnings <= 0) return;
     setWithdrawing(true);
     try {
       if (setMember && member?.id) {
-        // Also call the API or update firestore directly if you had the function. 
-        // Update firestore directly
-        import('../../lib/firebase').then(({ saveUserProfileToFirestore }) => {
-          saveUserProfileToFirestore({
-            ...member,
-            referralEarnings: 0,
-            points: (member.points || 0) + referralEarnings
-          });
+        const updated = {
+          ...member,
+          referralEarnings: 0,
+          points: Number(member.points || 0) + referralEarnings,
+        };
+        await saveUserProfileToFirestore(updated);
+        setMember(updated);
+        setBindStatusMsg({
+          ok: true,
+          text: `🎉 已成功將 NT$ ${referralEarnings} 推廣獎金提領為 ${referralEarnings} 點狗勾幣！結帳可 1:1 全額折抵。`,
         });
-        setMember((prev:any) => ({
-           ...prev, 
-           referralEarnings: 0, 
-           points: (prev.points || 0) + referralEarnings
-        }));
       }
-    } catch(e) {
+    } catch (e) {
       console.error(e);
     } finally {
       setWithdrawing(false);
     }
   };
 
+  const handleBindFriendCode = async () => {
+    if (!friendCodeInput.trim() || isBinding) return;
+    setIsBinding(true);
+    setBindStatusMsg(null);
+    try {
+      const res = await bindReferralCodeForUser(member?.id, friendCodeInput);
+      setBindStatusMsg({ ok: res.ok, text: res.message });
+      if (res.ok && res.updatedProfile && setMember) {
+        setMember(res.updatedProfile);
+        setFriendCodeInput('');
+      }
+    } finally {
+      setIsBinding(false);
+    }
+  };
+
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="推廣賺現金 (推薦碼)">
-      <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-6 text-white text-center shadow-lg shadow-indigo-500/20 mb-6">
-        <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-          <Gift className="w-8 h-8 text-amber-300" />
-        </div>
-        <h3 className="font-black text-2xl mb-2">邀請註冊送 100 狗勾幣</h3>
-        <p className="text-indigo-100 text-sm mb-6 leading-relaxed">
-          只要好友透過您的專屬連結完成註冊，您與好友將會自動獲得 <strong className="text-amber-300">100 點狗勾幣 (等值 NT$ 100)</strong>。買耗材立刻折抵！
-        </p>
-        
-        <div className="bg-white/10 p-1.5 rounded-2xl backdrop-blur-md flex items-center border border-white/20">
-          <div className="flex-1 text-sm font-mono truncate px-3">{link}</div>
-          <button onClick={handleCopy} className="bg-white text-indigo-700 px-4 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-indigo-50 transition-colors shrink-0">
-            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            {copied ? '已複製' : '複製連結'}
-          </button>
-        </div>
-      </div>
-      
-      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="font-black text-slate-900">我的推廣收益</h4>
-          <button 
-            onClick={handleWithdraw}
-            disabled={referralEarnings <= 0 || withdrawing}
-            className={`text-xs font-bold px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 ${referralEarnings > 0 ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100' : 'text-slate-400 bg-slate-100 cursor-not-allowed'}`}>
-            {withdrawing ? '處理中...' : <><Download className="w-3 h-3" /> 提領至狗勾幣</>}
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-slate-50 p-4 rounded-xl text-center">
-            <p className="text-xs font-bold text-slate-400 mb-1">成功註冊</p>
-            <p className="text-2xl font-black text-slate-900">{referralCount} <span className="text-xs font-medium text-slate-500">人</span></p>
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="邀請好友・雙重驗證賺 $300">
+      <div className="space-y-5">
+        {/* Hero Card with Unique Link & Code */}
+        <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 rounded-3xl p-5 sm:p-6 text-white shadow-lg shadow-indigo-500/20">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black uppercase tracking-wider bg-white/15 border border-white/20 px-2.5 py-1 rounded-full text-amber-300">
+              專屬帳號獨立識別碼：{uniqueReferralCode}
+            </span>
+            <button
+              type="button"
+              onClick={refreshReferralStatsFromCloud}
+              className="text-[11px] bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-full flex items-center gap-1 cursor-pointer"
+            >
+              <RefreshCw className={`w-3 h-3 ${syncingCloud ? 'animate-spin' : ''}`} />
+              <span>同步狀態</span>
+            </button>
           </div>
-          <div className="bg-slate-50 p-4 rounded-xl text-center">
-            <p className="text-xs font-bold text-slate-400 mb-1">可提領現金</p>
-            <p className="text-2xl font-black text-amber-500"><span className="text-lg">$</span>{referralEarnings}</p>
+
+          <h3 className="font-black text-xl sm:text-2xl mb-1.5">
+            邀請好友註冊並完成首購，雙方各得 $300！
+          </h3>
+          <p className="text-indigo-100 text-xs leading-relaxed mb-4">
+            每個會員皆擁有全站唯一的專屬推薦連結與代碼。當好友透過您的連結<strong className="text-amber-300">「1. 完成註冊綁定」且「2. 完成首筆訂單付款」</strong>後，系統將自動核發 <strong className="text-amber-300">NT$ 300 推廣獎金 + 300 點狗勾幣</strong> 至雙方帳戶！
+          </p>
+
+          {/* 3-Step Verification Pipeline */}
+          <div className="grid grid-cols-3 gap-2 mb-4 text-center text-[11px] bg-slate-950/25 p-2.5 rounded-2xl border border-white/10">
+            <div className="space-y-0.5">
+              <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center mx-auto">
+                1
+              </div>
+              <div className="font-bold text-white">分享專屬連結</div>
+              <div className="text-[10px] text-indigo-200">每帳號獨立代碼</div>
+            </div>
+            <div className="space-y-0.5">
+              <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 font-black text-xs flex items-center justify-center mx-auto">
+                2
+              </div>
+              <div className="font-bold text-white">好友完成註冊</div>
+              <div className="text-[10px] text-indigo-200">歸戶綁定推薦人</div>
+            </div>
+            <div className="space-y-0.5">
+              <div className="w-6 h-6 rounded-full bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center mx-auto">
+                3
+              </div>
+              <div className="font-bold text-emerald-300">首購付款完成</div>
+              <div className="text-[10px] text-indigo-200">自動入帳 $300</div>
+            </div>
           </div>
+
+          {/* Unique Referral Link Copy Box */}
+          <div className="space-y-2">
+            <div className="bg-white/10 p-1.5 rounded-2xl backdrop-blur-md flex items-center border border-white/20">
+              <div className="flex-1 text-xs font-mono truncate px-3 select-all">{inviteLink}</div>
+              <button
+                onClick={handleCopyLink}
+                className="bg-white text-indigo-700 px-3.5 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5 hover:bg-indigo-50 transition-colors shrink-0 cursor-pointer"
+              >
+                {copiedLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedLink ? '已複製連結' : '複製專屬連結'}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between bg-white/10 px-3.5 py-2 rounded-xl border border-white/15 text-xs">
+              <span>
+                專屬推薦碼：<strong className="font-mono text-amber-300 tracking-wider">{uniqueReferralCode}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="text-amber-300 hover:text-white font-bold flex items-center gap-1 cursor-pointer"
+              >
+                {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedCode ? '已複製推薦碼' : '複製推薦碼'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Status Toast / Feedback */}
+        {bindStatusMsg && (
+          <div
+            className={`p-3 rounded-2xl text-xs font-bold flex items-center gap-2 border ${
+              bindStatusMsg.ok
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-rose-50 border-rose-200 text-rose-700'
+            }`}
+          >
+            <span>{bindStatusMsg.text}</span>
+          </div>
+        )}
+
+        {/* 3-Column Real-Time Verification Dashboard */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="font-black text-slate-900 text-sm">我的推廣追蹤與獎金核發狀態</h4>
+            <button
+              onClick={handleWithdraw}
+              disabled={referralEarnings <= 0 || withdrawing}
+              className={`text-xs font-bold px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 cursor-pointer ${
+                referralEarnings > 0
+                  ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
+                  : 'text-slate-400 bg-slate-100 cursor-not-allowed'
+              }`}
+            >
+              {withdrawing ? (
+                '處理中...'
+              ) : (
+                <>
+                  <Download className="w-3 h-3" /> 提領至狗勾幣
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="bg-amber-50/70 border border-amber-100 p-3 rounded-xl text-center">
+              <p className="text-[11px] font-bold text-amber-800 mb-1">已註冊・待下單</p>
+              <p className="text-xl font-black text-amber-600">
+                {pendingReferrals} <span className="text-[10px] font-medium text-amber-700">人</span>
+              </p>
+            </div>
+            <div className="bg-emerald-50/70 border border-emerald-100 p-3 rounded-xl text-center">
+              <p className="text-[11px] font-bold text-emerald-800 mb-1">已下單・達標領獎</p>
+              <p className="text-xl font-black text-emerald-600">
+                {completedReferrals} <span className="text-[10px] font-medium text-emerald-700">人</span>
+              </p>
+            </div>
+            <div className="bg-indigo-50/70 border border-indigo-100 p-3 rounded-xl text-center">
+              <p className="text-[11px] font-bold text-indigo-800 mb-1">可提領獎金</p>
+              <p className="text-xl font-black text-indigo-600">
+                <span className="text-xs">$</span>
+                {referralEarnings}
+              </p>
+            </div>
+          </div>
+
+          {/* Detailed Referral Records List */}
+          <div className="pt-2 border-t border-slate-100">
+            <p className="text-xs font-bold text-slate-700 mb-2">邀請好友驗證紀錄明細：</p>
+            {referralRecords.length > 0 ? (
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {referralRecords.map((rec, idx) => {
+                  const isCompleted = rec.status === 'order_completed_rewarded';
+                  return (
+                    <div
+                      key={rec.inviteeId || idx}
+                      className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 truncate">
+                          {rec.inviteeName || '創客好友'}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          註冊時間：{rec.registeredAt ? new Date(rec.registeredAt).toLocaleDateString('zh-TW') : '已綁定'}
+                          {rec.orderNumber ? `・首購單號：${rec.orderNumber}` : ''}
+                        </div>
+                      </div>
+                      <span
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-black shrink-0 ${
+                          isCompleted
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {isCompleted ? '✅ 已下單・已發放 $300' : '⏳ 已註冊・待首購下單'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-4 bg-slate-50 rounded-xl text-xs text-slate-400">
+                尚無好友邀請紀錄，立即複製上方專屬連結分享給創客好友吧！
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Invitee Referral Binding Section */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-slate-900 text-xs">被好友邀請？綁定好友推薦碼</h4>
+            {member?.referredBy && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                {member.referralOrderCompleted
+                  ? '✅ 已完成首購並領取 $300 獎勵'
+                  : `⏳ 已綁定（${member.referredByCode || member.referredByName || '好友'}）・下單即領 $300`}
+              </span>
+            )}
+          </div>
+          {!member?.referredBy ? (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={friendCodeInput}
+                onChange={(e) => setFriendCodeInput(e.target.value.toUpperCase())}
+                placeholder="輸入好友的專屬推薦碼 (例如 GD...)"
+                className="flex-1 px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono uppercase focus:outline-none focus:border-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={handleBindFriendCode}
+                disabled={isBinding || !friendCodeInput.trim()}
+                className="px-4 py-2 bg-slate-900 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                {isBinding ? '驗證中...' : '綁定推薦碼'}
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 leading-relaxed">
+              您已成功綁定推薦人 <strong className="text-indigo-600">{member.referredByName || member.referredByCode || '創客好友'}</strong>！
+              {member.referralOrderCompleted
+                ? ` 您已完成首筆訂單（${member.referralOrderNumber || '已付款'}），雙方 300 點狗勾幣獎勵已核發入帳！`
+                : ' 只要完成首筆訂單結帳付款，系統將立即自動發放 300 點狗勾幣至您與好友的帳戶！'}
+            </p>
+          )}
         </div>
       </div>
     </ModalWrapper>
@@ -546,7 +1739,7 @@ export const CouponModal: React.FC<{ isOpen: boolean; onClose: () => void; membe
           <button 
             onClick={handleRedeem}
             disabled={redeeming || !code}
-            className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 disabled:opacity-50"
+            className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
           >
             {redeeming ? '兌換中...' : '兌換'}
           </button>
@@ -866,136 +2059,471 @@ export const HistoryModal: React.FC<{
 };
 
 
-export const AchievementModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any; orders?: any[] }> = ({ isOpen, onClose, member, orders }) => {
+export const AchievementModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  member?: any;
+  setMember?: (m: any) => void;
+  orders?: any[];
+}> = ({ isOpen, onClose, member, setMember, orders }) => {
   const [demoMaxLevel, setDemoMaxLevel] = useState(false);
-  
-  const calcBadges = () => {
-    const safeOrders = Array.isArray(orders) ? orders : [];
-    const hasOrder = safeOrders.length > 0;
-    
-    // Total items bought (approximating 1kg per item)
-    const totalItems = safeOrders.reduce((sum, o) => {
-       return sum + (o.items?.reduce((s: number, item: any) => s + (item.quantity || 1), 0) || 1);
+  const [verifiedOrders, setVerifiedOrders] = useState<any[]>([]);
+  const [userPrinters, setUserPrinters] = useState<any[]>([]);
+  const [slicerUsedCount, setSlicerUsedCount] = useState<number>(0);
+  const [claimMsg, setClaimMsg] = useState<string>('');
+
+  // Load genuine orders, printers, and slicer usage whenever modal opens
+  useEffect(() => {
+    if (!isOpen) return;
+    getGenuineUserOrders(orders || [])
+      .then((res) => {
+        const map = new Map<string, any>();
+        for (const o of orders || []) {
+          if (o && !isMockOrder(o)) map.set(o.orderNumber || o.id, o);
+        }
+        for (const co of res || []) {
+          if (co && !isMockOrder(co)) map.set(co.orderNumber || co.id, co);
+        }
+        setVerifiedOrders(Array.from(map.values()));
+      })
+      .catch(() => {});
+
+    loadCustomerUserData(member?.id, 'printers')
+      .then((p) => {
+        if (Array.isArray(p)) setUserPrinters(p);
+      })
+      .catch(() => {});
+
+    try {
+      const sc = parseInt(localStorage.getItem('printcore_slicer_copies') || '0', 10) || 0;
+      setSlicerUsedCount(sc);
+    } catch {}
+  }, [isOpen, orders, member?.id]);
+
+  const badgesData = useMemo(() => {
+    const safeOrders = verifiedOrders.length > 0 ? verifiedOrders : (orders || []).filter((o) => !isMockOrder(o));
+    const ordersCount = safeOrders.length;
+
+    // Total spools purchased across all genuine orders
+    const totalSpools = safeOrders.reduce((sum, o) => {
+      const items = Array.isArray(o.items) ? o.items : [];
+      const orderQty = items.reduce((s: number, item: any) => s + Number(item?.quantity || 1), 0);
+      return sum + (orderQty || 1);
     }, 0);
-    
-    // Night owl: 0-4 AM
-    const nightOwl = safeOrders.some(o => {
-       if (!o.createdAt) return false;
-       const hour = new Date(o.createdAt).getHours();
-       return hour >= 0 && hour < 4;
-    });
-    
-    // Eco pioneer
-    const ecoPioneer = safeOrders.some(o => o.items?.some((i: any) => i.name?.includes('環保') || i.name?.includes('紙盤'))) || (totalItems >= 5);
 
-    // Color master
-    const uniqueColors = new Set();
-    safeOrders.forEach(o => o.items?.forEach((i: any) => {
-       if (i.color || i.selectedColor?.name) uniqueColors.add(i.color || i.selectedColor?.name);
-    }));
-    
-    // Material explorer
-    const uniqueMats = new Set();
-    safeOrders.forEach(o => o.items?.forEach((i: any) => {
-       if (i.material || i.name) uniqueMats.add(i.material || i.name?.split(' ')[0] || 'PLA');
-    }));
+    // Eco spools count (cardboard / eco spools or recycled spools)
+    const ecoSpoolsOrdered = safeOrders.reduce((sum, o) => {
+      const items = Array.isArray(o.items) ? o.items : [];
+      return (
+        sum +
+        items.reduce((s: number, i: any) => {
+          const n = String(i?.name || i?.material || '').toLowerCase();
+          if (n.includes('環保') || n.includes('紙盤') || n.includes('pla') || n.includes('petg')) {
+            return s + Number(i?.quantity || 1);
+          }
+          return s;
+        }, 0)
+      );
+    }, 0);
+    const ecoCount = Math.max(Number(member?.recycledSpools || 0), ecoSpoolsOrdered);
 
-    const bigSpender = safeOrders.some(o => (Number(o.totalAmount || o.total) || 0) >= 5000);
+    // Night owl: order placed between 22:00 and 05:00
+    const nightOwlCount = safeOrders.filter((o) => {
+      if (!o.createdAt) return false;
+      const hour = new Date(o.createdAt).getHours();
+      return hour >= 22 || hour < 5;
+    }).length;
+
+    // Reviews written (from member.reviewsCount + reviewed orders + localStorage review counter)
+    let localRevCount = 0;
+    try {
+      localRevCount =
+        parseInt(localStorage.getItem(`printcore_reviews_count_${member?.id || 'guest'}`) || '0', 10) || 0;
+    } catch {}
+    const reviewedOrdersCount = safeOrders.filter((o) => o.isReviewed).length;
+    const totalReviews = Math.max(Number(member?.reviewsCount || 0), localRevCount, reviewedOrdersCount);
+
+    // Early bird: bought flagship / new release product or ordered within 48h of registration
+    const boughtNewRelease = safeOrders.some((o) =>
+      (o.items || []).some((i: any) => {
+        const pid = String(i?.productId || i?.id || '');
+        const nm = String(i?.name || '');
+        return (
+          pid === 'fil-01' ||
+          pid === 'fil-02' ||
+          pid === 'fil-03' ||
+          pid === 'fil-05' ||
+          pid === 'fil-07' ||
+          nm.includes('高速') ||
+          nm.includes('碳纖') ||
+          nm.includes('Bambu')
+        );
+      })
+    );
+    const earlyBirdDone = Boolean(member?.earlyBird) || boughtNewRelease;
+
+    // Unique colors purchased
+    const uniqueColors = new Set<string>();
+    safeOrders.forEach((o) =>
+      (o.items || []).forEach((i: any) => {
+        const c = i?.color || i?.selectedColor?.name || i?.name;
+        if (c) uniqueColors.add(String(c));
+      })
+    );
+
+    // Unique materials purchased
+    const uniqueMats = new Set<string>();
+    safeOrders.forEach((o) =>
+      (o.items || []).forEach((i: any) => {
+        const m = String(i?.material || i?.name || '').toUpperCase();
+        if (m.includes('PLA-CF') || m.includes('碳纖')) uniqueMats.add('CF');
+        else if (m.includes('MATTE') || m.includes('消光')) uniqueMats.add('MATTE');
+        else if (m.includes('PETG')) uniqueMats.add('PETG');
+        else if (m.includes('TPU')) uniqueMats.add('TPU');
+        else if (m.includes('ABS') || m.includes('ASA')) uniqueMats.add('ABS/ASA');
+        else if (m.includes('PA') || m.includes('PC') || m.includes('尼龍')) uniqueMats.add('PA/PC');
+        else if (m) uniqueMats.add(m.slice(0, 8));
+      })
+    );
+
+    // Referrals completed
+    const referralsDone = Math.max(
+      Number(member?.referrals || 0),
+      Number(member?.referralsCount || 0)
+    );
+
+    // Max single order amount OR cumulative spend >= 3000
+    const maxSingleOrder = safeOrders.reduce(
+      (max, o) => Math.max(max, Number(o.totalAmount ?? o.total ?? 0)),
+      0
+    );
+    const totalSpend = safeOrders.reduce(
+      (sum, o) => sum + Number(o.totalAmount ?? o.total ?? 0),
+      0
+    );
+    const bigSpenderProgress = Math.min(5000, Math.max(maxSingleOrder, totalSpend));
+
+    // Loyal fan: VIP active OR >= 3 orders OR garage >= 2 printers + >= 2 orders
+    const isVip = member?.subscriptionStatus === 'active' && member?.subscriptionPlan !== 'None';
+    const loyalCount = isVip ? 3 : Math.min(3, ordersCount + (userPrinters.length >= 2 ? 1 : 0));
+
+    // Slicer parameter wizard
+    const totalSlicerParams = Math.max(
+      Number(member?.sharedParamsCount || 0),
+      slicerUsedCount,
+      userPrinters.length
+    );
 
     return [
-      { name: '首購族', desc: '完成第一筆訂單', icon: Medal, color: 'text-amber-500', bg: 'bg-amber-100', locked: !hasOrder },
-      { name: '列印狂人', desc: '累積購買 10kg 耗材', icon: Package, color: 'text-indigo-500', bg: 'bg-indigo-100', locked: totalItems < 10 },
-      { name: '環保先鋒', desc: '購買 5 捲紙盤環保線材', icon: ShieldCheck, color: 'text-emerald-500', bg: 'bg-emerald-100', locked: !ecoPioneer },
-      { name: '夜貓列印', desc: '凌晨 0-4 點下單', icon: Clock, color: 'text-slate-400', bg: 'bg-slate-100', locked: !nightOwl },
-      { name: '評價達人', desc: '留下 3 則五星評價', icon: Star, color: 'text-yellow-500', bg: 'bg-yellow-100', locked: (member?.reviewsCount || 0) < 3 },
-      { name: '早鳥搶購', desc: '在新品上市 24 小時內購買', icon: Zap, color: 'text-orange-500', bg: 'bg-orange-100', locked: !member?.earlyBird },
-      { name: '色彩大師', desc: '購買 10 種不同顏色耗材', icon: Palette, color: 'text-pink-500', bg: 'bg-pink-100', locked: uniqueColors.size < 10 },
-      { name: '材質探險家', desc: '購買 5 種不同材質耗材', icon: Layers, color: 'text-cyan-500', bg: 'bg-cyan-100', locked: uniqueMats.size < 5 },
-      { name: '呼朋引伴', desc: '成功邀請 3 位好友下單', icon: Users, color: 'text-blue-500', bg: 'bg-blue-100', locked: (member?.referralsCount || 0) < 3 },
-      { name: '大戶人家', desc: '單筆訂單超過 $5,000', icon: CreditCard, color: 'text-rose-500', bg: 'bg-rose-100', locked: !bigSpender },
-      { name: '忠實鐵粉', desc: '連續 6 個月皆有下單', icon: Calendar, color: 'text-purple-500', bg: 'bg-purple-100', locked: !member?.loyalFan },
-      { name: '參數魔法師', desc: '分享 5 組切片參數', icon: Sliders, color: 'text-teal-500', bg: 'bg-teal-100', locked: (member?.sharedParamsCount || 0) < 5 },
+      {
+        name: '首購族',
+        desc: '完成第一筆耗材訂單',
+        icon: Medal,
+        color: 'text-amber-500',
+        bg: 'bg-amber-100',
+        current: Math.min(1, ordersCount),
+        target: 1,
+        locked: ordersCount < 1,
+      },
+      {
+        name: '列印狂人',
+        desc: '累積購買 10 捲耗材',
+        icon: Package,
+        color: 'text-indigo-500',
+        bg: 'bg-indigo-100',
+        current: Math.min(10, totalSpools),
+        target: 10,
+        locked: totalSpools < 10,
+      },
+      {
+        name: '環保先鋒',
+        desc: '累積選購或回收 5 捲環保線盤',
+        icon: ShieldCheck,
+        color: 'text-emerald-500',
+        bg: 'bg-emerald-100',
+        current: Math.min(5, ecoCount),
+        target: 5,
+        locked: ecoCount < 5,
+      },
+      {
+        name: '夜貓創客',
+        desc: '於夜間 22:00 - 05:00 下單',
+        icon: Clock,
+        color: 'text-slate-600',
+        bg: 'bg-slate-200',
+        current: Math.min(1, nightOwlCount),
+        target: 1,
+        locked: nightOwlCount < 1,
+      },
+      {
+        name: '評價達人',
+        desc: '完成 3 則商品實測評價',
+        icon: Star,
+        color: 'text-yellow-500',
+        bg: 'bg-yellow-100',
+        current: Math.min(3, totalReviews),
+        target: 3,
+        locked: totalReviews < 3,
+      },
+      {
+        name: '早鳥搶購',
+        desc: '入手高速/碳纖旗艦新品耗材',
+        icon: Zap,
+        color: 'text-orange-500',
+        bg: 'bg-orange-100',
+        current: earlyBirdDone ? 1 : 0,
+        target: 1,
+        locked: !earlyBirdDone,
+      },
+      {
+        name: '色彩大師',
+        desc: '累積體驗 5 種不同色彩線材',
+        icon: Palette,
+        color: 'text-pink-500',
+        bg: 'bg-pink-100',
+        current: Math.min(5, uniqueColors.size),
+        target: 5,
+        locked: uniqueColors.size < 5,
+      },
+      {
+        name: '材質探險家',
+        desc: '解鎖 3 種以上不同高分子材質',
+        icon: Layers,
+        color: 'text-cyan-500',
+        bg: 'bg-cyan-100',
+        current: Math.min(3, uniqueMats.size),
+        target: 3,
+        locked: uniqueMats.size < 3,
+      },
+      {
+        name: '呼朋引伴',
+        desc: '成功邀請 3 位好友註冊並下單',
+        icon: Users,
+        color: 'text-blue-500',
+        bg: 'bg-blue-100',
+        current: Math.min(3, referralsDone),
+        target: 3,
+        locked: referralsDone < 3,
+      },
+      {
+        name: '大戶人家',
+        desc: '單筆或累積消費滿 NT$5,000',
+        icon: CreditCard,
+        color: 'text-rose-500',
+        bg: 'bg-rose-100',
+        current: bigSpenderProgress,
+        target: 5000,
+        locked: bigSpenderProgress < 5000,
+      },
+      {
+        name: '忠實鐵粉',
+        desc: '累積 3 筆訂單或開通 VIP 訂閱',
+        icon: Calendar,
+        color: 'text-purple-500',
+        bg: 'bg-purple-100',
+        current: Math.min(3, loyalCount),
+        target: 3,
+        locked: loyalCount < 3,
+      },
+      {
+        name: '參數魔法師',
+        desc: '使用 AI 耗材顧問/車庫達 5 次',
+        icon: Sliders,
+        color: 'text-teal-500',
+        bg: 'bg-teal-100',
+        current: Math.min(5, totalSlicerParams),
+        target: 5,
+        locked: totalSlicerParams < 5,
+      },
     ];
-  };
+  }, [verifiedOrders, orders, member, userPrinters.length, slicerUsedCount]);
 
-  const badgesData = calcBadges();
-  
-  const badges = badgesData.map((b) => demoMaxLevel ? { ...b, locked: false } : b);
-  const unlockedCount = badges.filter(b => !b.locked).length;
+  const badges = badgesData.map((b) =>
+    demoMaxLevel ? { ...b, locked: false, current: b.target } : b
+  );
+  const unlockedCount = badges.filter((b) => !b.locked).length;
   const totalCount = badges.length;
   const progressPercent = Math.round((unlockedCount / totalCount) * 100);
 
   const milestones = [
-    { target: 3, title: '新手創客', reward: '$50 優惠券' },
-    { target: 6, title: '列印老手', reward: '$100 優惠券' },
-    { target: 9, title: '神狗勾大使', reward: '$200 優惠券' },
-    { target: 12, title: '列印大神', reward: '免運神券' },
+    { target: 3, code: 'ACHIEVE50', title: '新手創客', reward: '$50 優惠券', discount: 50 },
+    { target: 6, code: 'ACHIEVE100', title: '列印老手', reward: '$100 優惠券', discount: 100 },
+    { target: 9, code: 'ACHIEVE200', title: '神狗勾大使', reward: '$200 優惠券', discount: 200 },
+    { target: 12, code: 'ACHIEVEFREE', title: '列印大神', reward: '$300 免運神券', discount: 300 },
   ];
 
-  
-  const currentTitle = milestones.slice().reverse().find(m => unlockedCount >= m.target)?.title || '見習創客';
+  const claimedCodes: string[] = Array.isArray(member?.claimedMilestones)
+    ? member.claimedMilestones
+    : [];
+
+  const handleClaimMilestone = (m: (typeof milestones)[number]) => {
+    if (unlockedCount < m.target) return;
+    if (claimedCodes.includes(m.code)) return;
+
+    const newCoupon = {
+      id: Date.now(),
+      code: m.code,
+      name: `【${m.title}成就禮】${m.reward}`,
+      discount: m.discount,
+      expiry: '2027-12-31',
+    };
+    const nextClaimed = [...claimedCodes, m.code];
+    const nextCoupons = [...(member?.coupons || []), newCoupon];
+
+    if (setMember && member) {
+      const updated = {
+        ...member,
+        coupons: nextCoupons,
+        claimedMilestones: nextClaimed,
+      };
+      setMember(updated);
+      saveUserProfileToFirestore(updated);
+    }
+    setClaimMsg(`🎁 恭喜解鎖【${m.title}】里程碑！${m.reward} 已自動存入「我的優惠券」！`);
+    setTimeout(() => setClaimMsg(''), 3500);
+  };
+
+  const currentTitle =
+    milestones
+      .slice()
+      .reverse()
+      .find((m) => unlockedCount >= m.target)?.title || '見習創客';
 
   const isRareTitle = currentTitle === '神狗勾大使' || currentTitle === '列印大神';
 
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="創客成就徽章">
+      {claimMsg && (
+        <div className="mb-4 p-3 rounded-2xl bg-emerald-600 text-white text-xs font-bold flex items-center gap-2 shadow-md">
+          <Gift className="w-4 h-4 shrink-0" />
+          <span>{claimMsg}</span>
+        </div>
+      )}
+
       <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100 relative overflow-hidden">
         <div className="flex justify-between items-end mb-2 relative z-10">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">目前稱號</p>
-              <button onClick={() => setDemoMaxLevel(!demoMaxLevel)} className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold hover:bg-slate-300 transition-colors">
+              <button
+                onClick={() => setDemoMaxLevel(!demoMaxLevel)}
+                className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold hover:bg-slate-300 transition-colors cursor-pointer"
+              >
                 {demoMaxLevel ? '還原真實進度' : '預覽滿級稱號 ✨'}
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <span className={`text-xl font-black ${isRareTitle ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-600 animate-gold-shine drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]' : 'text-indigo-700'}`}>【{currentTitle}】</span>
-              <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">{unlockedCount} / {totalCount}</span>
+              <span
+                className={`text-xl font-black ${
+                  isRareTitle
+                    ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-600'
+                    : 'text-indigo-700'
+                }`}
+              >
+                【{currentTitle}】
+              </span>
+              <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                已解鎖 {unlockedCount} / {totalCount}
+              </span>
             </div>
           </div>
           <div className="text-right">
-            <p className="text-xs font-bold text-slate-500">進度</p>
+            <p className="text-xs font-bold text-slate-500">達成率</p>
             <p className="text-lg font-black text-slate-800">{progressPercent}%</p>
           </div>
         </div>
-        
+
         {/* Progress Bar */}
-        <div className="h-3 w-full bg-slate-200 rounded-full overflow-hidden relative z-10 mt-3 mb-1">
-          <motion.div 
-            initial={{ width: 0 }} 
-            animate={{ width: `${progressPercent}%` }} 
-            transition={{ duration: 1, ease: "easeOut" }}
+        <div className="h-3 w-full bg-slate-200 rounded-full overflow-hidden relative z-10 mt-3 mb-2">
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${progressPercent}%` }}
+            transition={{ duration: 0.8, ease: 'easeOut' }}
             className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
           />
         </div>
-        
-        {/* Milestones Markers */}
-        <div className="flex justify-between mt-2 relative z-10 px-1">
+
+        {/* Milestones Markers with Claimable Coupon Rewards */}
+        <div className="grid grid-cols-4 gap-1.5 mt-3 relative z-10">
           {milestones.map((m, i) => {
-             const reached = unlockedCount >= m.target;
-             return (
-               <div key={i} className="flex flex-col items-center">
-                 <div className={`w-1.5 h-1.5 rounded-full mb-1 ${reached ? 'bg-indigo-500' : 'bg-slate-300'}`} />
-                 <span className={`text-[10px] font-bold ${reached ? 'text-indigo-600' : 'text-slate-400'}`}>{m.target}</span>
-                 <span className={`text-[9px] mt-0.5 ${reached ? 'text-indigo-500' : 'text-slate-400'}`}>{m.title}</span>
-                 <span className="text-[8px] text-slate-400">{m.reward}</span>
-               </div>
-             );
+            const reached = unlockedCount >= m.target;
+            const claimed = claimedCodes.includes(m.code);
+            return (
+              <div
+                key={i}
+                className={`p-2 rounded-xl border text-center flex flex-col items-center ${
+                  reached ? 'bg-white border-indigo-200 shadow-2xs' : 'bg-slate-100/70 border-slate-200/60'
+                }`}
+              >
+                <span className={`text-[10px] font-black ${reached ? 'text-indigo-600' : 'text-slate-400'}`}>
+                  {m.target} 徽章・{m.title}
+                </span>
+                <span className="text-[10px] font-bold text-amber-600 mt-0.5">{m.reward}</span>
+                {reached ? (
+                  <button
+                    type="button"
+                    disabled={claimed}
+                    onClick={() => handleClaimMilestone(m)}
+                    className={`mt-1.5 px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                      claimed
+                        ? 'bg-emerald-100 text-emerald-700 cursor-default'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    }`}
+                  >
+                    {claimed ? '已領取' : '領取神券'}
+                  </button>
+                ) : (
+                  <span className="mt-1.5 text-[9px] text-slate-400">差 {m.target - unlockedCount} 個</span>
+                )}
+              </div>
+            );
           })}
         </div>
       </div>
-      
+
       <div className="grid grid-cols-2 gap-3 pb-4">
-        {badges.map((b, i) => (
-          <div key={i} className={`p-3 rounded-2xl border relative overflow-hidden transition-all duration-300 hover:shadow-md ${b.locked ? 'bg-slate-50 border-slate-100 opacity-70 grayscale' : 'bg-white border-indigo-100 shadow-sm'}`}>
-            {b.locked && <Lock className="absolute top-3 right-3 w-3 h-3 text-slate-300" />}
-            <div className={`w-10 h-10 rounded-full ${b.bg} ${b.color} flex items-center justify-center mb-2 shadow-inner`}>
-              <b.icon className="w-5 h-5" />
+        {badges.map((b, i) => {
+          const pct = Math.min(100, Math.round((b.current / b.target) * 100));
+          return (
+            <div
+              key={i}
+              className={`p-3.5 rounded-2xl border relative overflow-hidden transition-all duration-300 ${
+                b.locked
+                  ? 'bg-slate-50 border-slate-200/80 opacity-85'
+                  : 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-500/10'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div
+                  className={`w-9 h-9 rounded-full ${b.bg} ${b.color} flex items-center justify-center shadow-inner ${
+                    b.locked ? 'grayscale opacity-70' : ''
+                  }`}
+                >
+                  <b.icon className="w-4 h-4" />
+                </div>
+                <span
+                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                    b.locked ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-700'
+                  }`}
+                >
+                  {b.locked ? `${b.current}/${b.target}` : '✓ 已達成'}
+                </span>
+              </div>
+              <h4 className={`font-black text-sm mb-0.5 ${b.locked ? 'text-slate-700' : 'text-indigo-950'}`}>
+                {b.name}
+              </h4>
+              <p className="text-[10px] text-slate-500 leading-tight mb-2">{b.desc}</p>
+              <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    b.locked ? 'bg-slate-400' : 'bg-gradient-to-r from-indigo-500 to-emerald-500'
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
             </div>
-            <h4 className={`font-black text-sm mb-0.5 ${b.locked ? 'text-slate-600' : 'text-indigo-900'}`}>{b.name}</h4>
-            <p className="text-[10px] text-slate-500 leading-tight">{b.desc}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </ModalWrapper>
   );

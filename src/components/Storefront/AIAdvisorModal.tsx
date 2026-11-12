@@ -23,7 +23,8 @@ import {
   Check
 } from 'lucide-react';
 import { FilamentProduct, ColorOption, LanguageCode } from '../../types';
-import { PRINTER_PROFILES, PRINTER_BRANDS, PrinterProfile, findPrinterProfile } from '../../data/printerProfiles';
+import { PRINTER_PROFILES, PRINTER_BRANDS, PrinterProfile, findPrinterProfile, getPrintersByBrand } from '../../data/printerProfiles';
+import { computeFilamentMatchByFunction } from '../../utils/filamentFunctionEngine';
 
 interface AIAdvisorModalProps {
   isOpen: boolean;
@@ -42,9 +43,10 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
   onOpenSupportWithPrompt,
   lang = 'zh-TW',
 }) => {
-  // Selected Printer state
+  // Selected Brand & Printer state (Brand-first workflow)
+  const [selectedBrandFilter, setSelectedBrandFilter] = useState<string>('bambu');
   const [selectedPrinterId, setSelectedPrinterId] = useState<string>('bambu-x1c');
-  const [selectedBrandFilter, setSelectedBrandFilter] = useState<string>('all');
+  const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
   
   // Interactive Slider States
   // 1. 承受溫度需求 (°C): 45 ~ 115
@@ -64,6 +66,16 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
   const [recommendation, setRecommendation] = useState<any | null>(null);
   const [copiedSlicer, setCopiedSlicer] = useState(false);
 
+  const recordSlicerUsageForAchievement = () => {
+    try {
+      const prev = parseInt(localStorage.getItem('printcore_slicer_copies') || '0', 10) || 0;
+      localStorage.setItem('printcore_slicer_copies', String(prev + 1));
+      window.dispatchEvent(new CustomEvent('printcore:slicer-used', { detail: { count: prev + 1 } }));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -80,216 +92,185 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
     return findPrinterProfile(selectedPrinterId);
   }, [selectedPrinterId]);
 
-  // Filtered printers list for selector
+  // Filtered printers list for 2-stage Brand -> Model selector + search
   const visiblePrinters = useMemo(() => {
-    if (selectedBrandFilter === 'all') return PRINTER_PROFILES;
-    const brand = PRINTER_BRANDS.find(b => b.id === selectedBrandFilter);
-    return PRINTER_PROFILES.filter(p => {
-      if (brand) {
-        return p.brand.toLowerCase().includes(brand.id.toLowerCase()) ||
-               brand.name.toLowerCase().includes(p.brand.toLowerCase()) ||
-               p.id.toLowerCase().startsWith(brand.id.toLowerCase());
-      }
-      return p.brand.toLowerCase().includes(selectedBrandFilter.toLowerCase());
-    });
-  }, [selectedBrandFilter]);
+    const q = printerSearchQuery.trim().toLowerCase();
+    if (q) {
+      const matches = PRINTER_PROFILES.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.brand.toLowerCase().includes(q) ||
+          p.series.toLowerCase().includes(q) ||
+          p.id.toLowerCase().includes(q)
+      );
+      return matches.length > 0 ? matches : PRINTER_PROFILES;
+    }
+    return getPrintersByBrand(selectedBrandFilter);
+  }, [selectedBrandFilter, printerSearchQuery]);
 
   // Concise 1-line engineer note helper to prevent awkward multi-line orphan wraps
   const concisePrinterNote = useMemo(() => {
     const raw = currentPrinter.specialNotes || '';
+    if (lang === 'en') {
+      if (raw.includes('標配硬化鋼')) return 'Includes hardened steel nozzle for direct carbon fiber printing; crack top glass slightly for PLA.';
+      if (raw.includes('Unicorn') || raw.includes('獨角獸')) return 'Quick-swap Unicorn steel nozzle supports high-speed carbon fiber and engineering filaments.';
+      if (raw.includes('快拆式熱端')) return 'Quick-swap hotend with auto flow calibration delivers ultra-clean first layers on PLA & PETG.';
+      if (raw.includes('180x180')) return 'Compact, whisper-quiet desktop printer with multi-color support—ideal for everyday PLA & PETG.';
+      if (currentPrinter.enclosure === 'full') return 'Fully enclosed heated chamber suppresses warping on ABS, ASA, and engineering filaments.';
+      return 'Open-frame design excels at cooling PLA & PETG; use an enclosure tent if printing ABS.';
+    }
+    if (lang === 'ja') {
+      if (raw.includes('標配硬化鋼')) return '硬化鋼ノズル標準装備で炭素繊維もそのまま造形可能。PLA造形時は天面を少し開けて放熱してください。';
+      if (raw.includes('Unicorn') || raw.includes('獨角獸')) return '一体型ユニコーン鋼ノズル搭載、炭素繊維や高温エンプラの高速造形に対応。';
+      if (raw.includes('快拆式熱端')) return 'クイック交換ホットエンド＆自動流量補正により、PLA/PETGの1層目が非常に綺麗に仕上がります。';
+      if (raw.includes('180x180')) return '静音・省スペース設計でマルチカラー対応。日常のPLA/PETG造形に最適です。';
+      if (currentPrinter.enclosure === 'full') return 'フル密閉チャンバー構造により、ABS等の高温エンジニアリング素材の反りや割れを抑えます。';
+      return 'オープンフレーム構造で冷却効率が高くPLA/PETGに最適。高温素材は保温カバー推奨。';
+    }
     if (raw.includes('標配硬化鋼')) return '標配硬化鋼噴嘴，直印碳纖免改裝；印 PLA 建議上蓋微開散熱。';
     if (raw.includes('Unicorn') || raw.includes('獨角獸')) return '標配一體式鋼頭喉管，支援高速列印碳纖與耐溫工程耗材。';
     if (raw.includes('快拆式熱端')) return '快拆熱端搭配全自動流量補償，首層平整度與 PLA/PETG 表現極佳。';
     if (raw.includes('180x180')) return '緊湊靜音桌面機型，支援多色進料，日常列印 PLA/PETG 首選。';
     if (currentPrinter.enclosure === 'full') return '全封閉恆溫艙體設計，能有效抑制高溫工程耗材收縮與翹邊。';
     return '開放式機身散熱優異，印 PLA/PETG 表現穩定；印高溫料建議加保溫罩。';
-  }, [currentPrinter]);
+  }, [currentPrinter, lang]);
 
-  // Real-time dynamic algorithm calculating the best matching material & scores
+  // Real-time 21-material multi-variable mathematical response surface & thermodynamic slicer engine
   const liveMatch = useMemo(() => {
-    // Determine material by slider logic
-    let matchedMaterialKey: 'pla' | 'petg' | 'cf' | 'abs' | 'tpu' = 'pla';
-    let matchScore = 95;
-    let reasonShort = '';
+    return computeFilamentMatchByFunction({
+      heatResistance,
+      toughness,
+      easeOfPrint,
+      outdoorResistance,
+      surfaceFinish,
+      nozzleSize,
+      customNote,
+      printer: currentPrinter,
+      products,
+      lang,
+    });
+  }, [heatResistance, toughness, easeOfPrint, outdoorResistance, surfaceFinish, nozzleSize, customNote, currentPrinter, products, lang]);
 
-    if (toughness === 5 || surfaceFinish === 'flexible') {
-      matchedMaterialKey = 'tpu';
-      matchScore = 99;
-      reasonShort = '95A 高回彈抗撕裂軟膠，具備極佳減震緩衝與耐磨表現。';
-    } else if (heatResistance >= 90) {
-      matchedMaterialKey = 'abs';
-      matchScore = currentPrinter.enclosure === 'open' ? 82 : 98;
-      reasonShort = `玻纖強化結構耐溫突破 100°C，滿足 ${heatResistance}°C 高溫環境與抗變形需求。`;
-    } else if (toughness >= 4 || surfaceFinish === 'cf') {
-      matchedMaterialKey = 'cf';
-      matchScore = 97;
-      reasonShort = '航太級碳纖維複合配方，兼具高剛性抗拉強度與消光無層紋質感。';
-    } else if (outdoorResistance >= 4 || heatResistance >= 70) {
-      matchedMaterialKey = 'petg';
-      matchScore = 96;
-      reasonShort = '具備優異抗衝擊韌性與耐候抗 UV 特性，耐溫達 75°C 戶外不脆化。';
-    } else {
-      matchedMaterialKey = 'pla';
-      matchScore = 98;
-      reasonShort = '具備極高列印成功率與超低收縮率，完美適配 500mm/s 高速列印。';
-    }
-
-    // Material details
-    const materialData: Record<string, {
-      name: string;
-      fullName: string;
-      nozzleTemp: string;
-      bedTemp: string;
-      speed: string;
-      fan: string;
-      productMaterial: string;
-      badge: string;
-    }> = {
-      pla: {
-        name: 'High-Speed Hyper PLA',
-        fullName: '神狗勾 High-Speed Hyper PLA 500mm/s',
-        nozzleTemp: currentPrinter.maxSpeedMmS >= 400 ? '215°C - 225°C' : '205°C - 215°C',
-        bedTemp: '55°C - 60°C',
-        speed: `${Math.min(currentPrinter.maxSpeedMmS, 500)} mm/s`,
-        fan: '100%',
-        productMaterial: 'High-Speed PLA',
-        badge: '入門首選・零翹邊',
-      },
-      petg: {
-        name: 'PETG-HF 高抗衝擊耐溫線材',
-        fullName: '神狗勾 PETG-HF 高抗衝擊耐溫線材',
-        nozzleTemp: '240°C - 255°C',
-        bedTemp: '70°C - 80°C',
-        speed: `${Math.min(currentPrinter.maxSpeedMmS, 300)} mm/s`,
-        fan: '30% - 50%',
-        productMaterial: 'PETG',
-        badge: '戶外耐候・高韌性',
-      },
-      cf: {
-        name: 'PLA-CF 航太級碳纖維複合',
-        fullName: '神狗勾 PLA-CF 航太級碳纖維複合耗材',
-        nozzleTemp: currentPrinter.brand.includes('Bambu') ? '255°C - 265°C' : '230°C - 245°C',
-        bedTemp: '60°C - 65°C',
-        speed: `${Math.min(currentPrinter.maxSpeedMmS, 350)} mm/s`,
-        fan: '60% - 80%',
-        productMaterial: 'Carbon Fiber',
-        badge: '高剛性・消光無層紋',
-      },
-      abs: {
-        name: 'ABS-GF 玻璃纖維超強耐溫',
-        fullName: '神狗勾 ABS-GF 玻璃纖維超強耐溫耗材',
-        nozzleTemp: '260°C - 275°C',
-        bedTemp: '95°C - 105°C',
-        speed: `${Math.min(currentPrinter.maxSpeedMmS, 250)} mm/s`,
-        fan: '10% - 20%',
-        productMaterial: 'ABS',
-        badge: '耐溫 100°C+・工業級',
-      },
-      tpu: {
-        name: 'TPU 95A 高回彈減震彈性線',
-        fullName: '神狗勾 TPU 95A 高回彈減震彈性耗材',
-        nozzleTemp: '220°C - 235°C',
-        bedTemp: '45°C - 50°C',
-        speed: '30 - 60 mm/s',
-        fan: '100%',
-        productMaterial: 'TPU',
-        badge: '高回彈・減震抗撕裂',
-      }
-    };
-
-    // Hardware warnings & alerts
-    const alerts: string[] = [];
-    if (matchedMaterialKey === 'abs' && currentPrinter.enclosure === 'open') {
-      alerts.push(`機型提醒：${currentPrinter.name} 為開放式機身，印 ABS 建議加裝保溫罩，或改選耐溫 80°C 的 PETG-HF。`);
-    }
-    if (matchedMaterialKey === 'cf' && !currentPrinter.specialNotes.includes('標配硬化鋼')) {
-      alerts.push('噴嘴提醒：碳纖維含高硬度微粒，請確認已換裝 0.4mm 以上硬化鋼噴嘴。');
-    }
-    if (matchedMaterialKey === 'tpu' && (currentPrinter.multiColorSupport.includes('AMS') || currentPrinter.multiColorSupport.includes('ACE'))) {
-      alerts.push(`供料提醒：TPU 軟膠請勿走 ${currentPrinter.multiColorSupport.split(' ')[0]} 自動供料系統，請由機身外掛料架直接進料。`);
-    }
-
-    const selectedProduct = products.find(p => p.material === materialData[matchedMaterialKey].productMaterial) || products[0];
-
-    return {
-      materialKey: matchedMaterialKey,
-      materialInfo: materialData[matchedMaterialKey],
-      score: matchScore,
-      reason: reasonShort,
-      alerts,
-      product: selectedProduct
-    };
-  }, [heatResistance, toughness, easeOfPrint, outdoorResistance, surfaceFinish, currentPrinter, products]);
-
-  // Request Deep Gemini AI Diagnosis
+  // Request Deep Gemini AI Diagnosis (via Server-Side Gemini Endpoint)
   const handleDiagnose = async () => {
     setIsLoading(true);
-    const isStatic =
-      typeof window !== 'undefined' &&
-      (window.location.hostname.includes('goddog.space') ||
-        window.location.hostname.includes('web.app') ||
-        window.location.hostname.includes('firebaseapp.com'));
+    recordSlicerUsageForAchievement();
 
     try {
-      if (!isStatic) {
-        const res = await fetch('/api/ai/recommend-filament', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            printerModel: currentPrinter.name,
-            sliders: {
-              heatResistance,
-              toughness,
-              easeOfPrint,
-              outdoorResistance,
-              surfaceFinish,
+      const res = await fetch('/api/ai/recommend-filament', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          printerModel: currentPrinter.name,
+          printerId: currentPrinter.id,
+          sliders: {
+            heatResistance,
+            toughness,
+            easeOfPrint,
+            outdoorResistance,
+            surfaceFinish,
+          },
+          requirement:
+            customNote ||
+            `耐溫 ${heatResistance}°C、韌性 ${toughness}星、便利性 ${easeOfPrint}星、抗UV ${outdoorResistance}星`,
+          nozzleSize,
+          lang,
+          computedBaseline: {
+            materialKey: liveMatch.materialKey,
+            fullName: liveMatch.materialInfo.fullName,
+            nozzleTemp: liveMatch.materialInfo.nozzleTemp,
+            bedTemp: liveMatch.materialInfo.bedTemp,
+            speed: liveMatch.materialInfo.speed,
+            fan: liveMatch.materialInfo.fan,
+            volumetricFlow: liveMatch.materialInfo.volumetricFlow,
+            layerHeight: liveMatch.materialInfo.layerHeight,
+            retraction: liveMatch.materialInfo.retraction,
+            bedType: liveMatch.materialInfo.bedType,
+            enclosureNeeded: liveMatch.materialInfo.enclosureNeeded,
+            preferredProductId: liveMatch.materialInfo.preferredProductId,
+            score: liveMatch.score,
+          },
+        }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data && data.material) {
+          // Ensure mathematical slicer parameters stay synchronized with liveMatch physics
+          setRecommendation({
+            ...data,
+            material: liveMatch.materialInfo.fullName,
+            preferredProductId: liveMatch.materialInfo.preferredProductId,
+            slicerSettings: {
+              ...data.slicerSettings,
+              nozzleTemp: liveMatch.materialInfo.nozzleTemp,
+              bedTemp: liveMatch.materialInfo.bedTemp,
+              printSpeed: `${liveMatch.materialInfo.speed} (${liveMatch.materialInfo.volumetricFlow})`,
+              coolingFan: liveMatch.materialInfo.fan,
+              retraction: liveMatch.materialInfo.retraction,
+              bedType: liveMatch.materialInfo.bedType,
+              enclosureNeeded: liveMatch.materialInfo.enclosureNeeded,
             },
-            requirement:
-              customNote ||
-              `耐溫 ${heatResistance}°C、韌性 ${toughness}星、便利性 ${easeOfPrint}星`,
-            nozzleSize,
-          }),
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.material) {
-            setRecommendation(data);
-            return;
-          }
+          });
+          return;
         }
       }
 
-      // Client-side precision report on static hosting (goddog.space)
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      // Localized precision report (supports zh-TW, en, ja)
+      await new Promise((resolve) => setTimeout(resolve, 250));
       setRecommendation({
         material: liveMatch.materialInfo.fullName,
-        title: `適配機型：${currentPrinter.name}（相容度 ${liveMatch.score}%）`,
+        preferredProductId: liveMatch.materialInfo.preferredProductId,
+        title:
+          lang === 'en'
+            ? `Matched for ${currentPrinter.name} (${liveMatch.score}% Compatibility)`
+            : lang === 'ja'
+            ? `適合機種：${currentPrinter.name}（適合度 ${liveMatch.score}%）`
+            : `適配機型：${currentPrinter.name}（相容度 ${liveMatch.score}%）`,
         reasoning: `${liveMatch.reason}${
-          customNote ? ` 已針對「${customNote}」同步最佳化切片流量與冷卻曲線。` : ''
+          customNote
+            ? lang === 'en'
+              ? ` Flow rate (${liveMatch.materialInfo.volumetricFlow}) and cooling curves have also been tuned for "${customNote}".`
+              : lang === 'ja'
+              ? ` 「${customNote}」に合わせて体積流量（${liveMatch.materialInfo.volumetricFlow}）と冷却カーブも最適化しています。`
+              : ` 已針對「${customNote}」同步最佳化最大體積流量（${liveMatch.materialInfo.volumetricFlow}）與冷卻曲線。`
+            : ''
         }`,
         slicerSettings: {
           nozzleTemp: liveMatch.materialInfo.nozzleTemp,
           bedTemp: liveMatch.materialInfo.bedTemp,
-          printSpeed: liveMatch.materialInfo.speed,
+          printSpeed: `${liveMatch.materialInfo.speed} (${liveMatch.materialInfo.volumetricFlow})`,
           coolingFan: liveMatch.materialInfo.fan,
-          bedType: 'PEI 金鋼砂彈簧鋼板',
-          enclosureNeeded:
-            liveMatch.materialKey === 'abs' ? '建議封箱保溫 (45-55°C)' : '開放或封箱皆可',
-          retraction:
-            liveMatch.materialKey === 'tpu'
-              ? '直驅 0.8mm @ 25mm/s (關閉 Z-Hop)'
-              : '直驅 0.8mm @ 35mm/s・遠端 4.5mm',
+          bedType: liveMatch.materialInfo.bedType,
+          enclosureNeeded: liveMatch.materialInfo.enclosureNeeded,
+          retraction: liveMatch.materialInfo.retraction,
         },
-        proTips: [
-          `使用 ${nozzleSize} 噴嘴時，首層速度建議設為 30 mm/s 並關閉前 3 層風扇，確保底層抓附穩定。`,
-          ...(liveMatch.alerts.length > 0
-            ? liveMatch.alerts
+        proTips:
+          lang === 'en'
+            ? [
+                `With a ${nozzleSize} nozzle (${liveMatch.materialInfo.layerHeight}), max volumetric flow is calculated at ${liveMatch.materialInfo.volumetricFlow}; print the first layer at ${liveMatch.telemetry.firstLayerSpeedMmS} mm/s.`,
+                ...(liveMatch.alerts.length > 0
+                  ? liveMatch.alerts
+                  : [`GodDog 1kg spools (±0.02mm laser tolerance) drop straight into ${currentPrinter.name} for smooth feeding.`]),
+                'Store opened spools in a dry box or resealable foil bag with desiccant when not in use.',
+              ]
+            : lang === 'ja'
+            ? [
+                `${nozzleSize} ノズル（${liveMatch.materialInfo.layerHeight}）使用時の算出最大体積流量は ${liveMatch.materialInfo.volumetricFlow} です。1層目は ${liveMatch.telemetry.firstLayerSpeedMmS} mm/s を推奨します。`,
+                ...(liveMatch.alerts.length > 0
+                  ? liveMatch.alerts
+                  : [`神狗勾 1kg 標準スプール（公差±0.02mm）は ${currentPrinter.name} の高速給紙にそのまま対応します。`]),
+                '開封後は防湿ボックスや乾燥剤入り密封袋での保管をおすすめします。',
+              ]
             : [
-                `神狗勾 1kg 標準線盤（公差 ±0.02mm）可直接相容 ${currentPrinter.name} 高速供料。`,
-              ]),
-          '拆封後若長時間未用，建議置於防潮箱搭配乾燥劑保存。',
-        ],
+                `使用 ${nozzleSize} 噴嘴（${liveMatch.materialInfo.layerHeight}）時，函數精算最大體積流量為 ${liveMatch.materialInfo.volumetricFlow}；首層建議設為 ${liveMatch.telemetry.firstLayerSpeedMmS} mm/s。`,
+                ...(liveMatch.alerts.length > 0
+                  ? liveMatch.alerts
+                  : [
+                      `神狗勾 1kg 標準線盤（公差 ±0.02mm）可直接相容 ${currentPrinter.name} 高速供料。`,
+                    ]),
+                '拆封後若長時間未用，建議置於防潮箱搭配乾燥劑保存。',
+              ],
       });
     } catch (e) {
       console.error(e);
@@ -298,15 +279,13 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
     }
   };
 
-  // Find product matching AI recommendation or fallback to live matched product
+  // Exact product matched by the 21-material function engine
   const finalMatchedProduct = useMemo(() => {
-    if (!recommendation) return liveMatch.product;
-    const recMat = (recommendation.material || '').toLowerCase();
-    if (recMat.includes('cf') || recMat.includes('碳纖維')) return products.find(p => p.material === 'Carbon Fiber') || products[0];
-    if (recMat.includes('petg')) return products.find(p => p.material === 'PETG') || products[0];
-    if (recMat.includes('tpu') || recMat.includes('彈性')) return products.find(p => p.material === 'TPU') || products[0];
-    if (recMat.includes('abs')) return products.find(p => p.material === 'ABS') || products[0];
-    return products.find(p => p.material === 'High-Speed PLA') || products[0];
+    if (recommendation?.preferredProductId) {
+      const byId = products.find((p) => p.id === recommendation.preferredProductId);
+      if (byId) return byId;
+    }
+    return liveMatch.product;
   }, [recommendation, liveMatch.product, products]);
 
   if (!isOpen) return null;
@@ -350,10 +329,10 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
               </div>
               <p className="text-[11px] sm:text-xs text-indigo-200/90 mt-0.5 truncate">
                 {lang === 'en'
-                  ? 'Select printer & sliders to compute ideal filament and slicer settings.'
+                  ? 'Select printer brand & model to compute ideal filament and slicer settings.'
                   : lang === 'ja'
-                  ? '機種と指標から最適なフィラメントとスライス設定を即時算出。'
-                  : '依印表機型與性能指標，即時精算最佳線材與切片參數'}
+                  ? 'メーカーと機種を選択し、最適なフィラメントとスライス設定を即時算出。'
+                  : '先選品牌再選機型（含 SparkX i8 / H3C / K3 / Infimech 等全機型），即時精算切片參數'}
               </p>
             </div>
           </div>
@@ -363,80 +342,153 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
         <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 max-h-[82vh] overflow-y-auto">
           {!recommendation ? (
             <div className="space-y-4 sm:space-y-5">
-              {/* SECTION 1: 3D PRINTER MODEL SELECTOR */}
+              {/* SECTION 1: TWO-STAGE 3D PRINTER SELECTOR (1. BRAND -> 2. MODEL) */}
               <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
                     <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
-                    <span>{lang === 'en' ? '1. Select 3D Printer' : lang === 'ja' ? '1. プリンター機種' : '1. 選擇 3D 印表機型號'}</span>
+                    <span>
+                      {lang === 'en'
+                        ? '1. Select Printer Brand & Model'
+                        : lang === 'ja'
+                        ? '1. メーカーと機種を選択'
+                        : '1. 先選品牌・再選 3D 印表機型號'}
+                    </span>
                   </label>
-                  <span className="text-[11px] text-slate-400 font-semibold whitespace-nowrap">
-                    收錄 {PRINTER_PROFILES.length} 款主流機型
+                  <span className="text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+                    完整收錄 {PRINTER_BRANDS.length} 大廠牌・{PRINTER_PROFILES.length} 款機型系譜
                   </span>
                 </div>
 
-                {/* Brand quick filter pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px] scrollbar-none">
+                {/* Fast keyword search input for instant model lookup */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={printerSearchQuery}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrinterSearchQuery(val);
+                      if (val.trim()) {
+                        const matched = findPrinterProfile(val);
+                        if (matched) {
+                          setSelectedPrinterId(matched.id);
+                          setSelectedBrandFilter(matched.brandId);
+                        }
+                      }
+                    }}
+                    placeholder="🔍 快速搜尋機型關鍵字（例如：SparkX i8、H3C、K3、K2、Infimech MX Pro、Ender-3、Plus 4...）"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                  />
+                  {printerSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setPrinterSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded font-bold cursor-pointer"
+                    >
+                      清除
+                    </button>
+                  )}
+                </div>
+
+                {/* Two-stage Brand -> Model Dropdowns + Brand Quick Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-none">
                   <button
                     type="button"
-                    onClick={() => setSelectedBrandFilter('all')}
+                    onClick={() => {
+                      setPrinterSearchQuery('');
+                      setSelectedBrandFilter('all');
+                    }}
                     className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap text-xs shrink-0 ${
-                      selectedBrandFilter === 'all'
+                      selectedBrandFilter === 'all' && !printerSearchQuery
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                     }`}
                   >
-                    {lang === 'en' ? `All (${PRINTER_PROFILES.length})` : lang === 'ja' ? `全て (${PRINTER_PROFILES.length})` : `全部 (${PRINTER_PROFILES.length})`}
+                    全部品牌 ({PRINTER_PROFILES.length})
                   </button>
-                  {PRINTER_BRANDS.map(b => {
-                    const count = PRINTER_PROFILES.filter(p => 
-                      p.brand.toLowerCase().includes(b.id.toLowerCase()) ||
-                      b.name.toLowerCase().includes(p.brand.toLowerCase()) ||
-                      p.id.toLowerCase().startsWith(b.id.toLowerCase())
-                    ).length;
+                  {PRINTER_BRANDS.map((b) => {
+                    const count = getPrintersByBrand(b.id).length;
                     return (
                       <button
                         key={b.id}
                         type="button"
                         onClick={() => {
+                          setPrinterSearchQuery('');
                           setSelectedBrandFilter(b.id);
-                          const matching = PRINTER_PROFILES.filter(p => 
-                            p.brand.toLowerCase().includes(b.id.toLowerCase()) ||
-                            b.name.toLowerCase().includes(p.brand.toLowerCase()) ||
-                            p.id.toLowerCase().startsWith(b.id.toLowerCase())
-                          );
-                          if (matching.length > 0 && !matching.some(m => m.id === selectedPrinterId)) {
+                          const matching = getPrintersByBrand(b.id);
+                          if (matching.length > 0 && !matching.some((m) => m.id === selectedPrinterId)) {
                             setSelectedPrinterId(matching[0].id);
                           }
                         }}
                         className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap text-xs flex items-center gap-1 shrink-0 ${
-                          selectedBrandFilter === b.id
+                          selectedBrandFilter === b.id && !printerSearchQuery
                             ? 'bg-indigo-600 text-white shadow-xs'
                             : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                         }`}
                       >
                         <span>{b.icon}</span>
-                        <span>{b.name.split(' ')[0]}</span>
+                        <span>{b.shortName}</span>
                         <span className="opacity-70 text-[10px]">({count})</span>
                       </button>
                     );
                   })}
                 </div>
 
-                {/* Deduplicated Printer Select Dropdown */}
-                <div className="relative">
-                  <select
-                    value={selectedPrinterId}
-                    onChange={(e) => setSelectedPrinterId(e.target.value)}
-                    className="w-full pl-3.5 pr-9 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none cursor-pointer shadow-2xs truncate"
-                  >
-                    {visiblePrinters.map((printer) => (
-                      <option key={printer.id} value={printer.id}>
-                        {printer.name}（{printer.type}・{printer.enclosure === 'full' ? '全封箱' : '開放式'}）
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                {/* Step 1 (Brand Dropdown) & Step 2 (Model Dropdown) */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                  <div className="sm:col-span-5 relative">
+                    <div className="text-[10px] font-bold text-slate-500 mb-1">步驟一：選擇廠牌</div>
+                    <div className="relative">
+                      <select
+                        value={selectedBrandFilter}
+                        onChange={(e) => {
+                          const newBrand = e.target.value;
+                          setPrinterSearchQuery('');
+                          setSelectedBrandFilter(newBrand);
+                          const matching = getPrintersByBrand(newBrand);
+                          if (matching.length > 0) {
+                            setSelectedPrinterId(matching[0].id);
+                          }
+                        }}
+                        className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none cursor-pointer shadow-2xs truncate"
+                      >
+                        <option value="all">🌐 顯示全部廠牌 ({PRINTER_PROFILES.length} 款)</option>
+                        {PRINTER_BRANDS.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.icon} {b.name} ({getPrintersByBrand(b.id).length} 款)
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-7 relative">
+                    <div className="text-[10px] font-bold text-slate-500 mb-1">
+                      步驟二：選擇機型系列（共 {visiblePrinters.length} 款可選）
+                    </div>
+                    <div className="relative">
+                      <select
+                        value={selectedPrinterId}
+                        onChange={(e) => {
+                          const newId = e.target.value;
+                          setSelectedPrinterId(newId);
+                          const prof = findPrinterProfile(newId);
+                          if (prof && selectedBrandFilter !== 'all') {
+                            setSelectedBrandFilter(prof.brandId);
+                          }
+                        }}
+                        className="w-full pl-3.5 pr-9 py-2.5 bg-white border border-indigo-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none cursor-pointer shadow-2xs truncate"
+                      >
+                        {visiblePrinters.map((printer) => (
+                          <option key={printer.id} value={printer.id}>
+                            {printer.name}（{printer.type}・{printer.enclosure === 'full' ? '全封箱' : printer.enclosure === 'optional' ? '可選封箱' : '開放式'}・{printer.maxSpeedMmS}mm/s）
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-4 h-4 text-indigo-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Selected Printer Specs Bar - Balanced 4-pill Grid + Single-line Note */}
@@ -495,7 +547,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                   </span>
                 </div>
 
-                {/* Quick project archetype preset buttons - Concise 4-char labels */}
+                {/* Quick project archetype preset buttons - 8 Calibrated Regimes */}
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
                   <button
                     type="button"
@@ -505,6 +557,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       setEaseOfPrint(5);
                       setOutdoorResistance(1);
                       setSurfaceFinish('standard');
+                      setCustomNote('');
                     }}
                     className="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
                   >
@@ -514,44 +567,92 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setHeatResistance(70);
+                      setHeatResistance(55);
+                      setToughness(2);
+                      setEaseOfPrint(5);
+                      setOutdoorResistance(1);
+                      setSurfaceFinish('matte');
+                      setCustomNote('');
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-[11px] border border-emerald-200 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
+                  >
+                    <span>🎨</span>
+                    <span>消光美學</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHeatResistance(55);
+                      setToughness(3);
+                      setEaseOfPrint(4);
+                      setOutdoorResistance(1);
+                      setSurfaceFinish('standard');
+                      setCustomNote('');
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 font-bold text-[11px] border border-teal-200 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
+                  >
+                    <span>⚙️</span>
+                    <span>抗裂卡扣</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHeatResistance(75);
                       setToughness(3);
                       setEaseOfPrint(4);
                       setOutdoorResistance(3);
                       setSurfaceFinish('standard');
+                      setCustomNote('');
                     }}
                     className="px-2.5 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-[11px] border border-sky-200 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
                   >
-                    <span>⚙️</span>
-                    <span>機構卡扣</span>
+                    <span>🛡️</span>
+                    <span>耐候機構</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setHeatResistance(85);
-                      setToughness(4);
+                      setHeatResistance(90);
+                      setToughness(3);
                       setEaseOfPrint(3);
                       setOutdoorResistance(5);
-                      setSurfaceFinish('matte');
+                      setSurfaceFinish('standard');
+                      setCustomNote('');
                     }}
                     className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-[11px] border border-amber-200 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
                   >
                     <span>☀️</span>
-                    <span>戶外耐候</span>
+                    <span>戶外抗UV</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setHeatResistance(105);
+                      setHeatResistance(80);
+                      setToughness(4);
+                      setEaseOfPrint(3);
+                      setOutdoorResistance(3);
+                      setSurfaceFinish('cf');
+                      setCustomNote('');
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-300 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
+                  >
+                    <span>🔩</span>
+                    <span>航太碳纖</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHeatResistance(110);
                       setToughness(4);
                       setEaseOfPrint(2);
-                      setOutdoorResistance(4);
+                      setOutdoorResistance(3);
                       setSurfaceFinish('cf');
+                      setCustomNote('');
                     }}
                     className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-[11px] border border-rose-200 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
                   >
-                    <span>🏎️</span>
-                    <span>高溫碳纖</span>
+                    <span>🔥</span>
+                    <span>工業耐溫</span>
                   </button>
                   <button
                     type="button"
@@ -561,6 +662,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       setEaseOfPrint(3);
                       setOutdoorResistance(2);
                       setSurfaceFinish('flexible');
+                      setCustomNote('');
                     }}
                     className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 font-bold text-[11px] border border-purple-200 shrink-0 cursor-pointer transition-all active:scale-95 whitespace-nowrap flex items-center gap-1"
                   >
@@ -580,16 +682,19 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] whitespace-nowrap ${
-                          heatResistance >= 95
+                          heatResistance >= 100
                             ? 'bg-rose-100 text-rose-800'
-                            : heatResistance >= 75
+                            : heatResistance >= 85
+                            ? 'bg-orange-100 text-orange-800'
+                            : heatResistance >= 70
                             ? 'bg-amber-100 text-amber-800'
                             : 'bg-emerald-100 text-emerald-800'
                         }`}>
-                          {heatResistance <= 55 && '室內常溫 (PLA)'}
-                          {heatResistance > 55 && heatResistance <= 75 && '日常耐溫 (PETG)'}
-                          {heatResistance > 75 && heatResistance < 95 && '車內防曬 (PETG/ABS)'}
-                          {heatResistance >= 95 && '工業高溫 (ABS-GF)'}
+                          {heatResistance <= 55 && '室內常溫 (PLA/PLA+)'}
+                          {heatResistance > 55 && heatResistance <= 70 && '溫熱耐受 (PLA-CF/PETG)'}
+                          {heatResistance > 70 && heatResistance < 85 && '車內防曬 (PETG/PETG-CF)'}
+                          {heatResistance >= 85 && heatResistance < 100 && '耐高溫 (ASA/ABS-GF)'}
+                          {heatResistance >= 100 && '航太耐溫 (PC/PA-CF)'}
                         </span>
                         <span className="font-mono font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
                           {heatResistance}°C
@@ -603,13 +708,19 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       max={115}
                       step={5}
                       value={heatResistance}
-                      onChange={(e) => setHeatResistance(Number(e.target.value))}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setHeatResistance(val);
+                        if (val >= 75 && surfaceFinish === 'flexible') {
+                          setSurfaceFinish('standard');
+                        }
+                      }}
                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                     />
 
                     <div className="flex justify-between items-center text-[10px] font-medium text-slate-400">
                       <span>45°C 室內常溫</span>
-                      <span>115°C 工業高溫</span>
+                      <span>115°C 航太耐溫</span>
                     </div>
                   </div>
 
@@ -623,10 +734,10 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-bold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-full whitespace-nowrap">
                           {toughness === 1 && '靜態公仔擺件'}
-                          {toughness === 2 && '日常桌面收納'}
+                          {toughness === 2 && '日常外殼收納'}
                           {toughness === 3 && '耐摔機構卡扣'}
-                          {toughness === 4 && '高剛性抗拉 (CF)'}
-                          {toughness === 5 && '高回彈防撞 (TPU)'}
+                          {toughness === 4 && '高剛性承重 (CF/GF)'}
+                          {toughness === 5 && (surfaceFinish === 'flexible' ? '高回彈防撞 (TPU)' : '極限抗衝擊 (PC/PA)')}
                         </span>
                         <span className="font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
                           Lv.{toughness}/5
@@ -640,13 +751,19 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       max={5}
                       step={1}
                       value={toughness}
-                      onChange={(e) => setToughness(Number(e.target.value))}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setToughness(val);
+                        if (val < 3 && surfaceFinish === 'cf') {
+                          setSurfaceFinish('standard');
+                        }
+                      }}
                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                     />
 
                     <div className="flex justify-between items-center text-[10px] font-medium text-slate-400">
                       <span>Lv.1 精細擺件</span>
-                      <span>Lv.5 橡膠回彈</span>
+                      <span>Lv.5 極限抗衝擊</span>
                     </div>
                   </div>
 
@@ -659,10 +776,11 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-full whitespace-nowrap">
-                          {easeOfPrint <= 2 && '需封箱控溫 (ABS)'}
-                          {easeOfPrint === 3 && '需硬化噴嘴/防潮'}
-                          {easeOfPrint === 4 && '標準通用好印'}
-                          {easeOfPrint === 5 && '免封箱零翹邊'}
+                          {easeOfPrint === 1 && '專業工程控溫 (PC/PA)'}
+                          {easeOfPrint === 2 && '需封箱保溫 (ABS/ASA)'}
+                          {easeOfPrint === 3 && '進階調參/硬化鋼嘴'}
+                          {easeOfPrint === 4 && '標準穩定好印'}
+                          {easeOfPrint === 5 && '免封箱零翹邊直印'}
                         </span>
                         <span className="font-mono font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
                           {easeOfPrint}★
@@ -676,12 +794,15 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       max={5}
                       step={1}
                       value={easeOfPrint}
-                      onChange={(e) => setEaseOfPrint(Number(e.target.value))}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setEaseOfPrint(val);
+                      }}
                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
                     />
 
                     <div className="flex justify-between items-center text-[10px] font-medium text-slate-400">
-                      <span>1★ 專業控溫</span>
+                      <span>1★ 工程高階</span>
                       <span>5★ 新手直印</span>
                     </div>
                   </div>
@@ -695,9 +816,10 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-bold text-cyan-800 bg-cyan-100/70 px-2 py-0.5 rounded-full whitespace-nowrap">
-                          {outdoorResistance <= 2 && '室內乾燥擺放'}
-                          {outdoorResistance === 3 && '陽台防潮耐濕'}
-                          {outdoorResistance >= 4 && '戶外暴曬抗老化'}
+                          {outdoorResistance <= 2 && '室內乾燥環境'}
+                          {outdoorResistance === 3 && '半戶外防潮耐水'}
+                          {outdoorResistance === 4 && '戶外耐候抗紫外線'}
+                          {outdoorResistance === 5 && '全天候暴曬 (ASA/PETG)'}
                         </span>
                         <span className="font-mono font-black text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md text-xs whitespace-nowrap">
                           Lv.{outdoorResistance}/5
@@ -711,13 +833,16 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       max={5}
                       step={1}
                       value={outdoorResistance}
-                      onChange={(e) => setOutdoorResistance(Number(e.target.value))}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setOutdoorResistance(val);
+                      }}
                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
                     />
 
                     <div className="flex justify-between items-center text-[10px] font-medium text-slate-400">
                       <span>Lv.1 室內乾燥</span>
-                      <span>Lv.5 戶外日曬</span>
+                      <span>Lv.5 全年日曬</span>
                     </div>
                   </div>
                 </div>
@@ -737,7 +862,15 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => setSurfaceFinish(item.id as any)}
+                        onClick={() => {
+                          setSurfaceFinish(item.id as any);
+                          if (item.id === 'flexible') {
+                            if (toughness < 4) setToughness(5);
+                            if (heatResistance > 70) setHeatResistance(60);
+                          } else if (item.id === 'cf' && toughness < 3) {
+                            setToughness(4);
+                          }
+                        }}
                         className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                           surfaceFinish === item.id
                             ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 font-bold ring-2 ring-indigo-500/20'
@@ -752,7 +885,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                 </div>
               </div>
 
-              {/* REAL-TIME LIVE MATCH PREVIEW CARD (Praised Design - Polished Single-Line Typography) */}
+              {/* REAL-TIME LIVE MATCH PREVIEW CARD (6-Parameter Slicer Telemetry Grid) */}
               <div className="p-4 sm:p-5 bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 text-white rounded-2xl border border-indigo-500/30 shadow-xl space-y-3.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300 whitespace-nowrap">
@@ -790,23 +923,41 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                   </div>
                 </div>
 
-                {/* Instant Slicer Parameters Preview */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                {/* Instant 6-Cell Slicer Parameters Preview */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">噴嘴擠出溫度</div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                      {currentPrinter.type === 'Resin' ? 'UV 曝光時間' : '噴嘴擠出溫度'}
+                    </div>
                     <div className="font-mono font-bold text-amber-300 mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.nozzleTemp}</div>
                   </div>
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">熱床溫度設定</div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                      {currentPrinter.type === 'Resin' ? '底層曝光設定' : '熱床溫度設定'}
+                    </div>
                     <div className="font-mono font-bold text-amber-300 mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.bedTemp}</div>
                   </div>
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">適配列印速度</div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                      {currentPrinter.type === 'Resin' ? 'Z 軸抬升速度' : '適配列印速度'}
+                    </div>
                     <div className="font-mono font-bold text-cyan-300 mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.speed}</div>
                   </div>
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">模型冷卻風扇</div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                      {currentPrinter.type === 'Resin' ? '樹脂槽環境溫' : '模型冷卻風扇'}
+                    </div>
                     <div className="font-mono font-bold text-white mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.fan}</div>
+                  </div>
+                  <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">最大體積流量 Q</div>
+                    <div className="font-mono font-bold text-emerald-300 mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.volumetricFlow}</div>
+                  </div>
+                  <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">建議層高 / 回抽</div>
+                    <div className="font-mono font-bold text-indigo-200 mt-0.5 truncate" title={`${liveMatch.materialInfo.layerHeight} · ${liveMatch.materialInfo.retraction}`}>
+                      {liveMatch.materialInfo.layerHeight}
+                    </div>
                   </div>
                 </div>
 
@@ -818,15 +969,21 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const text = `【${currentPrinter.name}】${liveMatch.materialInfo.name} 推薦切片參數：
-- 耗材材質: ${liveMatch.materialInfo.name}
+                      const text = `【${currentPrinter.name}】${liveMatch.materialInfo.fullName} 推薦切片參數：
+- 耗材材質: ${liveMatch.materialInfo.fullName}
 - 噴嘴擠出溫度: ${liveMatch.materialInfo.nozzleTemp}
 - 熱床溫度: ${liveMatch.materialInfo.bedTemp}
 - 推薦速度: ${liveMatch.materialInfo.speed}
+- 最大體積流量: ${liveMatch.materialInfo.volumetricFlow}
+- 建議層高與線寬: ${liveMatch.materialInfo.layerHeight}
 - 風扇散熱: ${liveMatch.materialInfo.fan}
+- 回抽設定: ${liveMatch.materialInfo.retraction}
+- 推薦熱床板: ${liveMatch.materialInfo.bedType}
+- 機箱環境: ${liveMatch.materialInfo.enclosureNeeded}
 - 建議噴嘴: ${nozzleSize}
 - 機型支援: ${currentPrinter.name} (噴嘴上限: ${currentPrinter.maxNozzleTemp}°C, 熱床上限: ${currentPrinter.maxBedTemp}°C)`;
                       navigator.clipboard.writeText(text);
+                      recordSlicerUsageForAchievement();
                       setCopiedSlicer(true);
                       setTimeout(() => setCopiedSlicer(false), 2000);
                     }}

@@ -22,8 +22,9 @@ interface ProductCardProps {
 }
 
 // 提取商品核心功能特色特點（自動過濾掉任何跟顏色有關的字眼，聚焦純性能與工藝優勢）
-function getProductFeatureHighlights(product: FilamentProduct): { primary: string; secondary?: string } {
+function getProductFeatureHighlights(product: FilamentProduct, lang: LanguageCode): { primary: string; secondary?: string } {
   const isColorOrStoreWord = (text: string) => {
+    if (lang !== 'zh-TW') return false;
     return /色|莫蘭迪|黑|白|紅|藍|綠|灰|黃|橙|金|銀|紫|粉|透明|神狗勾|多色/i.test(text);
   };
 
@@ -34,6 +35,7 @@ function getProductFeatureHighlights(product: FilamentProduct): { primary: strin
           .replace(/神狗勾\s*/g, '')
           .replace(/^[✓✔・-]\s*/, '')
           .replace(/，.*$/, '')
+          .replace(/、.*$/, '')
           .trim()
       )
       .filter((f) => f.length > 0 && !isColorOrStoreWord(f));
@@ -47,16 +49,21 @@ function getProductFeatureHighlights(product: FilamentProduct): { primary: strin
   }
 
   // Fallback 核心性能參數（絕不顯示顏色）
+  const speedPrefix = lang === 'en' ? 'Speed ' : lang === 'ja' ? '造形速度 ' : '列印速度 ';
+  const tempPrefix = lang === 'en' ? 'Nozzle ' : lang === 'ja' ? 'ノズル温度 ' : '噴嘴溫度 ';
+  const defaultPrimary = lang === 'en' ? 'High-Precision Extrusion' : lang === 'ja' ? '高精度・安定吐出' : '高精度穩定出料';
+  const defaultSecondary = lang === 'en' ? 'Quality Assured' : lang === 'ja' ? '品質保証' : '品質保證';
+
   const primary = product.maxSpeed
-    ? `列印速度 ${product.maxSpeed}`
+    ? `${speedPrefix}${product.maxSpeed}`
     : product.nozzleTemp
-    ? `噴嘴溫度 ${product.nozzleTemp}`
-    : '高精度穩定出料';
+    ? `${tempPrefix}${product.nozzleTemp}`
+    : defaultPrimary;
 
   const secondary =
     product.spoolType && !product.spoolType.includes('色')
       ? product.spoolType
-      : product.weight || '品質保證';
+      : product.weight || defaultSecondary;
 
   return { primary, secondary };
 }
@@ -77,10 +84,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const liveProduct = useMemo(() => translateProduct(product, lang), [product, lang]);
 
   const availableColors: ColorOption[] = useMemo(() => {
+    const fallbackName = lang === 'en' ? 'Standard Spec' : lang === 'ja' ? '標準仕様' : '標準規格';
     return liveProduct.colors && liveProduct.colors.length > 0
       ? liveProduct.colors
-      : [{ name: '標準規格', hex: '#1e293b', stock: 10 }];
-  }, [liveProduct.colors]);
+      : [{ name: fallbackName, hex: '#1e293b', stock: 10 }];
+  }, [liveProduct.colors, lang]);
 
   const [pickedColor, setPickedColor] = useState<ColorOption>(availableColors[0]);
   const [pickedQty, setPickedQty] = useState<number>(1);
@@ -92,24 +100,30 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   // 清理品牌顯示：完整且精煉的品牌名稱，絕不出現「...」截斷
   const cleanBrand = useMemo(() => {
     const b = (liveProduct.brand || '').trim();
-    if (!b || b === '神狗勾' || b.includes('神狗勾')) {
-      return liveProduct.material ? `${liveProduct.material}` : '專業耗材';
+    if (!b || b === '神狗勾' || b.includes('神狗勾') || b === 'GodDog') {
+      return liveProduct.material
+        ? `${liveProduct.material}`
+        : lang === 'en'
+        ? 'Pro Filament'
+        : lang === 'ja'
+        ? 'プロ用素材'
+        : '專業耗材';
     }
     const normalized = b
       .replace(/\s*(pro|官方驗證|工業級|\/\s*嚴選|規格)/gi, '')
       .replace('Bambu / Polymaker', 'Bambu Lab')
-      .replace('Bambu / eSUN', 'eSUN 易生')
+      .replace('Bambu / eSUN', lang === 'zh-TW' ? 'eSUN 易生' : 'eSUN')
       .replace('Polymaker / eSUN', 'Polymaker')
       .trim();
 
-    if (/bambu\s*lab\s*拓竹/i.test(normalized)) {
-      return lang === 'en' ? 'Bambu Lab' : 'Bambu 拓竹';
+    if (/bambu\s*lab\s*拓竹|bambu\s*lab/i.test(normalized)) {
+      return lang === 'zh-TW' ? 'Bambu 拓竹' : 'Bambu Lab';
     }
-    if (/esun\s*易生/i.test(normalized)) {
-      return lang === 'en' ? 'eSUN' : 'eSUN 易生';
+    if (/esun\s*易生|^esun$/i.test(normalized)) {
+      return lang === 'zh-TW' ? 'eSUN 易生' : 'eSUN';
     }
-    if (/sunlu\s*三綠/i.test(normalized)) {
-      return lang === 'en' ? 'SUNLU' : 'SUNLU 三綠';
+    if (/sunlu\s*三綠|^sunlu$/i.test(normalized)) {
+      return lang === 'zh-TW' ? 'SUNLU 三綠' : 'SUNLU';
     }
     return normalized;
   }, [liveProduct.brand, liveProduct.material, lang]);
@@ -132,9 +146,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   }, [liveProduct.name]);
 
   const showDiameter = useMemo(() => {
-    const mat = (liveProduct.material || '').toLowerCase();
+    const mat = (product.material || '').toLowerCase();
     return Boolean(liveProduct.diameter) && mat !== 'accessories' && mat !== 'resin';
-  }, [liveProduct.diameter, liveProduct.material]);
+  }, [liveProduct.diameter, product.material]);
 
   // 點擊購物車按鈕：開啟下半部從下往上彈出的顏色與數量選擇小彈窗
   const handleOpenColorSheet = (e: React.MouseEvent) => {
@@ -153,10 +167,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setTimeout(() => setIsAddedAnimation(false), 1200);
   };
 
-  const featureHighlights = useMemo(() => getProductFeatureHighlights(liveProduct), [liveProduct]);
+  const featureHighlights = useMemo(() => getProductFeatureHighlights(liveProduct, lang), [liveProduct, lang]);
   const activeImageUrl = useMemo(() => {
-    return getSafeProductImageUrl(liveProduct.imageUrl, liveProduct.material, liveProduct.name);
-  }, [liveProduct.imageUrl, liveProduct.material, liveProduct.name]);
+    return getSafeProductImageUrl(liveProduct.imageUrl, product.material, product.name);
+  }, [liveProduct.imageUrl, product.material, product.name]);
+
+  const stockLabel = useMemo(() => {
+    if (liveProduct.stock <= 0) {
+      return lang === 'en' ? 'Restocking' : lang === 'ja' ? '入荷待ち' : '補貨中';
+    }
+    if (liveProduct.stock < 15) {
+      return lang === 'en' ? 'Low Stock' : lang === 'ja' ? '残りわずか' : '少量';
+    }
+    return lang === 'en' ? 'In Stock' : lang === 'ja' ? '在庫あり' : '現貨';
+  }, [liveProduct.stock, lang]);
 
   return (
     <div
@@ -178,7 +202,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               onViewDetail(liveProduct);
             }}
             className="w-7 h-7 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
-            title="查看詳情"
+            title={lang === 'en' ? 'Quick View' : lang === 'ja' ? '詳細を見る' : '查看詳情'}
           >
             <Eye className="w-3.5 h-3.5" />
           </button>
@@ -192,7 +216,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   ? 'bg-indigo-600 text-white'
                   : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600'
               }`}
-              title={isCompared ? '已在對比' : '加入對比'}
+              title={
+                isCompared
+                  ? lang === 'en'
+                    ? 'Comparing'
+                    : lang === 'ja'
+                    ? '比較中'
+                    : '已在對比'
+                  : lang === 'en'
+                  ? 'Compare'
+                  : lang === 'ja'
+                  ? '比較に追加'
+                  : '加入對比'
+              }
             >
               <Scale className="w-3.5 h-3.5" />
             </button>
@@ -207,7 +243,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-600'
                   : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-500 dark:text-slate-400 hover:text-rose-500'
               }`}
-              title={isWishlisted ? '從收藏移除' : '收藏'}
+              title={
+                isWishlisted
+                  ? lang === 'en'
+                    ? 'Remove Wishlist'
+                    : lang === 'ja'
+                    ? 'お気に入り解除'
+                    : '從收藏移除'
+                  : lang === 'en'
+                  ? 'Wishlist'
+                  : lang === 'ja'
+                  ? 'お気に入り'
+                  : '收藏'
+              }
             >
               <Heart className={`w-3.5 h-3.5 ${isWishlisted ? 'fill-rose-500 text-rose-500' : ''}`} />
             </button>
@@ -224,7 +272,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             loading="eager"
             fetchPriority="high"
             decoding="async"
-            onError={(e) => handleProductImageError(e, liveProduct.material, liveProduct.name)}
+            onError={(e) => handleProductImageError(e, product.material, product.name)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-400">
@@ -249,7 +297,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               )}
             </div>
             <span className="text-[10px] text-emerald-600 dark:text-emerald-400 shrink-0 font-semibold whitespace-nowrap">
-              {liveProduct.stock > 0 ? (liveProduct.stock < 15 ? '少量' : '現貨') : '補貨中'}
+              {stockLabel}
             </span>
           </div>
 
@@ -271,7 +319,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </div>
         </div>
 
-        {/* 第 4 列：價格與快速加入購物車（點擊彈出底部選色小視窗） */}
+        {/* 第 4 列：價格與快速加入購物車（固定按鈕寬度，防止動畫改變文字長度而推擠旁邊價格） */}
         <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1.5 mt-auto">
           <div className="flex items-baseline gap-1 min-w-0 flex-wrap">
             <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white font-mono tracking-tight">
@@ -284,7 +332,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             type="button"
             onClick={handleOpenColorSheet}
             disabled={liveProduct.stock <= 0}
-            className={`py-1.5 px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0 ${
+            className={`h-8 min-w-[36px] xs:min-w-[68px] sm:min-w-[74px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-colors duration-200 cursor-pointer whitespace-nowrap shrink-0 ${
               liveProduct.stock <= 0
                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                 : isAddedAnimation
@@ -296,26 +344,30 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             {isAddedAnimation ? (
               <>
                 <Check className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden xs:inline">已加入</span>
+                <span className="hidden xs:inline">
+                  {lang === 'en' ? 'Added' : lang === 'ja' ? '追加済' : '已加'}
+                </span>
               </>
             ) : liveProduct.stock <= 0 ? (
               <span>{t.outOfStock}</span>
             ) : (
               <>
                 <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden xs:inline">加入</span>
+                <span className="hidden xs:inline">
+                  {lang === 'en' ? 'Add' : lang === 'ja' ? '追加' : '加入'}
+                </span>
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* 底部向上彈出：加入購物車前選擇顏色與數量的小彈窗 (Bottom Sheet) */}
+      {/* 底部向上彈出：加入購物車前選擇顏色與數量的小彈窗 (Bottom Sheet - z-[75]) */}
       {isColorSheetOpen &&
         typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="fixed inset-0 z-[80] bg-slate-900/55 backdrop-blur-xs flex items-end justify-center animate-fade-in select-none"
+            className="fixed inset-0 z-[75] bg-slate-900/55 backdrop-blur-xs flex items-end justify-center animate-fade-in select-none"
             onClick={(e) => {
               e.stopPropagation();
               setIsColorSheetOpen(false);
@@ -336,7 +388,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       src={activeImageUrl}
                       alt={cleanTitle}
                       className="w-14 h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-50"
-                      onError={(e) => handleProductImageError(e, liveProduct.material, liveProduct.name)}
+                      onError={(e) => handleProductImageError(e, product.material, product.name)}
                     />
                   ) : (
                     <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
@@ -356,7 +408,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       {cleanTitle}
                     </h4>
                     <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                      <span>已選：</span>
+                      <span>{lang === 'en' ? 'Selected:' : lang === 'ja' ? '選択中：' : '已選：'}</span>
                       <span
                         className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
                         style={{ backgroundColor: pickedColor.hex }}
@@ -384,11 +436,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <div className="p-4 overflow-y-auto space-y-3 flex-1">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    選擇顏色規格 ({availableColors.length} 款可選)
+                    {lang === 'en'
+                      ? `Select Color (${availableColors.length} options)`
+                      : lang === 'ja'
+                      ? `カラー選択 (全${availableColors.length}種)`
+                      : `選擇顏色規格 (${availableColors.length} 款可選)`}
                   </span>
                   {showDiameter && (
                     <span className="text-[11px] font-mono text-slate-500">
-                      線徑 {selectedDiameter}
+                      {lang === 'en' ? `Dia. ${selectedDiameter}` : lang === 'ja' ? `線径 ${selectedDiameter}` : `線徑 ${selectedDiameter}`}
                     </span>
                   )}
                 </div>
@@ -396,7 +452,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   {availableColors.map((color) => {
                     const isSelected = pickedColor.name === color.name;
-                    const displayColorName = translateColorName(color.name, lang).replace(/\s+[A-Za-z\s-]+$/, '').trim() || translateColorName(color.name, lang);
+                    const displayColorName = translateColorName(color.name, lang);
                     return (
                       <button
                         key={color.name}
@@ -453,7 +509,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 >
                   <ShoppingCart className="w-4 h-4 shrink-0" />
                   <span>
-                    確認加入購物車 · {formatPrice(liveProduct.price * pickedQty, currency)}
+                    {lang === 'en'
+                      ? `Add to Cart · ${formatPrice(liveProduct.price * pickedQty, currency)}`
+                      : lang === 'ja'
+                      ? `カートに追加 · ${formatPrice(liveProduct.price * pickedQty, currency)}`
+                      : `確認加入購物車 · ${formatPrice(liveProduct.price * pickedQty, currency)}`}
                   </span>
                 </button>
               </div>

@@ -183,7 +183,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[60] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
@@ -639,13 +639,13 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
               </div>
             </div>
 
-            {/* Action Buttons - Single-line crisp CTAs */}
-            <div className="mt-6 pt-4 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
+            {/* Action Buttons - Equal-width 2-column grid so Add-to-Cart animation never shifts Buy Now button */}
+            <div className="mt-6 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 id="modal-add-to-cart-btn"
                 type="button"
                 onClick={handleAdd}
-                className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                className={`w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 cursor-pointer whitespace-nowrap ${
                   isAdded
                     ? 'bg-emerald-600 text-white'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-900'
@@ -668,7 +668,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 id="modal-buy-now-btn"
                 type="button"
                 onClick={handleBuyNow}
-                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer whitespace-nowrap"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 transition-colors duration-200 cursor-pointer whitespace-nowrap"
               >
                 <span>{lang === 'zh-TW' ? '立即結帳付款' : lang === 'ja' ? '今すぐ購入' : 'Buy Now'}</span>
                 <ArrowRight className="w-4 h-4 shrink-0" />

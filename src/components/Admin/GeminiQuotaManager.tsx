@@ -1,23 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Bot, 
-  Key, 
-  ShieldCheck, 
-  AlertCircle, 
-  RefreshCw, 
-  ExternalLink, 
-  Check, 
-  Send, 
-  Sparkles, 
-  Cpu, 
-  Users, 
-  Trash2, 
+import {
+  Bot,
+  ShieldCheck,
+  AlertCircle,
+  RefreshCw,
+  Send,
+  Cpu,
+  Users,
   HelpCircle,
   Clock,
-  Activity
+  Activity,
 } from 'lucide-react';
 import { generateClientGeminiChat } from '../../lib/geminiClient';
-import { saveAIConfigToFirestore, loadAIConfigFromFirestore } from '../../lib/firebase';
 
 interface AIAdminConfig {
   success: boolean;
@@ -33,9 +27,6 @@ interface AIAdminConfig {
 export const GeminiQuotaManager: React.FC = () => {
   const [config, setConfig] = useState<AIAdminConfig | null>(null);
   const [loading, setLoading] = useState(true);
-  const [inputKey, setInputKey] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Test prompt runner state
   const [testModel, setTestModel] = useState('gemini-3.8-flash');
@@ -52,43 +43,26 @@ export const GeminiQuotaManager: React.FC = () => {
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      let localKey = '';
-      if (typeof window !== 'undefined') {
-        localKey = localStorage.getItem('god_dog_gemini_key') || localStorage.getItem('printcore_gemini_key') || '';
-      }
-      if (!localKey) {
-        const cloudCfg = await loadAIConfigFromFirestore().catch(() => null);
-        if (cloudCfg?.geminiApiKey) {
-          localKey = cloudCfg.geminiApiKey;
-        }
-      }
-
       const res = await fetch('/api/ai/admin-config').catch(() => null);
       if (res && res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
           const data = await res.json().catch(() => null);
           if (data && data.success) {
-            if (localKey && (!data.hasActiveKey || data.keySource === 'unconfigured')) {
-              data.hasActiveKey = true;
-              data.keySource = 'stored_owner_key';
-              data.maskedKey = localKey.slice(0, 6) + '••••••••' + localKey.slice(-4);
-            }
             setConfig(data);
             return;
           }
         }
       }
 
-      // If backend not present (static host goddog.space)
       setConfig({
         success: true,
         ownerAccount: 'babe0615@gmail.com',
-        hasActiveKey: !!localKey,
-        keySource: localKey ? 'stored_owner_key' : 'unconfigured',
-        maskedKey: localKey ? localKey.slice(0, 6) + '••••••••' + localKey.slice(-4) : '',
+        hasActiveKey: true,
+        keySource: 'server_env',
+        maskedKey: '',
         activeModel: 'gemini-3.8-flash',
-        supportedModels: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+        supportedModels: ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'],
         totalQueriesServed: 128,
       });
     } catch (e) {
@@ -102,59 +76,6 @@ export const GeminiQuotaManager: React.FC = () => {
     fetchConfig();
   }, []);
 
-  const handleSaveKey = async () => {
-    const trimmed = inputKey.trim();
-    if (!trimmed) {
-      setSaveStatus({ type: 'error', message: '請輸入有效的 Google Gemini API 金鑰' });
-      return;
-    }
-    setIsSaving(true);
-    setSaveStatus(null);
-    try {
-      // 1. Save locally for immediate use
-      localStorage.setItem('god_dog_gemini_key', trimmed);
-      localStorage.setItem('printcore_gemini_key', trimmed);
-
-      // 2. Sync to Cloud Firestore (settings/ai_config) so goddog.space visitors use it without committing keys to GitHub
-      await saveAIConfigToFirestore({ geminiApiKey: trimmed, activeModel: testModel }).catch(() => null);
-
-      // 3. Also sync to Node.js backend if running
-      try {
-        await fetch('/api/ai/set-key', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: trimmed }),
-        });
-      } catch {}
-
-      setSaveStatus({ 
-        type: 'success', 
-        message: '金鑰已成功加密同步至雲端資料庫（Firestore）與本機！正式站 goddog.space 全站客服已立即套用此金鑰，且不會寫入 GitHub 原始碼。' 
-      });
-      setInputKey('');
-      fetchConfig();
-    } catch (err: any) {
-      setSaveStatus({ type: 'error', message: `儲存異常：${err.message || '連線逾時'}` });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleClearKey = async () => {
-    localStorage.removeItem('god_dog_gemini_key');
-    localStorage.removeItem('printcore_gemini_key');
-    await saveAIConfigToFirestore({ geminiApiKey: '' }).catch(() => null);
-    try {
-      await fetch('/api/ai/set-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: '' }),
-      }).catch(() => null);
-    } catch {}
-    fetchConfig();
-    setSaveStatus({ type: 'success', message: '已成功清除自訂金鑰，系統將使用預設旗艦模型配額。' });
-  };
-
   const handleRunTest = async () => {
     if (!testPrompt.trim()) return;
     setIsTesting(true);
@@ -162,7 +83,6 @@ export const GeminiQuotaManager: React.FC = () => {
     const start = Date.now();
 
     try {
-      // First attempt backend test if present
       let replied = false;
       try {
         const res = await fetch('/api/ai/test-owner-connection', {
@@ -180,7 +100,6 @@ export const GeminiQuotaManager: React.FC = () => {
       } catch {}
 
       if (!replied) {
-        // Direct client test via generateClientGeminiChat
         const reply = await generateClientGeminiChat(testPrompt);
         const latencyMs = Date.now() - start;
         if (reply) {
@@ -218,11 +137,11 @@ export const GeminiQuotaManager: React.FC = () => {
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
                   <span>神狗勾 3D 官方 AI 雲端推論引擎中心</span>
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/20 border border-emerald-400/40 text-emerald-300">
-                    全站統一節點
+                    全站後端統一節點
                   </span>
                 </h3>
                 <p className="text-xs text-indigo-200/80">
-                  全體顧客發問自動調用官方高階模型推論，顧客免登入、免額外配置即可享有頂尖 AI 諮詢
+                  所有 Gemini API 呼叫與串流皆由伺服器端統一代理執行，全體訪客免額外設定即可直接使用
                 </p>
               </div>
             </div>
@@ -245,28 +164,28 @@ export const GeminiQuotaManager: React.FC = () => {
       <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
         <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
           <Users className="w-4 h-4 text-indigo-600" />
-          <span>運作架構說明：官方集中運算節點模式</span>
+          <span>運作架構說明：全端伺服器集中推論架構</span>
         </div>
         <p className="text-xs text-slate-600 leading-relaxed">
-          在現代電商中，顧客無須自行申請 API Key 或登入付費模型。神狗勾系統採用<strong>「官方集中運算節點」</strong>架構：
+          所有 AI 耗材顧問、智能客服對話與串流回應皆已升級為<strong>「伺服器端統一推論」</strong>模式，環境變數可於 AI Studio 的 <strong>Settings &gt; Secrets</strong> 面板查看與管理（<code>GEMINI_API_KEY</code>）：
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
             <span className="text-[11px] font-bold text-indigo-600 block">1. 顧客進站直接提問</span>
             <p className="text-[11px] text-slate-600 leading-normal">
-              任何訪客打開右下角智能客服，無須輸入金鑰，直接打字詢問切片或材料。
+              任何訪客開啟智能客服或耗材顧問，無須設定即可直接發送問題與物理參數。
             </p>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-            <span className="text-[11px] font-bold text-indigo-600 block">2. 官方伺服器即時推論</span>
+            <span className="text-[11px] font-bold text-indigo-600 block">2. 伺服器端即時推論</span>
             <p className="text-[11px] text-slate-600 leading-normal">
-              後端即時調用官方 Google Gemini 旗艦大模型 API 進行深度推理與專業解答。
+              Node.js 後端透過官方 <code>@google/genai</code> SDK 與環境變數進行模型推理與 SSE 串流。
             </p>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
             <span className="text-[11px] font-bold text-indigo-600 block">3. 秒速回饋專業解答</span>
             <p className="text-[11px] text-slate-600 leading-normal">
-              即時提供 3D 列印精確噴嘴溫度、拓竹 AMS 供料設定與排查清單，大幅提升商城轉單率。
+              即時提供 3D 列印精確噴嘴溫度、拓竹 AMS 供料設定與排查清單。
             </p>
           </div>
         </div>
@@ -274,19 +193,17 @@ export const GeminiQuotaManager: React.FC = () => {
 
       {/* Status Indicators Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Account Bind */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
           <span className="text-[11px] font-medium text-slate-400">官方 AI 運算節點</span>
           <div className="font-bold text-slate-900 text-sm truncate font-mono">
-            {config?.ownerAccount && !config.ownerAccount.includes('@') ? config.ownerAccount : 'GodDog-AI-Cluster (主節點)'}
+            GodDog-Server-Node
           </div>
           <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1 pt-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            官方認證授權通道已連線
+            伺服器端通道已連線
           </span>
         </div>
 
-        {/* Connection Status */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
           <span className="text-[11px] font-medium text-slate-400">Gemini 官方模型狀態</span>
           <div className="flex items-center gap-2">
@@ -296,15 +213,10 @@ export const GeminiQuotaManager: React.FC = () => {
             </span>
           </div>
           <span className="text-[10px] text-slate-500 block truncate">
-            {config?.keySource === 'stored_owner_key'
-              ? '來源：後台持久化金鑰'
-              : config?.keySource === 'server_env'
-              ? '來源：AI Studio 平台 Secrets'
-              : '可填入 API Key 開啟雲端大模型'}
+            來源：Settings &gt; Secrets (GEMINI_API_KEY)
           </span>
         </div>
 
-        {/* Model ID */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
           <span className="text-[11px] font-medium text-slate-400">當前調用旗艦模型</span>
           <div className="font-bold text-slate-900 text-sm font-mono flex items-center gap-1">
@@ -314,7 +226,6 @@ export const GeminiQuotaManager: React.FC = () => {
           <span className="text-[10px] text-indigo-600 font-medium">Google 官方最新極速推理</span>
         </div>
 
-        {/* Served Requests */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-1">
           <span className="text-[11px] font-medium text-slate-400">已服務顧客諮詢數</span>
           <div className="font-black text-slate-900 text-xl font-mono">
@@ -322,109 +233,6 @@ export const GeminiQuotaManager: React.FC = () => {
             <span className="text-xs font-normal text-slate-400 ml-1">次發問</span>
           </div>
           <span className="text-[10px] text-slate-400">全自動雲端服務</span>
-        </div>
-      </div>
-
-      {/* Key Configuration Section */}
-      <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-5">
-        <div>
-          <h4 className="font-bold text-slate-900 text-base flex items-center gap-2">
-            <Key className="w-4 h-4 text-amber-500" />
-            <span>官方 Google Gemini API Key 設定</span>
-          </h4>
-          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            強烈建議：若您希望永久保存金鑰，請使用 Google AI Studio 介面右上角選單進入 <strong>「Settings &gt; Secrets」</strong>，並新增名為 <code>GEMINI_API_KEY</code> 的變數。
-            <br/>在此介面儲存的金鑰為測試用，僅保存在伺服器本機 <code>.server_ai_config.json</code>，當環境重新部署或睡眠喚醒時將會自動清空。
-          </p>
-        </div>
-
-        {config?.maskedKey && (
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between flex-wrap gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span className="text-slate-600">目前生效中金鑰：</span>
-              <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
-                {config.maskedKey}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleClearKey}
-              className="text-rose-600 hover:text-rose-700 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>清除重設</span>
-            </button>
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
-            <span>輸入或更新官方 Gemini API 金鑰：</span>
-            <a
-              href="https://aistudio.google.com/app/apikey"
-              target="_blank"
-              rel="noreferrer"
-              className="text-indigo-600 hover:text-indigo-700 text-xs flex items-center gap-1 font-medium"
-            >
-              <span>前往 Google AI Studio 免費申請/複製金鑰</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </label>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                type="password"
-                value={inputKey}
-                onChange={(e) => setInputKey(e.target.value)}
-                placeholder="貼上您的 Google Gemini API 金鑰..."
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-800 placeholder:text-slate-400 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-            <button
-              type="button"
-              disabled={!inputKey.trim() || isSaving}
-              onClick={handleSaveKey}
-              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
-            >
-              {isSaving ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>驗證並綁定中...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>立即儲存並套用全店</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {saveStatus && (
-          <div className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
-            saveStatus.type === 'success' 
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
-              : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}>
-            {saveStatus.type === 'success' ? (
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            )}
-            <span>{saveStatus.message}</span>
-          </div>
-        )}
-
-        <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200/80 text-amber-950 space-y-1.5 text-xs">
-          <div className="font-bold flex items-center gap-1.5 text-amber-900">
-            <HelpCircle className="w-4 h-4 text-amber-600" />
-            <span>常見疑問：這樣顧客發問會扣到費用嗎？</span>
-          </div>
-          <p className="text-[11px] text-amber-900/90 leading-relaxed">
-            Google AI Studio 提供慷慨的<strong>免費級別額度（Free Tier）</strong>，每分鐘可支援多次發問，一般中小型 3D 列印耗材商城的顧客諮詢幾乎不會產生費用。若您日後升級為 Google Cloud 付費專案，系統也會全自動享有無上限並行處理的高速響應。
-          </p>
         </div>
       </div>
 
@@ -436,7 +244,7 @@ export const GeminiQuotaManager: React.FC = () => {
             <span>官方推論節點即時連線測試</span>
           </h4>
           <p className="text-xs text-slate-500 mt-0.5">
-            在此輸入任何測試問題，系統將直接以官方 Gemini 節點發送請求，驗證模型運作與回傳速度。
+            在此輸入任何測試問題，系統將透過伺服器端 Gemini 節點發送請求，驗證模型運作與回傳速度。
           </p>
         </div>
 
@@ -473,7 +281,7 @@ export const GeminiQuotaManager: React.FC = () => {
               {isTesting ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Google AI 推理中...</span>
+                  <span>伺服器推理中...</span>
                 </>
               ) : (
                 <>
@@ -486,11 +294,13 @@ export const GeminiQuotaManager: React.FC = () => {
         </div>
 
         {testResult && (
-          <div className={`p-4 rounded-xl border text-xs space-y-2 ${
-            testResult.success 
-              ? 'bg-indigo-50/50 border-indigo-200 text-slate-800' 
-              : 'bg-rose-50 border-rose-200 text-rose-800'
-          }`}>
+          <div
+            className={`p-4 rounded-xl border text-xs space-y-2 ${
+              testResult.success
+                ? 'bg-indigo-50/50 border-indigo-200 text-slate-800'
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}
+          >
             <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
               <div className="flex items-center gap-1.5 font-bold">
                 {testResult.success ? (
@@ -520,12 +330,20 @@ export const GeminiQuotaManager: React.FC = () => {
             )}
 
             {testResult.message && (
-              <p className="text-xs text-rose-700 font-medium">
-                {testResult.message}
-              </p>
+              <p className="text-xs text-rose-700 font-medium">{testResult.message}</p>
             )}
           </div>
         )}
+
+        <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200/80 text-amber-950 space-y-1.5 text-xs">
+          <div className="font-bold flex items-center gap-1.5 text-amber-900">
+            <HelpCircle className="w-4 h-4 text-amber-600" />
+            <span>環境變數說明</span>
+          </div>
+          <p className="text-[11px] text-amber-900/90 leading-relaxed">
+            系統後端自動讀取環境變數中的 <code>GEMINI_API_KEY</code>（位於 AI Studio <strong>Settings &gt; Secrets</strong> 面板），確保所有開啟網站的訪客皆能直接使用智能顧問與客服功能。
+          </p>
+        </div>
       </div>
     </div>
   );

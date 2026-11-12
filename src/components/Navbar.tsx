@@ -130,6 +130,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   const effectiveCartOpen = onOpenCart || openCart || (() => {});
   const effectiveMemberOpen = onOpenLoyalty || openMemberModal || (() => {});
   const effectiveActiveTab = activeTab || currentTab || 'store';
+  const isOwnerAdmin = Boolean(
+    isLoggedIn &&
+    member?.email &&
+    member.email.trim().toLowerCase() === 'babe0615@gmail.com'
+  );
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -151,6 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     } else if (id === 'filament-lab') {
       onOpenFilamentLab?.();
     } else if (id === 'admin') {
+      if (!isOwnerAdmin) return;
       setActiveTab?.('admin');
       setCurrentTab?.('admin');
     } else if (id === 'subscription') {
@@ -184,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className={`sticky top-0 z-50 transition-all duration-300 ${
+    <header className={`sticky top-0 z-40 transition-colors duration-300 ${
       isScrolled 
         ? 'bg-white/98 dark:bg-slate-900/98 backdrop-blur-md shadow-md shadow-slate-900/5 border-b border-slate-200/80 dark:border-slate-800' 
         : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800'
@@ -203,17 +209,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <>
                   <div className="flex items-center gap-1.5 shrink-0 bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 px-2 py-0.5 rounded-full">
                     <span className="font-black text-[10px] text-amber-300">
-                      {announcement.type === 'promotion' ? '🔥 全館特惠' : announcement.type === 'shipping' ? '🚚 出貨公告' : announcement.type === 'holiday' ? '🏮 連假通知' : '📢 官方公告'}
+                      {announcement.type === 'promotion'
+                        ? lang === 'en' ? '🔥 Promo' : lang === 'ja' ? '🔥 特価セール' : '🔥 全館特惠'
+                        : announcement.type === 'shipping'
+                        ? lang === 'en' ? '🚚 Shipping' : lang === 'ja' ? '🚚 配送案内' : '🚚 出貨公告'
+                        : announcement.type === 'holiday'
+                        ? lang === 'en' ? '🏮 Holiday' : lang === 'ja' ? '🏮 休業案内' : '🏮 連假通知'
+                        : lang === 'en' ? '📢 Notice' : lang === 'ja' ? '📢 お知らせ' : '📢 官方公告'}
                     </span>
                     <span className="text-[11px] sm:text-xs font-semibold text-white">
-                      {announcement.text}
+                      {lang === 'en' && /[\u4e00-\u9fff]/.test(announcement.text)
+                        ? '🚀 Free Shipping over NT$999! Order before 15:00 on weekdays for same-day dispatch! Join now for 100 bonus points.'
+                        : lang === 'ja' && !/[\u3040-\u30ff]/.test(announcement.text)
+                        ? '🚀 NT$999以上で送料無料！平日15:00までのご注文で即日発送！新規会員登録で100ポイント進呈。'
+                        : announcement.text}
                     </span>
                     {announcement.linkUrl && (
                       <a
                         href={announcement.linkUrl}
                         className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
                       >
-                        前往查看
+                        {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
                       </a>
                     )}
                   </div>
@@ -247,17 +263,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <>
                   <div className="flex items-center gap-1.5 shrink-0 bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 px-2 py-0.5 rounded-full">
                     <span className="font-black text-[10px] text-amber-300">
-                      {announcement.type === 'promotion' ? '🔥 全館特惠' : announcement.type === 'shipping' ? '🚚 出貨公告' : announcement.type === 'holiday' ? '🏮 連假通知' : '📢 官方公告'}
+                      {announcement.type === 'promotion'
+                        ? lang === 'en' ? '🔥 Promo' : lang === 'ja' ? '🔥 特価セール' : '🔥 全館特惠'
+                        : announcement.type === 'shipping'
+                        ? lang === 'en' ? '🚚 Shipping' : lang === 'ja' ? '🚚 配送案内' : '🚚 出貨公告'
+                        : announcement.type === 'holiday'
+                        ? lang === 'en' ? '🏮 Holiday' : lang === 'ja' ? '🏮 休業案内' : '🏮 連假通知'
+                        : lang === 'en' ? '📢 Notice' : lang === 'ja' ? '📢 お知らせ' : '📢 官方公告'}
                     </span>
                     <span className="text-[11px] sm:text-xs font-semibold text-white">
-                      {announcement.text}
+                      {lang === 'en' && /[\u4e00-\u9fff]/.test(announcement.text)
+                        ? '🚀 Free Shipping over NT$999! Order before 15:00 on weekdays for same-day dispatch! Join now for 100 bonus points.'
+                        : lang === 'ja' && !/[\u3040-\u30ff]/.test(announcement.text)
+                        ? '🚀 NT$999以上で送料無料！平日15:00までのご注文で即日発送！新規会員登録で100ポイント進呈。'
+                        : announcement.text}
                     </span>
                     {announcement.linkUrl && (
                       <a
                         href={announcement.linkUrl}
                         className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
                       >
-                        前往查看
+                        {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
                       </a>
                     )}
                   </div>
@@ -321,13 +347,14 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Main Header Bar - Proportioned and mobile-optimized */}
-      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-3">
           {/* Brand Logo */}
           <div 
-            className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer shrink-0" 
+            className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer min-w-0 flex-1 lg:flex-initial" 
             onClick={() => handleNavClick('store')}
             title={lang === 'en' ? 'Back to Home' : lang === 'ja' ? 'ホームに戻る' : '返回首頁'}
+            data-no-auto-translate="true"
           >
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-md shadow-sky-500/20 shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-900 flex items-center justify-center">
               <img 
@@ -342,13 +369,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
               />
             </div>
-            <div className="shrink-0 min-w-0">
+            <div className="min-w-0">
               <div className="flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
-                <span className="font-extrabold text-sm sm:text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap truncate max-w-[85px] xs:max-w-none">
-                  {t.brandName || '神狗勾耗材'}
+                <span className="font-extrabold text-[15px] sm:text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap truncate sm:hidden">
+                  {lang === 'en' ? 'GodDog 3D' : lang === 'ja' ? '神狗勾 3D' : '神狗勾耗材'}
                 </span>
-                <span className="text-[9px] sm:text-[10px] font-mono bg-sky-100 dark:bg-sky-900/50 text-sky-800 dark:text-sky-300 px-1 sm:px-1.5 py-0.5 rounded font-bold whitespace-nowrap shrink-0">
-                  {t.flagshipStore || '旗艦館'}
+                <span className="hidden sm:inline font-extrabold text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                  {lang === 'en' ? 'GodDog 3D' : lang === 'ja' ? '神狗勾 3D' : (t.brandName || '神狗勾耗材')}
+                </span>
+                <span className="hidden md:inline-block text-[10px] font-mono bg-sky-100 dark:bg-sky-900/50 text-sky-800 dark:text-sky-300 px-1.5 py-0.5 rounded font-bold whitespace-nowrap shrink-0">
+                  {lang === 'en' ? 'Official' : lang === 'ja' ? '公式' : (t.flagshipStore || '旗艦館')}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden lg:block font-medium whitespace-nowrap">
@@ -508,20 +538,22 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </div>
 
-            {/* Admin Management Quick Link (Discreet) */}
-            <button
-              id="btn-nav-admin"
-              onClick={() => handleNavClick('admin')}
-              className={`hidden md:flex items-center space-x-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                effectiveActiveTab === 'admin'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-indigo-700 hover:bg-indigo-50 border border-indigo-200/70'
-              }`}
-              title={lang === 'en' ? 'Admin Portal' : lang === 'ja' ? '管理パネル' : '進入後台管理：訂單、庫存、廣告與營運報表'}
-            >
-              <Settings className="w-3.5 h-3.5 shrink-0" />
-              <span>{t.navAdmin || '管理後台'}</span>
-            </button>
+            {/* Admin Management Quick Link (Strictly restricted to babe0615@gmail.com) */}
+            {isOwnerAdmin && (
+              <button
+                id="btn-nav-admin"
+                onClick={() => handleNavClick('admin')}
+                className={`hidden md:flex items-center space-x-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  effectiveActiveTab === 'admin'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-indigo-700 hover:bg-indigo-50 border border-indigo-200/70'
+                }`}
+                title={lang === 'en' ? 'Admin Portal' : lang === 'ja' ? '管理パネル' : '進入後台管理：訂單、庫存、廣告與營運報表'}
+              >
+                <Settings className="w-3.5 h-3.5 shrink-0" />
+                <span>{t.navAdmin || '管理後台'}</span>
+              </button>
+            )}
 
             {/* Member Points / Login Button */}
             {isLoggedIn ? (
@@ -644,18 +676,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Shopping Cart Button - Stable fixed size on mobile so items added never expand button or squish icons */}
+            {/* Shopping Cart Button - Strictly locked width/height so adding items or badge updates never push adjacent icons */}
             <button
               id="btn-open-cart"
               onClick={effectiveCartOpen}
-              className="relative flex items-center justify-center w-8.5 h-8.5 sm:w-auto sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-xs cursor-pointer shrink-0 active:scale-95"
+              className="relative flex items-center justify-center w-9 h-9 sm:w-[92px] sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors duration-200 shadow-xs cursor-pointer shrink-0 overflow-visible"
               aria-label={t.cart || "購物車"}
               title={t.cart || "購物車"}
             >
-              <ShoppingCart className="w-4 h-4 text-white" />
-              <span className="text-xs font-bold hidden sm:inline ml-1.5">{t.cart || "購物車"}</span>
+              <ShoppingCart className="w-4 h-4 text-white shrink-0" />
+              <span className="text-xs font-bold hidden sm:inline ml-1.5 whitespace-nowrap">{t.cart || "購物車"}</span>
               {cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums">
+                <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums leading-none">
                   {cartCount > 99 ? '99+' : cartCount}
                 </span>
               )}
@@ -705,7 +737,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
                 products={products}
                 size="sm"
-                placeholder="搜尋線材材質、品牌或型號..."
+                placeholder={lang === 'en' ? 'Search filaments, brands, or models...' : lang === 'ja' ? 'フィラメント材質・ブランド・型番を検索...' : '搜尋線材材質、品牌或型號...'}
               />
             </div>
           )}
@@ -714,7 +746,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 text-xs">
             <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200 font-bold">
               <Globe className="w-3.5 h-3.5 text-slate-500" />
-              <span className="text-xs">語系 / 幣別</span>
+              <span className="text-xs">{lang === 'en' ? 'Lang / Currency' : lang === 'ja' ? '言語 / 通貨' : '語系 / 幣別'}</span>
             </div>
             <div className="flex items-center gap-1">
               {(['zh-TW', 'en', 'ja'] as const).map((l) => (
@@ -765,13 +797,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black">AI 耗材顧問</span>
+                    <span className="text-xs font-black">
+                      {lang === 'en' ? 'AI Filament Advisor' : lang === 'ja' ? 'AI フィラメント診断' : 'AI 耗材顧問'}
+                    </span>
                     <span className="text-[10px] bg-amber-400 text-slate-900 font-extrabold px-1.5 py-0.5 rounded-full">
-                      機型配對
+                      {lang === 'en' ? 'Printer Match' : lang === 'ja' ? '機種別マッチング' : '機型配對'}
                     </span>
                   </div>
-                  <p className="text-[11px] text-sky-100 mt-0.5">
-                    依 3D 印表機型號推薦最佳線材與切片參數
+                  <p className="text-[11px] text-sky-100 mt-0.5 truncate">
+                    {lang === 'en'
+                      ? 'Optimal filaments & slicer settings for your 3D printer'
+                      : lang === 'ja'
+                      ? 'お使いの3Dプリンターに最適なフィラメントと設定を提案'
+                      : '依 3D 印表機型號推薦最佳線材與切片參數'}
                   </p>
                 </div>
               </div>
@@ -790,7 +828,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold cursor-pointer relative hover:bg-slate-200 transition-all"
               >
                 <Scale className="w-4 h-4 mb-1 text-slate-600 dark:text-slate-300" />
-                <span className="whitespace-nowrap">規格對比</span>
+                <span className="whitespace-nowrap truncate max-w-full">
+                  {lang === 'en' ? 'Compare' : lang === 'ja' ? '比較' : '規格對比'}
+                </span>
                 {compareCount > 0 && (
                   <span className="absolute top-1 right-1.5 bg-indigo-600 text-white text-[9px] font-bold px-1.5 rounded-full">
                     {compareCount}
@@ -807,7 +847,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 text-xs font-bold cursor-pointer relative hover:bg-rose-100 transition-all"
               >
                 <Heart className={`w-4 h-4 mb-1 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : 'text-rose-500'}`} />
-                <span className="whitespace-nowrap">願望清單</span>
+                <span className="whitespace-nowrap truncate max-w-full">
+                  {lang === 'en' ? 'Wishlist' : lang === 'ja' ? 'お気に入り' : '願望清單'}
+                </span>
                 {wishlistCount > 0 && (
                   <span className="absolute top-1 right-1.5 bg-rose-500 text-white text-[9px] font-bold px-1.5 rounded-full">
                     {wishlistCount}
@@ -824,7 +866,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold cursor-pointer hover:bg-emerald-100 transition-all"
               >
                 <Recycle className="w-4 h-4 mb-1 text-emerald-600 dark:text-emerald-400" />
-                <span className="whitespace-nowrap">空盤回收</span>
+                <span className="whitespace-nowrap truncate max-w-full">
+                  {lang === 'en' ? 'Recycle' : lang === 'ja' ? '空スプール' : '空盤回收'}
+                </span>
               </button>
             )}
             {onOpenFilamentLab && (
@@ -836,7 +880,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex flex-col items-center justify-center py-2.5 px-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold cursor-pointer hover:bg-indigo-100 transition-all"
               >
                 <Wrench className="w-4 h-4 mb-1 text-indigo-600 dark:text-indigo-400" />
-                <span className="whitespace-nowrap">創客工具</span>
+                <span className="whitespace-nowrap truncate max-w-full">
+                  {lang === 'en' ? 'Tools' : lang === 'ja' ? 'ツール箱' : '創客工具'}
+                </span>
               </button>
             )}
           </div>
@@ -851,12 +897,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 truncate">
                 <BookOpen className="w-4 h-4 shrink-0 text-indigo-500" />
-                <span>創客專欄</span>
+                <span className="truncate">{lang === 'en' ? 'Maker Blog' : lang === 'ja' ? '技術コラム' : '創客專欄'}</span>
               </span>
-              <span className="text-[10px] font-mono bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded-full">
-                18篇
+              <span className="text-[10px] font-mono bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded-full shrink-0">
+                {lang === 'en' ? '18' : lang === 'ja' ? '18記事' : '18篇'}
               </span>
             </button>
 
@@ -869,7 +915,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <HelpCircle className="w-4 h-4 shrink-0 text-amber-500" />
-              <span>常見問題</span>
+              <span className="truncate">{lang === 'en' ? 'FAQ' : lang === 'ja' ? 'よくある質問' : '常見問題'}</span>
             </button>
 
             <button
@@ -881,7 +927,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Compass className="w-4 h-4 shrink-0 text-cyan-500" />
-              <span>3D 選材指南</span>
+              <span className="truncate">{lang === 'en' ? 'Material Guide' : lang === 'ja' ? '3D素材ガイド' : '3D 選材指南'}</span>
             </button>
 
             <button
@@ -893,7 +939,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Info className="w-4 h-4 shrink-0 text-blue-500" />
-              <span>關於神狗勾</span>
+              <span className="truncate">{lang === 'en' ? 'About Us' : lang === 'ja' ? '神狗勾について' : '關於神狗勾'}</span>
             </button>
 
             <button
@@ -904,12 +950,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               }}
               className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-amber-50/80 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 truncate">
                 <Package className="w-4 h-4 shrink-0 text-amber-500" />
-                <span>創客 VIP 會員</span>
+                <span className="truncate">{lang === 'en' ? 'VIP Club' : lang === 'ja' ? 'VIP会員' : '創客 VIP 會員'}</span>
               </span>
-              <span className="text-[10px] font-extrabold bg-amber-200/80 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded-full">
-                95折
+              <span className="text-[10px] font-extrabold bg-amber-200/80 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded-full shrink-0">
+                {lang === 'en' ? '5% OFF' : lang === 'ja' ? '5%OFF' : '95折'}
               </span>
             </button>
 
@@ -922,7 +968,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Truck className="w-4 h-4 shrink-0 text-sky-500" />
-              <span>即時物流追蹤</span>
+              <span className="truncate">{lang === 'en' ? 'Order Tracking' : lang === 'ja' ? '配送状況追跡' : '即時物流追蹤'}</span>
             </button>
 
             {onOpenHistory && (
@@ -934,45 +980,51 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
                 className="flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold text-left bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 hover:bg-purple-100 transition-colors cursor-pointer"
               >
-                <span className="flex items-center gap-2">
+                <span className="flex items-center gap-2 truncate">
                   <Clock className="w-4 h-4 shrink-0 text-purple-600 dark:text-purple-400" />
-                  <span>最近瀏覽</span>
+                  <span className="truncate">{lang === 'en' ? 'History' : lang === 'ja' ? '閲覧履歴' : '最近瀏覽'}</span>
                 </span>
                 {historyCount > 0 && (
-                  <span className="bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full font-mono">
+                  <span className="bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full font-mono shrink-0">
                     {historyCount}
                   </span>
                 )}
               </button>
             )}
 
-            <button
-              id="mobile-nav-admin"
-              onClick={() => {
-                handleNavClick('admin');
-                setMobileMenuOpen(false);
-              }}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/60 hover:bg-indigo-100 transition-colors cursor-pointer"
-            >
-              <Settings className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
-              <span>管理後台</span>
-            </button>
+            {isOwnerAdmin && (
+              <button
+                id="mobile-nav-admin"
+                onClick={() => {
+                  handleNavClick('admin');
+                  setMobileMenuOpen(false);
+                }}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold text-left text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/60 hover:bg-indigo-100 transition-colors cursor-pointer"
+              >
+                <Settings className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                <span className="truncate">{lang === 'en' ? 'Admin' : lang === 'ja' ? '管理画面' : '管理後台'}</span>
+              </button>
+            )}
           </div>
 
           <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
             {isLoggedIn ? (
               <>
-                <span className="text-slate-700 dark:text-slate-300 font-bold">
-                  會員：{member?.name || '創客會員'} ({member?.tier || 'Silver'} · {member?.points || 0} 點)
+                <span className="text-slate-700 dark:text-slate-300 font-bold truncate">
+                  {lang === 'en'
+                    ? `Member: ${member?.name || 'Maker'} (${member?.tier || 'Silver'} · ${member?.points || 0} pts)`
+                    : lang === 'ja'
+                    ? `会員：${member?.name || 'メイカー'} (${member?.tier || 'Silver'} · ${member?.points || 0} pt)`
+                    : `會員：${member?.name || '創客會員'} (${member?.tier || 'Silver'} · ${member?.points || 0} 點)`}
                 </span>
                 <button
                   onClick={() => {
                     effectiveMemberOpen();
                     setMobileMenuOpen(false);
                   }}
-                  className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer"
+                  className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer shrink-0 ml-2"
                 >
-                  會員中心 →
+                  {lang === 'en' ? 'Account →' : lang === 'ja' ? 'マイページ →' : '會員中心 →'}
                 </button>
               </>
             ) : (
@@ -983,7 +1035,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }}
                 className="w-full py-2 px-3 rounded-xl bg-indigo-600 text-white font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs"
               >
-                <span>登入 / 註冊會員</span>
+                <span>{lang === 'en' ? 'Sign In / Register' : lang === 'ja' ? 'ログイン / 新規登録' : '登入 / 註冊會員'}</span>
               </button>
             )}
           </div>

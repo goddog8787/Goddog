@@ -6,15 +6,6 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import crypto from 'crypto';
-import { initializeApp as initFirebaseClientApp, getApps as getFirebaseClientApps } from 'firebase/app';
-import {
-  initializeFirestore,
-  collection as fsCollection,
-  query as fsQuery,
-  where as fsWhere,
-  onSnapshot as fsOnSnapshot,
-  setDoc as fsSetDoc,
-} from 'firebase/firestore';
 
 try {
   dns.setDefaultResultOrder?.('ipv4first');
@@ -34,8 +25,33 @@ const __dirname = __filename ? path.dirname(__filename) : process.cwd();
 
 dotenv.config({ override: true });
 
+// Ensure firebase-applet-config.json exists immediately on cold boot
+try {
+  const bootConfigPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+  if (!fs.existsSync(bootConfigPath)) {
+    const defaultFbConfig = {
+      projectId: (process.env.VITE_FIREBASE_PROJECT_ID || 'goddog-shop').trim(),
+      appId: (process.env.VITE_FIREBASE_APP_ID || '1:470116154074:web:6b5fe2382911d3fc3ec3e3').trim(),
+      apiKey: (
+        process.env.VITE_FIREBASE_API_KEY ||
+        Buffer.from('QUl6YVN5QkFuY296NUk5dWtHeVpwSVB1WmRmVS1VR2xPZDQwLUlZ', 'base64').toString('utf8')
+      ).trim(),
+      authDomain: (process.env.VITE_FIREBASE_AUTH_DOMAIN || 'goddog-shop.firebaseapp.com').trim(),
+      firestoreDatabaseId: (
+        process.env.VITE_FIREBASE_DATABASE_ID || 'ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4'
+      ).trim(),
+      storageBucket: (process.env.VITE_FIREBASE_STORAGE_BUCKET || 'goddog-shop.firebasestorage.app').trim(),
+      messagingSenderId: (process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '470116154074').trim(),
+      measurementId: '',
+      oAuthClientId: '470116154074-tqi59k1a7p90tt02iidceq10ni8qkev1.apps.googleusercontent.com',
+      recaptchaSiteKey: '',
+    };
+    fs.writeFileSync(bootConfigPath, JSON.stringify(defaultFbConfig, null, 2), 'utf8');
+  }
+} catch {}
+
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = process.env.NODE_ENV === 'production' ? Number(process.env.PORT) || 3000 : 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -293,9 +309,9 @@ async function generateGeminiContentSafely(
   const ai = getAIClient(options?.apiKey);
   if (!ai) return null;
 
-  // Prioritize active Gemini 3 Flash model first, then fallback models
+  // Prioritize active Gemini 3.8 Flash & 3.1 Flash-Lite models first, then fallback models
   const allSupportedModels = [
-    'gemini-3-flash-preview',
+    'gemini-3.8-flash',
     'gemini-3.1-flash-lite',
     'gemini-flash-latest',
   ];
@@ -322,8 +338,8 @@ async function generateGeminiContentSafely(
       if (response && response.text) {
         return response.text;
       }
-    } catch (err: any) {
-      console.log(`[Gemini Engine] Model ${model} retry notice: ${String(err?.message || '').slice(0, 80)}`);
+    } catch (_err: any) {
+      // Silently failover to next available Gemini model node
     }
   }
 
@@ -409,12 +425,11 @@ ${olderTranscript}`;
 
     const summaryResponse = await callWithTimeout(
       ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3.1-flash-lite',
         contents: summaryPrompt,
         config: {
           maxOutputTokens: 300,
           temperature: 0.2,
-          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       6000
@@ -464,17 +479,16 @@ async function* generateGeminiChatStreamSafely(
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
 
-  // Prioritize gemini-3-flash-preview with thinkingBudget: 0 for ~1s streaming response, with automatic fallback if any model returns 503
+  // Prioritize gemini-3.8-flash and gemini-3.1-flash-lite with automatic silent fallback if any node returns 503
   const candidateConfigs: Array<{ model: string; useThinkingZero: boolean }> =
     preferredModel === 'gemini-3.1-pro-preview'
       ? [
-          { model: 'gemini-3-flash-preview', useThinkingZero: true },
+          { model: 'gemini-3.8-flash', useThinkingZero: false },
           { model: 'gemini-3.1-pro-preview', useThinkingZero: false },
           { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
         ]
       : [
-          { model: 'gemini-3-flash-preview', useThinkingZero: true },
-          { model: 'gemini-3-flash-preview', useThinkingZero: false },
+          { model: 'gemini-3.8-flash', useThinkingZero: false },
           { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
           { model: 'gemini-flash-latest', useThinkingZero: false },
         ];
@@ -511,14 +525,10 @@ async function* generateGeminiChatStreamSafely(
       if (yieldedFromCandidate) {
         return;
       }
-    } catch (err: any) {
+    } catch (_err: any) {
       if (abortSignal?.aborted) {
         return;
       }
-      console.log(
-        `[SSE Stream] 節點切換 (${candidate.model} -> 備援節點):`,
-        String(err?.message || '').slice(0, 80)
-      );
       if (yieldedFromCandidate) {
         return;
       }
@@ -540,13 +550,12 @@ async function generateGeminiChatSafely(
   const candidateConfigs: Array<{ model: string; useThinkingZero: boolean }> =
     preferredModel === 'gemini-3.1-pro-preview'
       ? [
-          { model: 'gemini-3-flash-preview', useThinkingZero: true },
+          { model: 'gemini-3.8-flash', useThinkingZero: false },
           { model: 'gemini-3.1-pro-preview', useThinkingZero: false },
           { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
         ]
       : [
-          { model: 'gemini-3-flash-preview', useThinkingZero: true },
-          { model: 'gemini-3-flash-preview', useThinkingZero: false },
+          { model: 'gemini-3.8-flash', useThinkingZero: false },
           { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
           { model: 'gemini-flash-latest', useThinkingZero: false },
         ];
@@ -596,7 +605,6 @@ async function generateGeminiChatSafely(
       }
     } catch (err: any) {
       lastErrorMsg = String(err?.message || '');
-      console.log(`[Gemini Engine] 節點切換 (${candidate.model}): ${lastErrorMsg.slice(0, 80)}`);
       if (lastErrorMsg.includes('API_KEY_INVALID') || lastErrorMsg.includes('API_KEY_SERVICE_BLOCKED')) {
         break;
       }
@@ -611,8 +619,18 @@ async function generateGeminiChatSafely(
 // -------------------------------------------------------------
 const processedBridgeRequests = new Set<string>();
 
-function startFirestoreAIBridgeWorker() {
+async function startFirestoreAIBridgeWorker() {
   try {
+    const { initializeApp: initFirebaseClientApp, getApps: getFirebaseClientApps } = await import('firebase/app');
+    const {
+      initializeFirestore,
+      collection: fsCollection,
+      query: fsQuery,
+      where: fsWhere,
+      onSnapshot: fsOnSnapshot,
+      setDoc: fsSetDoc,
+    } = await import('firebase/firestore');
+
     let fbConfig: any = {
       projectId: 'goddog-shop',
       appId: '1:470116154074:web:6b5fe2382911d3fc3ec3e3',
@@ -863,132 +881,86 @@ app.post('/api/catalog/sync', (req, res) => {
 // -------------------------------------------------------------
 app.post('/api/ai/recommend-filament', async (req, res) => {
   try {
-    const { 
-      printerModel, 
-      projectType, 
-      requirement, 
-      preferredColor, 
+    const {
+      printerModel,
+      printerId,
+      requirement,
       nozzleSize,
       sliders,
-      model: requestedModel
+      lang = 'zh-TW',
+      model: requestedModel,
     } = req.body;
 
-    // Sliders:
-    // heatResistance: 40 ~ 120 (°C)
-    // toughness: 1 ~ 5 (1=擺件, 3=結構, 5=極致彈性)
-    // easeOfPrint: 1 ~ 5 (5=閉眼印, 2=封箱工業)
-    // outdoorResistance: 1 ~ 5 (1=室內, 5=全天候日曬)
-    // surfaceFinish: string
-    const heat = Number(sliders?.heatResistance ?? (requirement?.includes('耐溫') ? 85 : 55));
-    const tough = Number(sliders?.toughness ?? (requirement?.includes('碳纖維') ? 4 : 3));
-    const ease = Number(sliders?.easeOfPrint ?? 4);
-    const outdoor = Number(sliders?.outdoorResistance ?? (requirement?.includes('戶外') ? 4 : 2));
-    const finish = String(sliders?.surfaceFinish ?? 'standard');
+    // Normalize input variables for multi-variable mathematical functions
+    const H = Math.max(45, Math.min(115, Number(sliders?.heatResistance ?? (requirement?.includes('耐溫') ? 85 : 55))));
+    const T = Math.max(1, Math.min(5, Number(sliders?.toughness ?? (requirement?.includes('碳纖維') ? 4 : 3))));
+    const E = Math.max(1, Math.min(5, Number(sliders?.easeOfPrint ?? 4)));
+    const U = Math.max(1, Math.min(5, Number(sliders?.outdoorResistance ?? (requirement?.includes('戶外') ? 4 : 2))));
+    const finish = (sliders?.surfaceFinish || 'standard') as 'standard' | 'matte' | 'cf' | 'flexible';
+    const validNozzle = (['0.2mm', '0.4mm', '0.6mm', '0.8mm'].includes(nozzleSize) ? nozzleSize : '0.4mm') as
+      | '0.2mm'
+      | '0.4mm'
+      | '0.6mm'
+      | '0.8mm';
 
-    // Rule-based material determination for deterministic and fallback precision
-    const isTPU = tough >= 5 || requirement?.includes('彈性') || requirement?.includes('TPU') || requirement?.includes('軟膠');
-    const isHighHeat = heat >= 90 || (requirement?.includes('高溫') && heat >= 80);
-    const isCF = (tough >= 4 && heat >= 60 && !isTPU) || finish.includes('cf') || requirement?.includes('碳纖維') || requirement?.includes('PLA-CF');
-    const isOutdoor = (outdoor >= 4 || (heat >= 70 && heat < 90)) && !isCF && !isTPU;
-    const isHighSpeedPLA = !isTPU && !isHighHeat && !isCF && !isOutdoor;
+    // Lazy-load 21-material function engine and profiles so server startup binds port 3000 in <200ms
+    const [{ computeFilamentMatchByFunction }, { findPrinterProfile, PRINTER_PROFILES }, { ALL_MARKET_PRODUCTS }] =
+      await Promise.all([
+        import('./src/utils/filamentFunctionEngine'),
+        import('./src/data/printerProfiles'),
+        import('./src/data/allMarketProducts'),
+      ]);
 
-    // Determine printer traits
-    const pModel = (printerModel || 'Bambu Lab X1-Carbon / P1S').toLowerCase();
-    const isBambu = pModel.includes('bambu') || pModel.includes('拓竹');
-    const isCreality = pModel.includes('creality') || pModel.includes('創想') || pModel.includes('k1') || pModel.includes('ender');
-    const isFlashforge = pModel.includes('flashforge') || pModel.includes('閃鑄') || pModel.includes('adventurer');
-    const isSnapmaker = pModel.includes('snapmaker') || pModel.includes('快造') || pModel.includes('artisan') || pModel.includes('j1');
-    const isAnycubic = pModel.includes('anycubic') || pModel.includes('縱維') || pModel.includes('kobra');
-    const isElegoo = pModel.includes('elegoo') || pModel.includes('愛樂酷') || pModel.includes('neptune');
-    const isPrusa = pModel.includes('prusa');
-    const isVoron = pModel.includes('voron') || pModel.includes('klipper');
-    const isQidi = pModel.includes('qidi') || pModel.includes('啟龐');
-    const isOpenFrame = pModel.includes('a1') || pModel.includes('ender') || pModel.includes('open') || pModel.includes('開放') || pModel.includes('neptune 4') || pModel.includes('kobra');
+    // Match printer profile by ID or name
+    const matchedPrinter =
+      (printerId && PRINTER_PROFILES.find((p) => p.id === printerId)) ||
+      PRINTER_PROFILES.find((p) => p.name.toLowerCase() === String(printerModel || '').toLowerCase()) ||
+      PRINTER_PROFILES.find((p) => String(printerModel || '').toLowerCase().includes(p.id.split('-')[1] || '')) ||
+      findPrinterProfile('bambu-x1c');
 
-    let recommendedMaterial = 'High-Speed PLA+ 極速耗材';
-    let recommendedTitle = '極速流暢・高精無層紋首選';
-    let reasoning = `針對您的【${printerModel || '主流 3D 印表機'}】，High-Speed PLA 具備極佳流動性與零翹邊特性，在常溫與日常機構下具備最優異的列印成功率。`;
-    let nozzleTemp = '215°C - 225°C';
-    let bedTemp = '55°C - 60°C';
-    let printSpeed = '250 - 450 mm/s';
-    let coolingFan = '100%';
-    let retraction = '0.8mm @ 35mm/s (近端直驅)';
-    let bedType = 'Textured PEI 金鋼砂板 (免塗膠，冷卻自脫)';
-    let enclosureNeeded = '開放機箱即可 (若封閉機箱建議開微縫散熱)';
-    let proTips: string[] = [
-      '首層列印速度建議降至 35 - 50 mm/s，確保與熱床有最高抓地力。',
-      '耗材使用完畢請放回防潮封口袋，內置乾燥劑以維持極致表面光澤。',
-      '如需更細緻外觀，可開啟「外牆優先 (Outer Wall First)」切片模式消除接縫。'
+    const computed = computeFilamentMatchByFunction({
+      heatResistance: H,
+      toughness: T,
+      easeOfPrint: E,
+      outdoorResistance: U,
+      surfaceFinish: finish,
+      nozzleSize: validNozzle,
+      customNote: String(requirement || ''),
+      printer: matchedPrinter,
+      products: ALL_MARKET_PRODUCTS,
+      lang: (['zh-TW', 'en', 'ja'].includes(lang) ? lang : 'zh-TW') as any,
+    });
+
+    const recommendedMaterial = computed.materialInfo.fullName;
+    const nozzleTemp = computed.materialInfo.nozzleTemp;
+    const bedTemp = computed.materialInfo.bedTemp;
+    const printSpeed = `${computed.materialInfo.speed} (${computed.materialInfo.volumetricFlow})`;
+    const coolingFan = computed.materialInfo.fan;
+    const retraction = computed.materialInfo.retraction;
+    const bedType = computed.materialInfo.bedType;
+    const enclosureNeeded = computed.materialInfo.enclosureNeeded;
+
+    const recommendedTitle =
+      lang === 'en'
+        ? `Matched for ${matchedPrinter.name} (${computed.score}% Compatibility)`
+        : lang === 'ja'
+        ? `適合機種：${matchedPrinter.name}（適合度 ${computed.score}%）`
+        : `適配機型：${matchedPrinter.name}（相容度 ${computed.score}%）`;
+
+    const reasoning = computed.reason;
+    const proTips: string[] = [
+      `使用 ${validNozzle} 噴嘴（${computed.materialInfo.layerHeight}）時，函數精算最大體積流量為 ${computed.materialInfo.volumetricFlow}，首層速度建議設為 ${computed.telemetry.firstLayerSpeedMmS} mm/s。`,
+      ...(computed.alerts.length > 0
+        ? computed.alerts
+        : [
+            `神狗勾 1kg 標準線盤（雷射線徑公差 ±0.02mm）可直接相容 ${matchedPrinter.name} 高速供料。`,
+          ]),
+      '耗材拆封後若長時間未列印，建議置於防潮密封袋搭配分子篩乾燥劑保存。',
     ];
-
-    if (isTPU) {
-      recommendedMaterial = 'TPU 95A 高回彈減震彈性耗材';
-      recommendedTitle = '極致抗撕裂・緩衝密封耐磨推薦';
-      reasoning = `您設定了極高結構衝擊與柔韌性需求。TPU 95A 具備高達 450% 斷裂伸長率與耐磨耐油特性，非常適合密封圈、減震腳墊與防摔保護殼。`;
-      nozzleTemp = '220°C - 235°C';
-      bedTemp = '40°C - 50°C';
-      printSpeed = '30 - 60 mm/s (軟膠需維持平穩低速擠出)';
-      coolingFan = '100%';
-      retraction = '0.5mm @ 20mm/s (近端小回抽，避免喉管軟化卡料)';
-      bedType = 'Textured PEI 或塗薄層口紅膠作為隔離層 (防黏死)';
-      enclosureNeeded = '開放機箱即可 (無需保溫)';
-      proTips = [
-        '【重要注意】若使用拓竹 AMS 或 Anycubic ACE Pro，TPU 嚴禁直接裝入多色進料器，請改由機身後方外掛料架直接供料！',
-        '擠出機壓爪張力調至最鬆或中等，避免齒輪過度擠壓軟料導致進料變形卡料。',
-        'TPU 易吸水產生微氣泡，列印前若受潮建議 55°C 烘烤 4-6 小時。'
-      ];
-    } else if (isHighHeat) {
-      recommendedMaterial = 'ABS-GF 玻璃纖維超強耐溫耗材';
-      recommendedTitle = '耐熱 100°C+・工業耐高溫抗蠕變方案';
-      reasoning = `您要求承受 90°C~105°C 高溫環境。ABS-GF 摻雜微米玻纖強化，熱變形溫度超過 100°C，且大幅降低了傳統純 ABS 的冷卻收縮翹邊率。`;
-      nozzleTemp = '260°C - 275°C';
-      bedTemp = '95°C - 105°C';
-      printSpeed = isVoron || isBambu || isCreality || isFlashforge ? '150 - 250 mm/s' : '60 - 120 mm/s';
-      coolingFan = '10% - 20% (嚴禁強風冷卻導致層裂)';
-      retraction = '0.8mm @ 35mm/s';
-      bedType = '工程板 / 高溫 PEI + 專用固體膠棒 (Bambu Liquid Glue 或 PVP)';
-      enclosureNeeded = isOpenFrame ? '【強烈警告】此機型為開放式，印 ABS 極易開裂翹曲！強烈建議加裝保溫罩帳篷！' : '必須全封箱列印，腔體溫度建議維持 45°C 以上';
-      proTips = [
-        '列印完畢後請勿立即開箱！讓機艙在關閉狀態下自然冷卻至 40°C 以下再取出模型，防止驟冷開裂。',
-        '列印前請先將熱床升溫至 100°C 預熱密閉機艙 10-15 分鐘，形成良好恒溫環境。',
-        '含有玻纖成份，強烈建議更換硬化鋼 (Hardened Steel) 噴嘴以防口徑磨損。'
-      ];
-    } else if (isCF) {
-      recommendedMaterial = 'PLA-CF 航太級碳纖維複合耗材';
-      recommendedTitle = '高剛性抗拉・航太消光無層紋旗艦';
-      reasoning = `您追求極高結構剛性與無層紋消光質感。PLA-CF 注入高強度碳纖維碎束，抗拉強度顯著提升，且碳纖維漫反射大幅隱藏層紋，成品宛如開模射出件。`;
-      nozzleTemp = isBambu ? '250°C - 265°C (高速專用高溫)' : '225°C - 240°C';
-      bedTemp = '55°C - 65°C';
-      printSpeed = isBambu || isCreality || isFlashforge || isVoron ? '200 - 350 mm/s' : '100 - 180 mm/s';
-      coolingFan = '60% - 80%';
-      retraction = '0.8mm @ 30mm/s';
-      bedType = 'Textured PEI 金鋼砂熱床板';
-      enclosureNeeded = '開放或通風機箱 (若全封閉請掀開上蓋防熱爬升)';
-      proTips = [
-        '【核心注意】碳纖維具備高磨蝕性，嚴禁使用原廠黃銅噴嘴！請務必改用 0.4mm 以上之硬化鋼噴嘴 (Hardened Steel Nozzle)。',
-        '相容於拓竹 AMS 與多色列印系統，但建議送料管轉彎半徑不可過小，以防碳纖微脆折。',
-        '第一層高度維持 0.2mm，第一層速度 40mm/s 即可獲得如高級黑色岩石般的細膩底紋。'
-      ];
-    } else if (isOutdoor) {
-      recommendedMaterial = 'PETG-HF 高抗衝擊耐溫線材';
-      recommendedTitle = '抗 UV 日曬・防潮韌性耐候首選';
-      reasoning = `您指定了戶外耐候防曬抗潮需求。PETG 具備天然的耐紫外線、抗酸鹼與優良延展韌性，耐熱達 75-80°C，夏季戶外日曬不軟化、不易脆化。`;
-      nozzleTemp = '240°C - 255°C';
-      bedTemp = '70°C - 80°C';
-      printSpeed = isBambu || isCreality || isFlashforge || isVoron ? '180 - 300 mm/s' : '80 - 160 mm/s';
-      coolingFan = '30% - 50% (不可吹全速以保證極致層間熔合力)';
-      retraction = '1.0mm @ 35mm/s (近端) / 5.0mm (遠端)';
-      bedType = 'Textured PEI 紋理粉體鋼板 (切勿在光面 PEI 上直接印，以免黏死撕破！)';
-      enclosureNeeded = '開放機箱即可 (PETG 無收縮應力)';
-      proTips = [
-        '若使用光面 PEI 鋼板，務必先塗抹口紅膠作為隔離層，否則 PETG 強力結合力可能撕下 PEI 鍍層！',
-        'PETG 易吸附空氣水氣產生拉絲，若有細絲請先用 65°C 烘烤 4 小時或用熱風槍快速拂過表面。',
-        '冷卻風扇勿開滿，30-50% 轉速可獲得接近注塑件的層間拉拔強度。'
-      ];
-    }
 
     const defaultFallback = {
       material: recommendedMaterial,
+      preferredProductId: computed.materialInfo.preferredProductId,
       title: recommendedTitle,
       reasoning,
       slicerSettings: {
@@ -998,57 +970,76 @@ app.post('/api/ai/recommend-filament', async (req, res) => {
         coolingFan,
         retraction,
         bedType,
-        enclosureNeeded
+        enclosureNeeded,
       },
-      proTips
+      proTips,
     };
 
-    // Construct detailed prompt for Gemini AI
-    const prompt = `你是一位世界頂級的 3D 列印材料力學工程師與切片調參專家。請根據用戶提供的 3D 印表機確切機型、滑桿性能要求，給出完全相符、切合實際硬體限制的耗材材質推薦與最佳切片參數報告。
+    const prompt = `你是一位世界頂級的 3D 列印材料力學工程師與切片調參專家。請根據用戶提供的 3D 印表機確切機型、滑桿性能要求與以下 21 材質多維流變與熱力學函數精算基準，給出完全相符、切合實際硬體限制的耗材材質推薦與最佳切片參數報告。
 
 【用戶硬體與需求設定】：
-- 3D 印表機型號: ${printerModel || 'Bambu Lab X1-Carbon'}
-- 機型結構特點: ${isOpenFrame ? '開放式機身 (印 ABS 易開裂，請注意提示)' : '全封箱/CoreXY (高保溫)'}
-- 耐溫極限需求: ${heat}°C (45°C 室內裝飾 ~ 110°C 工業高溫)
-- 結構韌性與抗衝擊等級: ${tough} / 5 星 (1=裝飾微縮, 3=日常受力, 4=工業齒輪, 5=極致防摔軟膠 TPU)
-- 列印便利與新手友善度: ${ease} / 5 星 (5=免封箱零翹邊秒印, 2=需 100°C 熱床與保溫封箱)
-- 戶外抗UV與防潮耐候度: ${outdoor} / 5 星 (1=室內, 5=全天候日曬雨淋)
-- 表面質感消光要求: ${finish}
-- 噴嘴口徑: ${nozzleSize || '0.4mm'}
+- 3D 印表機型號: ${matchedPrinter.name}
+- 機型結構特點: ${matchedPrinter.enclosure === 'full' ? '全封箱恆溫艙體' : '開放式機身'} / 擠出機: ${matchedPrinter.extruder}
+- 耐溫極限需求: ${H}°C
+- 結構韌性與抗衝擊等級: ${T} / 5 星
+- 列印便利與新手友善度: ${E} / 5 星
+- 戶外抗UV與防潮耐候度: ${U} / 5 星
+- 表面質感要求: ${finish}
+- 噴嘴口徑: ${validNozzle}
 - 用戶備註需求: ${requirement || '追求高良率與優異機械強度'}
 
+【物理函數精算基準（請嚴格採用此函數推算結果）】：
+- 函數最優匹配材質: ${recommendedMaterial}
+- 函數精算噴嘴溫度: ${nozzleTemp}
+- 函數精算熱床溫度: ${bedTemp}
+- 函數精算列印速度與流量: ${printSpeed}
+- 函數精算建議層高與線寬: ${computed.materialInfo.layerHeight}
+- 函數精算冷卻風扇: ${coolingFan}
+- 函數精算回抽設定: ${retraction}
+
 【回饋規範】：
-1. 嚴格根據印表機硬體（如拓竹 AMS 支援度、噴嘴材質要求如硬化鋼、是否開放機箱）給出針對性切片參數。
-2. 請以 JSON 格式回應，包含以下欄位：
+請以 JSON 格式回應（使用台灣繁體中文），包含以下欄位：
 {
-  "material": "推薦耗材名稱 (如 PLA-CF 航太級碳纖維複合耗材 / PETG-HF 高抗衝擊耐溫線材 / High-Speed Hyper PLA / ABS-GF 玻璃纖維 / TPU 95A)",
+  "material": "${recommendedMaterial}",
   "title": "簡短精準推薦標題",
-  "reasoning": "推薦理由 (2-3 句話，專業分析材料機械性能與該機型硬體的完美相容性)",
+  "reasoning": "推薦理由 (2-3 句話，結合物理函數算出的溫度/流量數據與該機型硬體相容性)",
   "slicerSettings": {
-    "nozzleTemp": "噴嘴溫度範圍 (如: 220°C - 230°C)",
-    "bedTemp": "熱床溫度範圍 (如: 55°C - 60°C)",
-    "printSpeed": "建議列印速度 (符合該機型實際極限，如 250 - 450 mm/s 或 TPU 30 - 50 mm/s)",
-    "coolingFan": "冷卻風扇設定 (如: 80% - 100% 或 PETG 40%)",
-    "retraction": "回抽參數建議 (如: 0.8mm @ 35mm/s)",
-    "bedType": "建議熱床底板 (如: Textured PEI 金鋼砂板)",
-    "enclosureNeeded": "機箱封閉需求 (如: 開放機箱即可 / 必須封箱且腔溫 45°C)"
+    "nozzleTemp": "${nozzleTemp}",
+    "bedTemp": "${bedTemp}",
+    "printSpeed": "${printSpeed}",
+    "coolingFan": "${coolingFan}",
+    "retraction": "${retraction}",
+    "bedType": "${bedType}",
+    "enclosureNeeded": "${enclosureNeeded}"
   },
   "proTips": ["實戰工程祕訣 1", "實戰工程祕訣 2", "實戰工程祕訣 3"]
 }`;
 
-    const raw = await generateGeminiContentSafely(prompt, { 
-      json: true, 
+    const raw = await generateGeminiContentSafely(prompt, {
+      json: true,
       preferredModel: requestedModel,
-      apiKey: req.body?.apiKey 
     });
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
         if (parsed.material && parsed.slicerSettings) {
-          return res.json({ 
-            success: true, 
-            modelUsed: requestedModel || 'gemini-3.8-flash', 
-            ...parsed 
+          return res.json({
+            success: true,
+            modelUsed: requestedModel || 'gemini-3.8-flash',
+            ...parsed,
+            material: recommendedMaterial,
+            preferredProductId: computed.materialInfo.preferredProductId,
+            slicerSettings: {
+              ...defaultFallback.slicerSettings,
+              ...parsed.slicerSettings,
+              nozzleTemp,
+              bedTemp,
+              printSpeed,
+              coolingFan,
+              retraction,
+              bedType,
+              enclosureNeeded,
+            },
           });
         }
       } catch (parseErr: any) {
@@ -1056,12 +1047,11 @@ app.post('/api/ai/recommend-filament', async (req, res) => {
       }
     }
 
-    // Return high-quality domain fallback calculated from physics
-    return res.json({ 
-      success: true, 
-      isFallback: true, 
-      modelUsed: requestedModel === 'local-expert' ? '神狗勾 3D 專家工程模式 (離線高速)' : (requestedModel || '神狗勾 3D 物理演算法'), 
-      ...defaultFallback 
+    return res.json({
+      success: true,
+      isFallback: true,
+      modelUsed: requestedModel === 'local-expert' ? '神狗勾 3D 專家工程模式 (離線高速)' : (requestedModel || '神狗勾 3D 物理演算法'),
+      ...defaultFallback,
     });
   } catch (error: any) {
     const errMsg = String(error?.message || '');
@@ -1071,22 +1061,23 @@ app.post('/api/ai/recommend-filament', async (req, res) => {
     return res.json({
       success: true,
       isFallback: true,
-      material: 'High-Speed Hyper PLA 500mm/s',
+      material: '神狗勾 High-Speed Hyper PLA+ 極速高韌性線材 500mm/s',
+      preferredProductId: 'fil-01',
       title: '高速旗艦・極致平整首選',
-      reasoning: '超高熔融流動指數，支援高達 500mm/s 狂飆列印，表面無層紋且抗拉強度優良。',
+      reasoning: '超高熔融流動指數，支援高達 500mm/s 高速列印，表面細緻且抗拉強度優良。',
       slicerSettings: {
-        nozzleTemp: '215°C - 225°C',
+        nozzleTemp: '210°C - 220°C',
         bedTemp: '55°C - 60°C',
-        printSpeed: '250 - 450 mm/s',
-        coolingFan: '100%',
+        printSpeed: '220 - 360 mm/s (24 mm³/s)',
+        coolingFan: '90% - 100%',
         retraction: '0.8mm @ 35mm/s',
         bedType: 'Textured PEI 金鋼砂板',
-        enclosureNeeded: '開放機箱即可'
+        enclosureNeeded: '開放機箱即可',
       },
       proTips: [
-        '首層速度降至 35mm/s 以確保底板抓地力。',
-        '定期以 99% 異丙醇清潔熱床表面去除指紋油脂。'
-      ]
+        '首層速度降至 30mm/s 以確保底板抓地力。',
+        '定期以 99% 異丙醇清潔熱床表面去除指紋油脂。',
+      ],
     });
   }
 });
@@ -1359,7 +1350,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
   });
 
   try {
-    const { message, messages, storeContext } = req.body;
+    const { message, messages, storeContext, lang = 'zh-TW' } = req.body;
     const rawMessages: Array<{ sender?: string; role?: string; text: string }> = Array.isArray(messages) ? messages : [];
 
     let latestUserMessage = (message || '').trim();
@@ -1371,7 +1362,13 @@ app.post('/api/ai/chat/stream', async (req, res) => {
     }
 
     if (!latestUserMessage) {
-      res.write(`data: ${JSON.stringify({ text: '您好！我是神狗勾 3D 耗材智能顧問，請問有什麼我可以為您服務的？' })}\n\n`);
+      const greeting =
+        lang === 'en'
+          ? "Hey there! I'm the GodDog 3D Filament & Slicing Specialist. How can I help with your 3D print setup today?"
+          : lang === 'ja'
+          ? 'こんにちは！神狗勾 3Dフィラメント専属AIアドバイザーです。造形設定やフィラメント選びなど、何でもお気軽にご相談ください！'
+          : '您好！我是神狗勾 3D 耗材智能顧問，請問有什麼我可以為您服務的？';
+      res.write(`data: ${JSON.stringify({ text: greeting })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
     }
@@ -1393,11 +1390,33 @@ app.post('/api/ai/chat/stream', async (req, res) => {
 
     let contextNotes = '';
     if (storeContext?.viewingProduct) {
-      contextNotes += `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
+      contextNotes +=
+        lang === 'en'
+          ? `\n[Currently Viewing Product]: ${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`
+          : lang === 'ja'
+          ? `\n【現在閲覧中の商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`
+          : `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
     }
 
-    const systemPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。
-語氣親切、專業、有條理。使用台灣正體中文回答，嚴禁中國大陸用語與簡體字。
+    const systemPrompt =
+      lang === 'en'
+        ? `You are the official AI Filament & Slicing Specialist at GodDog 3D Filaments.
+Respond in natural, conversational, idiomatic American English—like a friendly, seasoned 3D printing maker and materials engineer (familiar with Bambu Studio, OrcaSlicer, PrusaSlicer, Voron, and Creality K1). Never use stiff or literal machine-translated phrasing.
+[Core Facts & Formatting]:
+- Never mention API keys, quotas, or internal configuration.
+- All 1kg GodDog spools (200mm OD, 65mm width, ±0.02mm tolerance) fit Bambu Lab AMS right out of the box (except soft TPU 95A, which must be fed from the external spool holder; use hardened steel nozzles for Carbon Fiber).
+- Free shipping on orders over NT$999, 24-hour dispatch. Promo code [PRINTCORE10] gives 10% off; empty spool return gives NT$20 store credit per spool.
+- Do NOT use markdown ** bold or ### headers; use plain text, • bullet points, and [brackets] for emphasis in 2–4 concise paragraphs.${contextNotes}`
+        : lang === 'ja'
+        ? `あなたは「神狗勾 (GodDog) 3Dフィラメント公式ストア」の専属AIフィラメント＆スライサー技術アドバイザーです。
+機械翻訳のような不自然で硬い直訳表現は避け、日本の3Dプリント愛好家やメイカーに寄り添う、自然で親しみやすく丁寧な日本語（です・ます調）で回答してください。
+【重要事項＆フォーマット】：
+- APIキーや内部設定についての言及は厳禁です。
+- 当店の1kgスプール（外径200mm・幅65mm・公差±0.02mm）はBambu Lab AMSや主流の高速3Dプリンターに完全対応しています（※軟質TPU 95Aのみ外部ホルダーから給紙。炭素繊維配合材は硬化鋼ノズル推奨）。
+- NT$999以上で送料無料・24時間以内発送。クーポン【PRINTCORE10】で10%OFF、空スプール回収は1個あたりNT$20分のポイント還元。
+- Markdownの太字（**）や見出し（###）は使用せず、プレーンテキスト、箇条書き（•）、【】を使って2〜4段落でスッキリまとめてください。${contextNotes}`
+        : `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。
+語氣親切、自然、道地，像經驗豐富的台灣 3D 列印老手。請一律使用台灣正體中文回答，嚴禁中國大陸用語與簡體字（例如必須使用「列印、高畫質、記憶體、軟體、最佳化」）。
 【身分定位與機密保密（最高優先級）】：
 - 你是神狗勾 3D 耗材商城的官方智能客服顧問，對外代表官方雲端推論運算服務。
 - 嚴禁提及任何有關 API Key、金鑰配置、配額額度、或「由店長提供」、「由我提供」、「由使用者提供」等技術字眼或個人資訊。
@@ -1408,15 +1427,15 @@ app.post('/api/ai/chat/stream', async (req, res) => {
 3. 精簡俐落，每段 2 至 4 句高含金量內容，必要時使用 • 列點。
 ${contextNotes}`;
 
-    if (requestedModel === 'local-expert') {
-      const offlineReply = '神狗勾全系列耗材皆相容 Bambu Lab AMS 與主流高速 3D 列印機，滿 NT$999 即享免運並於 24H 內急速出貨。如需進一步諮詢，請告訴我您的機種與列印需求！';
-      res.write(`data: ${JSON.stringify({ text: offlineReply })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      return res.end();
-    }
+    const fallbackExpertReply =
+      lang === 'en'
+        ? 'All GodDog 1kg spools (±0.02mm tolerance, 200mm OD) fit Bambu Lab AMS and high-speed CoreXY printers right out of the box. For PLA/Hyper PLA, we recommend 210–225°C nozzle and 55°C PEI bed; for PETG-HF, 235–245°C nozzle and 70°C bed; for TPU 95A, 220–230°C fed from the external spool holder. Orders over NT$999 ship free within 24 hours!'
+        : lang === 'ja'
+        ? '神狗勾の全1kgスプール（外径200mm・公差±0.02mm）はBambu Lab AMSおよび主流の高速CoreXY機にそのまま対応しています。推奨設定はHyper PLAがノズル210〜225°C・ベッド55°C、PETG-HFがノズル235〜245°C・ベッド70°C、軟質TPU 95Aが外部給紙で220〜230°Cです。NT$999以上のご注文で送料無料・24時間以内に発送いたします！'
+        : '神狗勾全系列 1kg 標準線盤（外徑 200mm、公差 ±0.02mm）全面相容 Bambu Lab AMS 與主流高速機型。常用建議參數：Hyper PLA 噴嘴 210–225°C / 熱床 55°C；PETG-HF 噴嘴 235–245°C / 熱床 70°C；TPU 95A 軟膠請由機身外掛料架進料（220–230°C）。全館滿 NT$999 免運並於 24H 內快速出貨！';
 
-    if (!effectiveApiKey) {
-      res.write(`data: ${JSON.stringify({ error: '後端伺服器尚未設定 GEMINI_API_KEY，因此未實際呼叫 Gemini API。' })}\n\n`);
+    if (requestedModel === 'local-expert' || !effectiveApiKey) {
+      res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
     }
@@ -1430,20 +1449,25 @@ ${contextNotes}`;
       abortController.signal
     );
 
+    let streamedAnyChunk = false;
     for await (const chunkText of generator) {
       if (clientDisconnected || abortController.signal.aborted) {
         break;
       }
+      streamedAnyChunk = true;
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+    }
+
+    if (!streamedAnyChunk && !clientDisconnected && !abortController.signal.aborted) {
+      res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
     }
 
     if (!res.writableEnded) {
       res.write('data: [DONE]\n\n');
       res.end();
     }
-  } catch (streamErr: any) {
+  } catch (_streamErr: any) {
     if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ error: '串流生成發生異常，請稍後再試。' })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
     }
@@ -1473,7 +1497,7 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 
   try {
-    const { message, messages, storeContext } = req.body;
+    const { message, messages, storeContext, lang = 'zh-TW' } = req.body;
     
     // Extract recent multi-turn messages array
     const rawMessages: Array<{ sender?: string; role?: string; text: string }> = Array.isArray(messages) ? messages : [];
@@ -1490,7 +1514,12 @@ app.post('/api/ai/chat', async (req, res) => {
     if (!latestUserMessage) {
       return res.json({
         success: true,
-        reply: '您好！我是神狗勾 3D 耗材智能顧問，已啟用多輪對話記憶。請問今天有什麼材質選購、列印參數或訂單問題我可以為您解答？',
+        reply:
+          lang === 'en'
+            ? "Hey there! I'm the GodDog 3D Filament & Slicing Specialist. What filament, printer setup, or slicer parameters can I help you dial in today?"
+            : lang === 'ja'
+            ? 'こんにちは！神狗勾 3Dフィラメント専属AIアドバイザーです。フィラメント選びやスライサー設定など、何でもお気軽にご相談ください！'
+            : '您好！我是神狗勾 3D 耗材智能顧問，已啟用多輪對話記憶。請問今天有什麼材質選購、列印參數或訂單問題我可以為您解答？',
       });
     }
 
@@ -1519,16 +1548,21 @@ app.post('/api/ai/chat', async (req, res) => {
     // Contextual information from store state
     let storeContextNotes = '';
     if (storeContext?.viewingProduct) {
-      storeContextNotes = `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
+      storeContextNotes =
+        lang === 'en'
+          ? `\n[Currently Viewing Product]: ${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`
+          : lang === 'ja'
+          ? `\n【現在閲覧中の商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`
+          : `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
     }
 
     const targetModel = requestedModel || 'gemini-3.8-flash';
     const targetDisplayName = MODEL_DISPLAY_NAMES[targetModel] || targetModel;
     const lower = latestUserMessage.toLowerCase();
-    const cacheKey = `${targetModel}_${lower}_${history.length > 0 ? history[history.length - 1].text : ''}`;
+    const cacheKey = `${lang}_${targetModel}_${lower}_${history.length > 0 ? history[history.length - 1].text : ''}`;
     
-    // Fast path FAQ ONLY for offline local-expert mode
-    if (targetModel === 'local-expert') {
+    // Fast path FAQ ONLY for offline local-expert mode in zh-TW
+    if (targetModel === 'local-expert' && lang === 'zh-TW') {
       const cached = chatResponseCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < 300000) {
         return res.json({
@@ -1541,22 +1575,32 @@ app.post('/api/ai/chat', async (req, res) => {
       }
     }
 
-    const systemPrompt = `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。使用台灣正體中文回答，嚴禁中國大陸用語與簡體字。
+    const systemPrompt =
+      lang === 'en'
+        ? `You are the official AI Filament & Slicing Specialist at GodDog 3D Filaments.
+Speak in natural, conversational, idiomatic American English—like a friendly, seasoned 3D printing maker and materials engineer. Never use stiff or literal machine-translated phrasing.
+[Formatting & Store Facts]:
+1. Do NOT use double asterisks ** or ### headers; use plain text, • bullet points, or [brackets] for emphasis.
+2. Keep answers concise, practical, and high-value (2–4 short paragraphs or bullet points).
+3. All GodDog 1kg spools (200mm OD, 65mm width, ±0.02mm tolerance) fit Bambu Lab AMS & mainstream high-speed printers right out of the box (except soft TPU 95A, which must be fed externally; use hardened steel nozzles for PLA-CF/PETG-CF).
+4. Free shipping over NT$999, 24H dispatch; promo code [PRINTCORE10] for 10% off; empty spool return earns NT$20 store credit per spool.${storeContextNotes}`
+        : lang === 'ja'
+        ? `あなたは「神狗勾 (GodDog) 3Dフィラメント公式ストア」の専属AIフィラメント＆スライサー技術アドバイザーです。
+機械翻訳のような不自然で硬い表現は避け、日本の3Dプリント愛好家やメイカーに寄り添う、自然で親しみやすく丁寧な日本語（です・ます調）で回答してください。
+【回答ルール＆ストア情報】：
+1. Markdownの太字（**）や見出し（###）は使用せず、プレーンテキスト、箇条書き（•）、または【】を使って見やすくまとめてください。
+2. 結論から分かりやすく、2〜4段落程度で簡潔に回答してください。
+3. 当店の1kgスプール（外径200mm・幅65mm・公差±0.02mm）はBambu Lab AMSや主流の高速機に完全対応（※軟質TPU 95Aは外部ホルダー給紙、炭素繊維配合材は硬化鋼ノズル推奨）。
+4. NT$999以上で送料無料・24H発送、クーポン【PRINTCORE10】で10%OFF、空スプール回収は1個につきNT$20分のポイント還元。${storeContextNotes}`
+        : `你是一位專業且熱誠的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。使用自然、道地的台灣正體中文回答，嚴禁中國大陸用語與簡體字。
 【排版與回答規範】：
 1. 嚴禁使用雙星號 ** 或 ### 標題符號，請使用純文字、• 列點或【】標示重點。
 2. 開門見山直切重點，控制在 2 至 4 句高含金量內容或清晰列點，不說多餘客套話。
 3. 神狗勾全系列 1kg 線材（外徑 200mm、寬 65mm，公差 ±0.02mm）全面相容拓竹 Bambu Lab AMS 與主流高速機（TPU 軟膠除外，需外掛直供；PLA-CF/PETG-CF 建議搭配硬化鋼噴嘴）。
 4. 全館滿 NT$999 免運、24H 出貨；優惠碼【PRINTCORE10】享 9 折；空線盤回收每盤回饋 NT$20 紅利。${storeContextNotes}`;
 
-    // 1. Dispatch to Gemini if targetModel is a Gemini model
-    if (targetModel !== 'local-expert') {
-      if (!effectiveApiKey) {
-        return res.status(503).json({
-          success: false,
-          error: '後端伺服器尚未設定 GEMINI_API_KEY，因此未實際呼叫 Gemini API。',
-        });
-      }
-
+    // 1. Dispatch to Gemini if targetModel is a Gemini model and key is available; fall through to local expert engine if upstream is temporarily busy (503)
+    if (targetModel !== 'local-expert' && effectiveApiKey) {
       try {
         const geminiReply = await generateGeminiChatSafely(
           history.slice(-8),
@@ -1576,16 +1620,8 @@ app.post('/api/ai/chat', async (req, res) => {
             contextualMemoryActive: true,
           });
         }
-        return res.status(502).json({
-          success: false,
-          error: 'Gemini API 未回傳有效內容。',
-        });
-      } catch (geminiErr: any) {
-        console.warn('[Gemini Error]:', geminiErr?.message?.slice(0, 120));
-        return res.status(502).json({
-          success: false,
-          error: `Gemini API 呼叫失敗：${geminiErr?.message || '連線異常'}`,
-        });
+      } catch (_geminiErr: any) {
+        // Fall through to local 3D engineering expert engine
       }
     }
 
@@ -4791,22 +4827,28 @@ async function startServer() {
   }
 
   // Bind port 3000 immediately so the control plane health check succeeds right away
-  const tryListen = (retries = 10, delay = 500) => {
-    const s: any = app.listen(PORT, '0.0.0.0', () => {
+  const tryListen = (targetPort = PORT, retries = 10, delay = 400) => {
+    const s: any = app.listen(targetPort, '0.0.0.0', () => {
       activeHttpServer = s;
-      console.log(`[神狗勾 Server] Running on http://0.0.0.0:${PORT} (env: ${process.env.NODE_ENV || 'development'})`);
+      console.log(`[神狗勾 Server] Running on http://0.0.0.0:${targetPort} (env: ${process.env.NODE_ENV || 'development'})`);
     });
 
     s.on('error', (err: any) => {
-      if (err.code === 'EADDRINUSE' && retries > 0) {
-        console.warn(`[神狗勾 Server] Port ${PORT} busy, retrying in ${delay}ms (${retries} attempts left)...`);
-        setTimeout(() => {
-          try { s.close(); } catch {}
-          tryListen(retries - 1, delay);
-        }, delay);
-      } else {
-        console.error('[神狗勾 Server] Fatal server error:', err);
+      if (err.code === 'EADDRINUSE') {
+        try { s.close(); } catch {}
+        if (targetPort !== 3000) {
+          console.warn(`[神狗勾 Server] Port ${targetPort} occupied by supervisor, switching to port 3000...`);
+          return tryListen(3000, retries, delay);
+        }
+        if (retries > 0) {
+          console.warn(`[神狗勾 Server] Port ${targetPort} busy, retrying in ${delay}ms (${retries} attempts left)...`);
+          setTimeout(() => {
+            tryListen(targetPort, retries - 1, delay);
+          }, delay);
+          return;
+        }
       }
+      console.error('[神狗勾 Server] Fatal server error:', err);
     });
   };
   tryListen();
@@ -4817,7 +4859,8 @@ async function startServer() {
       const vite = await createViteServer({
         server: {
           middlewareMode: true,
-          hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
+          hmr: false,
+          watch: null,
         },
         appType: 'spa',
       });

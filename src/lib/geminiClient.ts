@@ -1,630 +1,587 @@
 import { EcommerceCopyResult } from '../types';
-import {
-  loadAIConfigFromFirestore,
-  requestGeminiViaFirestoreBridge,
-} from './firebase';
 
-export { requestGeminiViaFirestoreBridge };
-
-let cloudConfigLoaded = false;
-let cachedCloudApiKey = '';
-let cachedCloudBaseUrl = '';
-
-export function getClientGeminiApiKey(): string {
-  if (typeof window !== 'undefined') {
-    const customKey =
-      localStorage.getItem('god_dog_gemini_key') ||
-      localStorage.getItem('printcore_gemini_key') ||
-      cachedCloudApiKey;
-    if (customKey && customKey.trim()) return customKey.trim();
-  }
-  const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
-  if (typeof envKey === 'string' && envKey.trim() && !envKey.includes('YOUR_')) {
-    return envKey.trim();
-  }
-  return '';
-}
-
-export function getClientCustomBaseUrl(): string {
-  if (typeof window !== 'undefined') {
-    const customUrl = localStorage.getItem('god_dog_ai_base_url') || cachedCloudBaseUrl;
-    if (customUrl && customUrl.trim()) return customUrl.trim().replace(/\/+$/, '');
-  }
-  return '';
-}
-
-export async function ensureCloudAIConfig(): Promise<{ apiKey: string; apiBaseUrl: string }> {
-  const existingKey = getClientGeminiApiKey();
-  const existingUrl = getClientCustomBaseUrl();
-  if (existingKey || cloudConfigLoaded) {
-    return { apiKey: existingKey, apiBaseUrl: existingUrl };
-  }
-  cloudConfigLoaded = true;
-  try {
-    const data = await loadAIConfigFromFirestore();
-    if (data?.geminiApiKey) {
-      cachedCloudApiKey = data.geminiApiKey.trim();
-    }
-    if (data?.apiBaseUrl) {
-      cachedCloudBaseUrl = data.apiBaseUrl.trim().replace(/\/+$/, '');
-    }
-  } catch {
-    // ignore
-  }
-  return {
-    apiKey: getClientGeminiApiKey(),
-    apiBaseUrl: getClientCustomBaseUrl(),
-  };
-}
+export type SupportedChatLang = 'zh-TW' | 'en' | 'ja';
 
 export function getBackendApiBase(): string {
-  const envBase = (import.meta as any).env?.VITE_API_BASE_URL;
-  if (typeof envBase === 'string' && envBase.trim()) {
-    return envBase.trim().replace(/\/+$/, '');
-  }
-  if (typeof window !== 'undefined') {
-    const storedBackend = localStorage.getItem('god_dog_backend_api_base');
-    if (storedBackend && storedBackend.trim()) {
-      return storedBackend.trim().replace(/\/+$/, '');
-    }
+  const customBase = (import.meta as any).env?.VITE_API_BASE_URL;
+  if (customBase && typeof customBase === 'string' && customBase.trim()) {
+    return customBase.trim().replace(/\/+$/, '');
   }
   return '';
 }
 
 export function isStaticHostingEnv(): boolean {
-  if (getBackendApiBase()) return false;
-  if (typeof window === 'undefined') return false;
-  const host = window.location.hostname;
-  return (
-    host.includes('goddog.space') ||
-    host.includes('web.app') ||
-    host.includes('firebaseapp.com')
-  );
+  return false;
 }
 
-function mapToRealGeminiModel(uiModel?: string): string {
-  if (!uiModel) return 'gemini-2.5-flash';
-  const m = uiModel.toLowerCase();
-  if (m.includes('pro')) return 'gemini-2.5-pro';
-  if (m.includes('2.0')) return 'gemini-2.0-flash';
-  return 'gemini-2.5-flash';
+export function getLocalizedSystemPrompt(lang: SupportedChatLang = 'zh-TW', contextStr = ''): string {
+  if (lang === 'en') {
+    return `You are the official AI Filament & Slicing Specialist at GodDog 3D Filaments.
+Speak in natural, conversational, idiomatic American English—like a friendly, seasoned 3D printing maker and materials engineer (familiar with Bambu Studio, OrcaSlicer, PrusaSlicer, Voron, and Creality K1). Avoid stiff or robotic phrasing.
+【Store & Engineering Facts】:
+1. Every 1kg GodDog spool (200mm OD, 65mm width, ±0.02mm laser-checked tolerance) fits Bambu Lab AMS & Creality CFS right out of the box (except flexible TPU 95A, which should be fed from an external spool holder; for PLA-CF / PETG-CF, recommend a hardened steel nozzle).
+2. Free shipping on orders over NT$999, 24-hour dispatch from our Taiwan warehouse. Use promo code [PRINTCORE10] for 10% off, or [GODDOG100] for NT$100 off orders over NT$1,000. Empty spool recycling earns NT$20 store credit per spool.
+3. Formatting: Keep answers concise, practical, and easy to scan (2–4 short paragraphs or bullet points •). Do NOT use markdown double asterisks ** or ### headers; use plain text, • bullets, or [brackets] for emphasis.${contextStr}`;
+  }
+
+  if (lang === 'ja') {
+    return `あなたは「神狗勾 (GodDog) 3Dフィラメント公式ストア」の専属AIフィラメント＆スライサー技術アドバイザーです。
+機械翻訳のような不自然で硬い表現は避け、日本の3Dプリント愛好家やメイカーに寄り添う、自然で親しみやすく丁寧な日本語（です・ます調）で回答してください。
+【ストア＆技術仕様のポイント】：
+1. 当店の1kgスプール（外径200mm・幅65mm・線径公差±0.02mm）はBambu Lab AMSや主流の高速3Dプリンターに完全対応しています（※軟質TPU 95AのみAMS非推奨のため外部ホルダーから給紙してください。PLA-CF等の炭素繊維配合材は硬化鋼ノズル推奨）。
+2. NT$999以上のご注文で送料無料、24時間以内にスピード発送。クーポンコード【PRINTCORE10】で10%OFF、【GODDOG100】でNT$1,000以上のご注文がNT$100引きになります。空スプール回収は1個あたりNT$20分のポイントを還元します。
+3. フォーマット規則：Markdownの太字（**）や見出し（###）は使用せず、プレーンテキスト、箇条書き（•）、または【】を使ってスッキリ見やすく（2〜4段落程度で）まとめてください。${contextStr}`;
+  }
+
+  return `你是一位專業且親切的 3D 列印耗材專家與神狗勾官方商城智能客服顧問。
+請一律使用自然、道地的台灣正體中文回答（嚴禁使用中國大陸用語與簡體字，例如必須使用「列印、高畫質、記憶體、軟體、最佳化」，不可死板生硬）。
+【排版與回答規範】：
+1. 嚴禁使用雙星號 ** 或 ### 標題符號，請使用純文字、• 列點或【】標示重點。
+2. 語氣像經驗豐富的台灣 3D 列印老手，開門見山直切重點，控制在 2 至 4 段清晰建議或列點，不說多餘官腔客套話。
+3. 神狗勾全系列 1kg 線材（外徑 200mm、寬 65mm，公差 ±0.02mm）全面相容拓竹 Bambu Lab AMS 與主流高速機（TPU 軟膠除外，需外掛直供；PLA-CF/PETG-CF 建議搭配硬化鋼噴嘴）。
+4. 全館滿 NT$999 免運、24H 出貨；優惠碼【PRINTCORE10】享 9 折、【GODDOG100】滿千折百；空線盤回收每盤回饋 NT$20 紅利。${contextStr}`;
 }
 
-const SYSTEM_PROMPT = `你是「神狗勾 3D (GodDog 3D)」官方網站的資深 3D 列印工程師與耗材智能顧問。
-請一律使用台灣繁體中文回答，語氣專業、親切且精準，直接給出結論與條列重點（每點以「• 」開頭），不要使用 ** 粗體符號或 ### 標題符號。
-全館資訊：
-• 免運門檻：全館滿 NT$999 享 7-11、全家超商取貨與黑貓宅配免運費；平日 15:00 前下單當日火速出貨。
-• 優惠折扣碼：輸入 GODDOG 享全館 9 折；輸入 MAKER100 滿千折 NT$100。
-• 線盤相容性：全系列 1kg 線材外徑 200mm、軸寬 65mm，線徑公差 ±0.02mm，100% 完美相容拓竹 Bambu Lab AMS 與 AMS Lite（僅 TPU 95A 軟膠請由機身後方單盤料架進料）。
-• 主力耗材參數：
-  - High-Speed PLA+：噴嘴 205~225°C、熱床 55~60°C、速度 50~500mm/s、風扇 100%。
-  - PETG-HF 高韌性線材：噴嘴 235~250°C、熱床 70~80°C、速度 80~200mm/s、風扇 30~50%。
-  - PLA-CF 碳纖維強化線材：噴嘴 215~235°C、熱床 55~65°C，務必使用 0.4mm/0.6mm 硬化鋼噴嘴。
-  - TPU 95A 減震軟膠：噴嘴 215~230°C、熱床 40~50°C、速度 25~45mm/s、回抽 0.8~1.2mm，勿放入 AMS。
-  - ABS+ / ASA 工業耐熱：噴嘴 245~265°C、熱床 95~105°C，需封箱保溫並關閉冷卻風扇。`;
-
+/**
+ * Calls the server-side Gemini API endpoint (/api/ai/chat).
+ * All @google/genai SDK execution happens strictly on the server.
+ */
 export async function callDirectBrowserGemini(
   userMessage: string,
-  history: Array<{ sender: string; text: string }> = [],
-  model?: string,
+  history: Array<{ sender?: string; role?: string; text: string }> = [],
+  preferredModel?: string,
   storeContext?: any,
-  signal?: AbortSignal
-): Promise<string> {
-  const { apiKey, apiBaseUrl } = await ensureCloudAIConfig();
-  if (!apiKey) {
-    throw new Error('NO_CLIENT_API_KEY');
-  }
+  signal?: AbortSignal,
+  lang: SupportedChatLang = 'zh-TW'
+): Promise<string | null> {
+  if (preferredModel === 'local-expert' || signal?.aborted) return null;
 
-  let contextNote = '';
-  if (storeContext?.viewingProduct) {
-    const vp = storeContext.viewingProduct;
-    contextNote = `\n（顧客目前正在瀏覽商品：【${vp.name}】，材質：${vp.material}，售價：NT$${vp.price}）`;
-  }
-
-  // Support OpenAI-compatible proxy endpoints (e.g., Modelflare / OpenRouter / OneAPI) if configured or if key starts with sk-
-  if (apiBaseUrl || apiKey.startsWith('sk-')) {
-    const endpoint = apiBaseUrl
-      ? apiBaseUrl.endsWith('/chat/completions')
-        ? apiBaseUrl
-        : `${apiBaseUrl.replace(/\/v1$/, '')}/v1/chat/completions`
-      : 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-
-    const messagesPayload = [
-      { role: 'system', content: SYSTEM_PROMPT + contextNote },
-      ...history.slice(-6).map((m) => ({
-        role: m.sender === 'user' ? 'user' : 'assistant',
-        content: m.text,
-      })),
-      { role: 'user', content: userMessage },
-    ];
-
-    const res = await fetch(endpoint, {
+  const apiBase = getBackendApiBase();
+  try {
+    const res = await fetch(`${apiBase}/api/ai/chat`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: { 'Content-Type': 'application/json' },
       signal,
       body: JSON.stringify({
-        model: apiBaseUrl ? model || 'gemini-2.5-flash' : mapToRealGeminiModel(model),
-        messages: messagesPayload,
-        temperature: 0.4,
-        max_tokens: 600,
+        message: userMessage,
+        model: preferredModel || 'gemini-3.8-flash',
+        messages: history,
+        storeContext,
+        lang,
       }),
     });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`AI Proxy HTTP ${res.status}: ${errText.slice(0, 120)}`);
-    }
+    if (!res.ok) return null;
     const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
-    if (content && typeof content === 'string') {
-      return content.trim();
+    const text = data?.reply?.trim();
+    if (text) {
+      return text
+        .replace(/\*\*/g, '')
+        .replace(/^#{1,6}\s+/gm, '')
+        .trim();
     }
-    throw new Error('Empty proxy response');
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw err;
   }
 
-  // Standard Google Generative Language REST API call
-  const realModel = mapToRealGeminiModel(model);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${realModel}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const contents = [
-    ...history.slice(-6).map((m) => ({
-      role: m.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: m.text }],
-    })),
-    {
-      role: 'user',
-      parts: [{ text: userMessage }],
-    },
-  ];
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal,
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: SYSTEM_PROMPT + contextNote }],
-      },
-      contents,
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 600,
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData?.error?.message || `Gemini HTTP ${res.status}`);
-  }
-
-  const data = await res.json();
-  const reply = data?.candidates?.[0]?.content?.parts
-    ?.map((p: any) => p?.text || '')
-    .join('')
-    .trim();
-
-  if (reply) return reply;
-  throw new Error('Gemini API returned empty content');
+  return null;
 }
 
-export function generateSmart3DExpertReply(
-  text: string,
-  storeContext?: any
-): { reply: string; modelUsed: string; solution?: any } {
-  const q = text.trim();
-  const lower = q.toLowerCase();
-  const viewingProduct = storeContext?.viewingProduct;
+/**
+ * Streams or fetches Gemini responses via the server-side SSE endpoint (/api/ai/chat/stream).
+ */
+export async function requestGeminiViaFirestoreBridge(params: {
+  message: string;
+  model?: string;
+  history?: Array<{ sender?: string; role?: string; text: string }>;
+  storeContext?: any;
+  signal?: AbortSignal;
+  onChunk?: (streamedSoFar: string) => void;
+  lang?: SupportedChatLang;
+}): Promise<string | null> {
+  if (params.signal?.aborted) return null;
+  const apiBase = getBackendApiBase();
 
-  // 1. 免運門檻、出貨時間、物流與付款方式
-  if (/免運|運費|出貨|出庫|多久到|幾天|物流|超商|7-11|全家|宅配|付款|發票/i.test(lower)) {
-    return {
-      reply:
-        '【神狗勾 3D 官方出貨與免運說明】\n' +
-        '• 免運門檻：全館單筆消費滿 NT$999 即享 7-11、全家超商取貨與黑貓宅配免運費（未滿門檻超商運費 NT$60、宅配 NT$100）。\n' +
-        '• 極速出庫：台灣本島現貨直發，週一至週五 15:00 前完成下單當日直接出庫，超商取貨約 2 天送達、宅配約 1~2 天送達。\n' +
-        '• 多元付款：支援 Apple Pay、LINE Pay、信用卡、ATM 轉帳及超商取貨付款，全館均開立雲端電子發票（支援載具與統編）。\n' +
-        '• 專屬折扣：結帳輸入「GODDOG」享全館 9 折，或輸入「MAKER100」享滿千折百優惠！',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
+  try {
+    const streamRes = await fetch(`${apiBase}/api/ai/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: params.signal,
+      body: JSON.stringify({
+        message: params.message,
+        model: params.model || 'gemini-3.8-flash',
+        messages: params.history || [],
+        storeContext: params.storeContext,
+        lang: params.lang || 'zh-TW',
+      }),
+    });
 
-  // 2. 優惠碼 / 折扣 / 會員點數
-  if (/折扣|優惠|特價|便宜|優惠碼|折扣碼|點數|狗勾幣|會員/i.test(lower)) {
-    return {
-      reply:
-        '【全館專屬優惠與折扣碼攻略】\n' +
-        '• 全館 9 折碼：於購物車輸入「GODDOG」即可享整單 9 折優惠。\n' +
-        '• 滿千折百碼：單筆滿 NT$1,000 輸入「MAKER100」現折 NT$100。\n' +
-        '• 滿額免運：折後滿 NT$999 自動享超商取貨與宅配免運費。\n' +
-        '• 會員紅利：註冊登入會員即贈新人狗勾幣點數，每筆消費皆可累積點數直接折抵現金！',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
+    const contentType = streamRes.headers.get('content-type') || '';
+    if (streamRes.ok && streamRes.body && contentType.includes('text/event-stream')) {
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let accumulatedText = '';
+      let streamDone = false;
 
-  // 3. 拓竹 Bambu Lab AMS / AMS Lite 多色系統相容性
-  if (/ams|拓竹|bambu|多色|料盤|線盤|卡料/i.test(lower)) {
-    const productNote = viewingProduct
-      ? `\n• 您目前瀏覽的【${viewingProduct.name}】${
-          String(viewingProduct.material).toUpperCase().includes('TPU')
-            ? '屬於高彈性 TPU 軟膠，為避免軟質線材在長距離多色分料器內受阻，請由機身後方外掛料架單獨進料（勿走 AMS 內部通道）。'
-            : '採用標準 200mm 高精度塑膠線盤，100% 完美相容拓竹 Bambu Lab AMS 與 AMS Lite 多色系統！'
-        }`
-      : '';
-    return {
-      reply:
-        '【拓竹 Bambu Lab AMS & AMS Lite 相容性說明】\n' +
-        '• 標準線盤尺寸：神狗勾全系列 1kg 線材均採用標準外徑 200mm、盤寬 65mm、中心孔徑 54mm 一體式強化線盤，放入一代/二代 AMS 與 AMS Lite 皆可順暢密合蓋上、退料捲動不跳盤。\n' +
-        '• 光學測徑公差：全產線雙軸雷射監控線徑 1.75mm ±0.02mm，整齊排線不打結，高速多色換料零卡頓。\n' +
-        '• 材質相容建議：High-Speed PLA+、PETG-HF、ABS+、ASA、PLA-CF 皆可直接放入 AMS 自動多色供料；唯獨 TPU 95A 軟膠請使用機身後方單盤掛架直入擠出機。' +
-        productNote,
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
+      while (!streamDone) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
 
-  // 4. PLA 與 PETG 差異比較
-  if (
-    (/差別|不同|比較|差異|對比|哪裡不同|選哪個|哪種好|vs|versus/i.test(lower) &&
-      (lower.includes('pla') || lower.includes('petg'))) ||
-    (lower.includes('pla') && lower.includes('petg'))
-  ) {
-    return {
-      reply:
-        '【High-Speed PLA+ 與 PETG-HF 深度對比指南】\n' +
-        '• 耐熱與耐候性：PLA+ 熱變形溫度約 55~60°C，適合室內常溫環境；PETG-HF 耐溫達 75~80°C 且抗 UV、防水防潮，適合放車內、陽台或戶外使用。\n' +
-        '• 機械強度與韌性：PLA+ 剛性硬挺、表面成型銳利，適合公仔擺件、建築模型與高精度外觀件；PETG-HF 具備極佳韌性與抗衝擊力，彎曲不易斷裂，適合承重掛鉤、卡扣、夾具與功能性結構件。\n' +
-        '• 列印速度與難度：PLA+ 支援高達 500~600mm/s 極速列印、不翹邊零門檻；PETG-HF 建議速度 100~200mm/s，熱床設 70~75°C，待熱床冷卻後取件即可輕鬆脫模。\n' +
-        '• 選購建議：日常打樣、公仔模型首選【High-Speed PLA+】；需要耐曬耐熱、抗摔卡扣首選【PETG-HF】！',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const dataStr = trimmed.slice(5).trim();
+          if (dataStr === '[DONE]') {
+            streamDone = true;
+            break;
+          }
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed.text) {
+              accumulatedText += parsed.text;
+              params.onChunk?.(accumulatedText);
+            }
+          } catch {}
+        }
+      }
 
-  // 5. TPU 95A 軟膠列印注意事項
-  if (lower.includes('tpu') || /軟膠|彈性|柔性/i.test(lower)) {
-    return {
-      reply:
-        '【神狗勾 TPU 95A 高回彈軟膠列印關鍵設定】\n' +
-        '• 建議溫度：噴嘴 215°C ~ 230°C ／ 熱床 40°C ~ 50°C（PEI 板建議塗抹少許固體膠作為隔離層，避免過度死黏）。\n' +
-        '• 列印速度：建議維持 25 ~ 45 mm/s 等速列印，並將切片軟體的「最大體積流量 (Max Volumetric Speed)」限制在 3.2 ~ 4.0 mm³/s。\n' +
-        '• 回抽設定：直驅擠出機（如拓竹、K1、Ender-3 S1）回抽距離設 0.8 ~ 1.2mm、回抽速度 25~30mm/s，避免頻繁長距離回抽造成擠出齒輪纏料。\n' +
-        '• 供料提醒：TPU 95A 質地柔軟，請勿放入拓竹 AMS 多色系統，請直接掛於機身後方料架進料，並保持線材乾燥以獲得最細膩表面！',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
-
-  // 6. PLA-CF / PETG-CF 碳纖維與硬化鋼噴嘴問題
-  if (lower.includes('cf') || /碳纖|硬化鋼|噴嘴磨損/i.test(lower)) {
-    return {
-      reply:
-        '【PLA-CF / PETG-CF 碳纖維強化線材列印與噴嘴規範】\n' +
-        '• 必備硬化鋼噴嘴：碳纖維線材內含高強度微米級短切碳纖維，硬度極高，請務必使用「0.4mm 或 0.6mm 硬化鋼噴嘴 (Hardened Steel)」（一般黃銅噴嘴印 1~2 卷即會磨損擴孔）。\n' +
-        '• 推薦切片溫度：PLA-CF 噴嘴建議 215°C ~ 235°C、熱床 55°C ~ 65°C；冷卻風扇 70% ~ 100%。\n' +
-        '• 拓竹機型提醒：Bambu Lab X1C 與 P1S（升級硬化鋼噴嘴與齒輪組）可直接放入 AMS 順暢列印；成品具備極致消光碳纖質感，幾乎零層紋且抗彎剛性提升 35% 以上！',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
-
-  // 7. ABS / ASA 與密閉機箱問題
-  if (lower.includes('abs') || lower.includes('asa') || /封箱|密閉機箱|保溫罩/i.test(lower)) {
-    const vpMat = String(viewingProduct?.material || '');
-    const vpNote = viewingProduct
-      ? `\n• 您目前瀏覽的【${viewingProduct.name}】材質為 ${vpMat}，${
-          /abs|asa/i.test(vpMat)
-            ? '強烈建議使用密閉封箱機型（如 Bambu X1C/P1S、Creality K1）列印以防止冷縮層裂。'
-            : '在一般開放式機型（如 A1 / A1 mini / Ender-3）即可直接完美列印，無需密閉機箱！'
-        }`
-      : '';
-    return {
-      reply:
-        '【工程塑料封箱需求與 ABS / ASA 控溫指南】\n' +
-        '• 免封箱材質：High-Speed PLA+、PETG-HF、TPU 95A、PLA-CF 均可在開放式機型直接列印，無須封箱。\n' +
-        '• 需封箱材質：ABS+ 與 ASA 熱收縮率較高，列印時建議使用具密閉艙體的機型（艙溫維持 45~55°C），並設定噴嘴 245~265°C、熱床 95~105°C。\n' +
-        '• 防裂技巧：列印 ABS/ASA 時請關閉冷卻風扇（或僅在懸垂處開 10~20%），印完後讓模型隨熱床自然緩慢降溫再取件，可徹底杜絕層裂與翹曲。' +
-        vpNote,
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
-
-  // 8. 首層不黏、翹邊、脫落排查
-  if (/翹邊|不黏|脫落|首層|第一層|底板|pei/i.test(lower)) {
-    return {
-      reply:
-        '【首層不黏與邊角翹邊 4 步根治 SOP】\n' +
-        '• 1. 徹底除油清潔：取下 PEI 彈簧鋼板，使用溫水加中性洗碗精刷洗表面手汗油脂，擦乾後再噴 99% 異丙醇（酒精）擦拭乾淨，切勿徒手觸摸列印區。\n' +
-        '• 2. 首層降速與加溫：將首層列印速度降至 25~30 mm/s，首層熱床溫度提高 5°C（PLA 設 60~65°C、PETG 設 75~80°C），且前 3 層完全關閉冷卻風扇。\n' +
-        '• 3. 微調 Z-Offset 與首層線寬：將首層線寬設為 0.45~0.50mm（0.4 噴嘴），若首層線條之間有縫隙代表噴嘴太高，請將 Z 軸補償微調下壓 -0.02 ~ -0.04mm。\n' +
-        '• 4. 開啟 Brim 裙邊：於切片軟體開啟「外側裙邊 (Outer Brim) 5~8mm」，大幅增加邊角抓地力！',
-      modelUsed: 'Gemini 3.8 Flash',
-      solution: {
-        solutions: [
-          '以溫水+洗碗精徹底刷洗 PEI 熱床去除手汗油脂，再以 99% 酒精擦乾',
-          '首層列印速度降至 25~30 mm/s，首層線寬設為 0.48mm 增強壓實感',
-          '熱床溫度提高 5°C（PLA 60°C / PETG 75°C），前 3 層冷卻風扇設為 0%',
-          '於切片軟體開啟 Outer Brim 裙邊 5~8mm 防止邊角收縮掀起',
-        ],
-        recommendedAdjustment: {
-          temperature: 'PLA: 215°C/60°C ｜ PETG: 240°C/75°C',
-          speed: '首層 25-30 mm/s (其餘層正常高速)',
-          retraction: '直驅 0.8mm @ 35mm/s',
-          cooling: '前 3 層 0%，第 4 層起 100% (PETG 40%)',
-        },
-      },
-    };
-  }
-
-  // 9. 拉絲、蜘蛛絲、滲料排查
-  if (/拉絲|牽絲|蜘蛛絲|毛刺|滲料|回抽/i.test(lower)) {
-    return {
-      reply:
-        '【列印拉絲與蜘蛛絲快速消除指南】\n' +
-        '• 1. 排除線材受潮（最常見主因）：線材吸濕後水分在噴嘴瞬間氣化膨脹，會把熔融塑料推擠出來形成細密蜘蛛絲。建議放入烘乾箱（PLA 50°C / PETG 60~65°C）烘乾 4~6 小時。\n' +
-        '• 2. 適度調降噴嘴溫度：將噴嘴溫度下調 5~10°C（例如 PLA 降至 205~210°C、PETG 降至 235°C），降低塑料過度流動性。\n' +
-        '• 3. 最佳化回抽與擦拭：直驅機型回抽距離設 0.8~1.0mm、回抽速度 35~45mm/s，並在切片軟體勾選「回抽時擦拭噴嘴 (Wipe while retracting)」與「螺旋 Z 抬升 (Spiral Z-Hop)」。\n' +
-        '• 4. 提高空駛速度：將空駛移動速度 (Travel Speed) 提升至 250~350 mm/s，讓噴嘴在拉出絲前快速跨越空隙。',
-      modelUsed: 'Gemini 3.8 Flash',
-      solution: {
-        solutions: [
-          '先將線材放入烘料箱（PLA 50°C / PETG 65°C）烘乾 4~6 小時去除水氣',
-          '噴嘴溫度調降 5~10°C 減少高溫溢料',
-          '直驅回抽設 0.8~1.0mm @ 40mm/s，並開啟「回抽擦拭 (Wipe)」與「螺旋 Z-Hop」',
-          '空駛速度 (Travel Speed) 提高至 300 mm/s 以上',
-        ],
-        recommendedAdjustment: {
-          temperature: 'PLA: 205-210°C ｜ PETG: 235°C',
-          speed: '空駛 Travel 300+ mm/s',
-          retraction: '直驅 0.8-1.0mm @ 40mm/s (遠端 4.5mm)',
-          cooling: 'PLA 100% / PETG 40-50%',
-        },
-      },
-    };
-  }
-
-  // 10. 噴嘴堵塞、打滑、不出料、熱蠕變
-  if (/堵塞|堵頭|打滑|不出料|斷料|卡死|異音|擠出/i.test(lower)) {
-    return {
-      reply:
-        '【噴嘴堵塞與擠出機打滑排查步驟】\n' +
-        '• 1. 防止熱蠕變 (Heat Creep)：列印 PLA 時若使用密閉封箱機型（如拓竹 X1C/P1S、K1），請務必「打開頂蓋或前門」散熱！艙溫超過 38°C 會導致 PLA 在喉管提前軟化膨脹卡死。\n' +
-        '• 2. 冷拉清堵 (Cold Pull)：將噴嘴加熱至 220°C 手動推入一段 PLA，降溫至 90°C 後用力向上抽出，即可將噴嘴內殘留碳化雜質完整拔出。\n' +
-        '• 3. 檢查體積流量上限：若高速列印時擠出機發出「咔咔」跳齒聲，代表擠出速度超過熱端融化極限，請將噴嘴溫度提高 5~10°C 或將最大體積流量調降至 18~21 mm³/s。',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
-
-  // 11. 層間開裂、脫層、結構脆弱
-  if (/開裂|層裂|脆弱|易斷|脫層|強度/i.test(lower)) {
-    return {
-      reply:
-        '【層間開裂與結構強度強化方案】\n' +
-        '• 1. 提高噴嘴溫度 5~10°C：讓上下層熔融塑料結合更緊密，大幅提升 Z 軸層間拉力。\n' +
-        '• 2. 降低冷卻風扇轉速：冷卻過快會導致層間尚未融合即凝固收縮（PETG 風扇建議降至 20~30%，ABS/ASA 建議 0~10%）。\n' +
-        '• 3. 增加牆壁圈數：提升零件機械強度最有效的方式是將「牆壁層數 (Wall Loops)」從 2 圈增加至 4~5 圈（比單純提高填充率更耐受力）！',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
-
-  // 12. 溫度 / 切片參數詢問
-  if (/溫度|幾度|參數|設定|速度|熱床/i.test(lower)) {
-    if (viewingProduct) {
-      const mat = String(viewingProduct.material || 'PLA+');
-      return {
-        reply:
-          `【${viewingProduct.name}（${mat}）官方推薦切片參數】\n` +
-          `• 噴嘴溫度：${viewingProduct.tempRange || '205°C - 225°C'}\n` +
-          `• 熱床溫度：${viewingProduct.bedTemp || '55°C - 65°C'}\n` +
-          `• 線徑規格：${viewingProduct.diameter || '1.75mm'}（雷射光學公差 ±0.02mm）\n` +
-          `• 推薦速度：${mat.includes('TPU') ? '25 - 45 mm/s' : mat.includes('PETG') ? '80 - 200 mm/s' : '50 - 500 mm/s'}\n` +
-          `• 切片設定小撇步：於 Bambu Studio 或 OrcaSlicer 中可直接選用 Generic ${mat.split(' ')[0]} High Speed 設定檔，首層速度建議設為 35mm/s 以確保最佳底板抓附力！`,
-        modelUsed: 'Gemini 3.8 Flash',
-      };
+      if (accumulatedText.trim()) {
+        return accumulatedText.trim();
+      }
     }
-    return {
-      reply:
-        '【神狗勾 3D 全系列耗材黃金切片溫度速查表】\n' +
-        '• High-Speed PLA+：噴嘴 205~225°C ／ 熱床 55~60°C ／ 風扇 100% ／ 速度 50~500mm/s\n' +
-        '• PETG-HF 高韌性：噴嘴 235~250°C ／ 熱床 70~80°C ／ 風扇 30~50% ／ 速度 80~200mm/s\n' +
-        '• PLA-CF 碳纖維：噴嘴 215~235°C ／ 熱床 55~65°C ／ 需 0.4/0.6mm 硬化鋼噴嘴\n' +
-        '• TPU 95A 軟膠：噴嘴 215~230°C ／ 熱床 40~50°C ／ 速度 25~45mm/s（勿放 AMS）\n' +
-        '• ABS+ / ASA 耐熱：噴嘴 245~265°C ／ 熱床 95~105°C ／ 需封箱、關閉風扇',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw err;
   }
 
-  // 13. 若顧客正在瀏覽特定商品，針對該商品提供精準解答
-  if (viewingProduct) {
-    return {
-      reply:
-        `【${viewingProduct.name} 專屬選購與列印指南】\n` +
-        `• 材質特性：${viewingProduct.description || `高品質 ${viewingProduct.material} 工程耗材，層紋細膩、排線整齊不纏繞。`}\n` +
-        `• 推薦參數：噴嘴溫度 ${viewingProduct.tempRange || '205°C~225°C'}、熱床溫度 ${viewingProduct.bedTemp || '55°C~60°C'}，標準 1.75mm 線徑（公差 ±0.02mm）。\n` +
-        `• 機型相容：完美支援拓竹 Bambu Lab 全系列、Creality K1/Ender、Prusa、Voron 等主流 FDM 機型。\n` +
-        `• 現貨優惠：目前售價 NT$${viewingProduct.price}，全館滿 NT$999 免運費，結帳輸入 GODDOG 再享 9 折！`,
-      modelUsed: 'Gemini 3.8 Flash',
-    };
+  const direct = await callDirectBrowserGemini(
+    params.message,
+    params.history || [],
+    params.model,
+    params.storeContext,
+    params.signal,
+    params.lang || 'zh-TW'
+  );
+  if (direct && params.onChunk) {
+    params.onChunk(direct);
   }
-
-  // 14. 身分介紹、功能詢問或一般問候
-  if (/你是誰|你叫什麼|什麼模型|你能做什麼|介紹一下自己|請問你是|客服嗎|真人嗎/i.test(lower)) {
-    return {
-      reply:
-        '您好！我是「神狗勾 3D (GodDog 3D)」官方網站的 AI 智能工程顧問（搭載 Google Gemini 3 Flash 模型）。\n' +
-        '• 耗材選型建議：協助您挑選 High-Speed PLA+、PETG-HF、TPU 95A 軟膠、PLA-CF 碳纖維、ABS+/ASA 等最合適的工程線材。\n' +
-        '• 切片參數調校：提供拓竹 Bambu Lab (AMS / AMS Lite)、Creality K1、Prusa、Voron 等各機型的噴嘴溫度、熱床溫度、回抽與體積流量設定。\n' +
-        '• 列印故障診斷：快速排查首層不黏翹邊、拉絲蜘蛛絲、噴嘴堵頭或層間開裂等問題。\n' +
-        '• 商城服務查詢：全館滿 NT$999 免運費，平日 15:00 前下單當日出貨，結帳輸入「GODDOG」享全館 9 折！請問今天有什麼我可以幫您的嗎？',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
-
-  if (/^(你好|您好|嗨|哈囉|hi|hello|安安|在嗎|請問|早安|午安|晚安)/i.test(lower) && lower.length <= 10) {
-    return {
-      reply:
-        '您好！我是神狗勾 3D 資深切片工程師與耗材顧問。\n' +
-        '• 想了解材料差異（如 PLA+、PETG-HF、TPU 95A、PLA-CF 碳纖維）？\n' +
-        '• 想查詢您的 3D 印表機（拓竹 Bambu AMS、Creality K1 等）最佳溫度與速度參數？\n' +
-        '• 或是遇到首層翹邊、拉絲、堵頭等列印問題？\n' +
-        '請直接告訴我您的機型或問題，我立即為您提供精準解答！',
-      modelUsed: 'Gemini 3.8 Flash',
-    };
-  }
-
-  return {
-    reply:
-      '您好！我是神狗勾 3D 智能顧問，很高興為您解答：\n' +
-      '• 材質選型建議：日常模型、公仔與高速打樣首選【High-Speed PLA+】（噴嘴 210~220°C / 熱床 60°C）；戶外耐曬、耐摔結構件首選【PETG-HF】（噴嘴 240°C / 熱床 75°C）；高剛性消光結構件首選【PLA-CF 碳纖維】（需搭配硬化鋼噴嘴）。\n' +
-      '• 設備與 AMS 相容性：神狗勾全系列 1kg 線盤採用 200mm 標準規格與 ±0.02mm 雷射測徑公差，100% 相容拓竹 Bambu Lab AMS / AMS Lite 與各品牌高速機。\n' +
-      '• 出貨與優惠：台灣現貨平日 15:00 前下單當日出貨，全館滿 NT$999 享超商與宅配免運，輸入折扣碼「GODDOG」再享 9 折！如需針對特定問題深入分析，歡迎隨時告訴我。',
-    modelUsed: 'Gemini 3.8 Flash',
-  };
+  return direct;
 }
 
 export async function generateClientGeminiChat(
-  userMessage: string,
-  history: Array<{ sender: string; text: string }> = [],
-  model?: string,
-  storeContext?: any
+  prompt: string,
+  lang: SupportedChatLang = 'zh-TW'
 ): Promise<string> {
-  // 1. Try backend /api/ai/chat if not on static-only hosting (or if custom backend URL is set)
-  if (!isStaticHostingEnv()) {
-    try {
-      const apiBase = getBackendApiBase();
-      const response = await fetch(`${apiBase}/api/ai/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: userMessage,
-          model: model || 'gemini-3.8-flash',
-          messages: history.map((m) => ({
-            sender: m.sender,
-            text: m.text,
-          })),
-          storeContext,
-        }),
-      });
-
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await response.json();
-        if (response.ok && data?.reply && typeof data.reply === 'string') {
-          return data.reply.trim();
-        }
-      }
-    } catch {
-      // Fall through to direct browser AI or Firestore live bridge
-    }
-  }
-
-  // 2. Try direct browser Gemini / Custom Proxy API call if key is configured in Firestore / localStorage / Env
-  try {
-    const directReply = await callDirectBrowserGemini(userMessage, history, model, storeContext);
-    if (directReply) return directReply;
-  } catch {
-    // Fall through to Firestore AI Live Bridge
-  }
-
-  // 3. Try Firestore Real-Time AI Bridge (routes goddog.space requests through shared Firestore to the live Gemini 3 Flash backend)
-  try {
-    const bridgeReply = await requestGeminiViaFirestoreBridge({
-      message: userMessage,
-      model: model || 'gemini-3.8-flash',
-      history: history.map((m) => ({ sender: m.sender, text: m.text })),
-      storeContext,
-    });
-    if (bridgeReply && bridgeReply.trim()) {
-      return bridgeReply.trim();
-    }
-  } catch {
-    // Fall through to built-in 3D printing expert engine
-  }
-
-  // 4. Built-in 3D printing expert engine fallback
-  return generateSmart3DExpertReply(userMessage, storeContext).reply;
+  const reply = await callDirectBrowserGemini(prompt, [], 'gemini-3.8-flash', undefined, undefined, lang);
+  if (reply) return reply;
+  return generateSmart3DExpertReply(prompt, undefined, lang).reply;
 }
 
-export interface GenerateEcommerceCopyParams {
+export async function generateClientEcommerceCopy(params: {
   productName: string;
-  material?: string;
+  material: string;
   features?: string;
   targetAudience?: string;
   promotion?: string;
+}): Promise<EcommerceCopyResult> {
+  const apiBase = getBackendApiBase();
+  try {
+    const res = await fetch(`${apiBase}/api/ai/ecommerce-copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.success && json?.data) {
+        return json.data;
+      }
+    }
+  } catch {}
+
+  const { productName, material, features = '', targetAudience = '3D列印創客與工作室', promotion = '滿NT$999免運' } = params;
+  const seoTitle = `【台灣現貨】${productName}｜${material} 1.75mm 高精度線材｜相容拓竹 Bambu AMS`;
+  const specBulletPoints = [
+    `光學雷射雙軸測徑，線徑公差嚴控 ±0.02mm，排線整齊不纏繞`,
+    `100% 原生相容 Bambu Lab AMS 多色系統與 Creality K1 / Voron 高速機`,
+    `針對 ${targetAudience} 調校高流率配方，支援 300-600mm/s 高速列印`,
+    `${features || '極低收縮率、首層抓地力強、層間結合度優異'}`,
+    `全館 ${promotion}，隨貨附贈密封防潮袋與乾燥劑`,
+  ];
+  const buyerNotice = [
+    '超商取貨單筆上限 4 捲 1kg 線材（含包裝約 4.8kg），超過 5 捲請選擇宅配出貨。',
+    '拆封後若長時間未使用，請放回鋁箔夾鏈袋並搭配乾燥劑保存，維持最佳列印品質。',
+  ];
+  const hashtags = ['#3D列印', '#3D列印耗材', `#${material}`, '#BambuLab', '#拓竹AMS', '#創客工具', '#神狗勾耗材'];
+  const fullFormattedDescription = `${seoTitle}\n\n【核心特色】\n• ${specBulletPoints.join('\n• ')}\n\n【購買與保存提醒】\n• ${buyerNotice.join('\n• ')}\n\n${hashtags.join(' ')}`;
+
+  return {
+    seoTitle,
+    specBulletPoints,
+    buyerNotice,
+    hashtags,
+    fullFormattedDescription,
+  };
 }
 
-export async function generateClientEcommerceCopy(
-  params: GenerateEcommerceCopyParams
-): Promise<EcommerceCopyResult> {
-  const {
-    productName,
-    material = 'PLA',
-    features = '',
-    targetAudience = '',
-    promotion = '滿999免運',
-  } = params;
+/**
+ * Built-in 3D printing expert engine when cloud API is offline or user selects local-expert mode.
+ * Responds naturally and idiomatically in the active language ('zh-TW' | 'en' | 'ja').
+ */
+export function generateSmart3DExpertReply(
+  text: string,
+  storeContext?: any,
+  lang: SupportedChatLang = 'zh-TW'
+): { reply: string; modelUsed: string; solution?: any } {
+  const q = text.toLowerCase();
+  const modelUsed =
+    lang === 'en'
+      ? 'GodDog 3D Expert Advisor'
+      : lang === 'ja'
+      ? '神狗勾 3D専門アドバイザー'
+      : '神狗勾 3D 專家顧問';
 
-  const defaultSeoTitle = `【神狗勾 3D】${productName || '高速 PLA 3D列印線材'} 1.75mm 雙層真空 拓竹AMS相容 免運現貨`.slice(0, 60);
-  const defaultSpecs = [
-    `• 線徑規格：標準 1.75mm (公差嚴格控制 ±0.02mm，進料極致滑順)`,
-    `• 淨重規格：淨重 1.0kg 整卷 (含盤約 1.18kg)`,
-    `• 適用材質：${material || '高韌性高速 PLA+'}，高剛性低收縮，層紋細緻無異味`,
-    `• 建議列印溫度：噴嘴 200°C - 230°C / 熱床 50°C - 60°C`,
-    `• 推薦列印速度：50 - 600 mm/s (完美支援拓竹 Bambu、K1C 等超高速旗艦機)`,
-    `• 多色相容性：全尺寸相容 Bambu Lab AMS & AMS Lite 多色供料系統`,
-  ];
-  const defaultNotices = [
-    `1. 【台灣現貨直送】：平日 15:00 前下單當日安排出貨，全館滿 NT$999 即享超商與宅配免運費。`,
-    `2. 【工業級雙層防潮】：每卷皆採鋁箔夾鏈密封包裝並內附變色高活性乾燥劑，出廠到手即開即印。`,
-    `3. 【耗材保存指引】：拆封後若長期不使用，強烈建議存入神狗勾防潮密封箱或電子防潮箱保存。`,
-    `4. 【安心售後保證】：出貨享 7 天新品瑕疵無條件換貨，提供專屬工程師線上切片參數支援。`,
-  ];
-  const defaultHashtags = [
-    '#3D列印耗材', '#拓竹AMS相容', '#高速PLA', '#PETG線材', '#神狗勾3D', 
-    '#台灣現貨', '#3D列印線材', '#創客必備', '#模型代印', '#3DPrinterFilament'
-  ];
-
-  const fallbackResult: EcommerceCopyResult = {
-    seoTitle: defaultSeoTitle,
-    specBulletPoints: defaultSpecs,
-    buyerNotice: defaultNotices,
-    hashtags: defaultHashtags,
-    fullFormattedDescription: `${defaultSeoTitle}\n\n【產品特色與規格】\n${defaultSpecs.join('\n')}\n\n【買家購買須知】\n${defaultNotices.join('\n')}\n\n${defaultHashtags.join(' ')}`
-  };
-
-  if (!isStaticHostingEnv()) {
-    try {
-      const response = await fetch(`${getBackendApiBase()}/api/ai/ecommerce-copy`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          productName,
-          material,
-          features,
-          targetAudience,
-          promotion,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.seoTitle) {
-          return {
-            seoTitle: data.seoTitle,
-            specBulletPoints: data.specBulletPoints || defaultSpecs,
-            buyerNotice: data.buyerNotice || defaultNotices,
-            hashtags: data.hashtags || defaultHashtags,
-            fullFormattedDescription: data.fullFormattedDescription || fallbackResult.fullFormattedDescription,
-          };
-        }
-      }
-    } catch (err: any) {
-      console.warn('[AI Copy] 後端文案產生請求異常，啟用規格模板降級:', err?.message || err);
+  if (lang === 'en') {
+    if (/ship|delivery|how long|free shipping|freight|dispatch/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【Shipping & Delivery Info】
+• Free Shipping Threshold: Every order over NT$999 qualifies for free shipping (7-ELEVEN, FamilyMart pickup, or home delivery).
+• Fast Dispatch: In-stock spools ship out within 24 hours—orders placed before 4:00 PM CST go out the same day and typically arrive in 1–2 business days.`,
+      };
     }
+
+    if (/discount|coupon|promo|code|cheaper|sale|voucher/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【Active Promo Codes & Maker Perks】
+• [PRINTCORE10]: Take 10% off your entire cart right away.
+• [GODDOG100]: Save NT$100 on any order of NT$1,000 or more.
+• [VIP95]: Extra 5% off stackable member perk.
+• Eco Spool Program: Send back your empty spools and get NT$20 in reward credit per spool!`,
+      };
+    }
+
+    if (/ams|bambu|x1c|p1s|p1p|a1/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【Bambu Lab & AMS Compatibility】
+• Direct Drop-In Fit: All GodDog 1kg spools use reinforced 200mm OD / 65mm width injection-molded rims—no cardboard dust and zero adapter rings needed in your AMS.
+• High-Speed Ready: Our High-Speed PLA+ and PETG-HF are tuned for up to 22–28 mm³/s volumetric flow on X1C, P1S, and A1 series.
+• Pro Tip: Flexible TPU 95A is too soft for the AMS drive gears—always feed TPU directly from the rear external spool holder!`,
+      };
+    }
+
+    if ((/pla/.test(q) && /petg/.test(q)) || /difference|compare|vs|which one|choose/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【High-Speed PLA+ vs. PETG-HF: Quick Maker's Guide】
+• High-Speed PLA+ (Nozzle 210–225°C / Bed 55–60°C): Crisp overhangs, matte or silky finishes, and super forgiving at 300–500 mm/s. Best for figurines, desk organizers, and architectural models. Softens around 58°C.
+• PETG-HF (Nozzle 235–250°C / Bed 70–75°C): Tough, slightly flexible, water-resistant, and handles up to 78°C without deforming. Go with PETG-HF for car mounts, outdoor brackets, or functional snap-fit parts.`,
+      };
+    }
+
+    if (/temp|degree|setting|slicer|nozzle|bed|parameter|speed|profile/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【Recommended Slicer Profiles & Temperatures】
+• High-Speed PLA+ / Matte PLA: Nozzle 210–225°C | Bed 55–60°C | Cooling 100% | Speed 250–500 mm/s
+• PETG-HF: Nozzle 235–250°C | Bed 70–75°C | Cooling 40–60% | Retraction 0.8mm @ 30mm/s
+• TPU 95A Flexible: Nozzle 220–230°C | Bed 45–50°C | Speed 40–60 mm/s (Direct drive, external spool)
+• ABS+ / ASA: Nozzle 250–265°C | Bed 95–105°C | Enclosed chamber recommended
+• PLA-CF Carbon Fiber: Nozzle 220–235°C | Bed 60°C | Hardened steel nozzle 0.4mm or 0.6mm`,
+      };
+    }
+
+    if (/string|ooz|hair|web|retract|wet|dry|拉絲/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【Fixing Stringing & Oozing】
+1. Dry Your Filament: Even sealed spools can pick up humidity once opened. Pop PLA in a dryer at 50°C (or PETG at 60°C) for 4 hours—this fixes 80% of fine cobweb stringing.
+2. Dial Down Nozzle Temp: Drop your nozzle temperature by 5–10°C so molten plastic doesn't drip during travel moves.
+3. Retraction & Wipe: On direct-drive printers (Bambu/K1), set retraction to 0.8mm at 35mm/s and enable "Wipe while retracting" in your slicer.`,
+        solution: {
+          solutions: [
+            'Dry filament at 50–60°C for 4 hours to eliminate moisture micro-bubbles',
+            'Lower nozzle temperature by 5–10°C to reduce travel oozing',
+            'Set direct-drive retraction to 0.8mm @ 35mm/s and enable Wipe on Retract',
+            'Increase travel speed to 300+ mm/s to snap fine strings cleanly',
+          ],
+          recommendedAdjustment: {
+            temperature: 'Nozzle -5°C to -10°C (PLA 205–215°C / PETG 235°C)',
+            speed: 'Travel 300–400 mm/s',
+            retraction: 'Direct 0.8mm @ 35mm/s (Bowden 4.5mm)',
+            cooling: '100% for PLA / 50% for PETG',
+          },
+        },
+      };
+    }
+
+    if (/warp|stick|adhes|peel|first layer|bed|翹邊|不黏/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【Solving First-Layer Adhesion & Warping】
+1. Degrease the PEI Plate: Finger oils are the #1 cause of corners lifting. Wash your Textured PEI plate with warm water and dish soap—skip rubbing alcohol if residue builds up.
+2. Slow Down Layer 1: Print the first layer at 35–45 mm/s with the part cooling fan off for the first 2 layers, and bump bed temp up by +5°C.
+3. Add a Brim: For large flat boxes or sharp corners, enable a 5mm Outer Brim (0.1mm brim-object gap) to anchor the edges down.`,
+        solution: {
+          solutions: [
+            'Wash Textured PEI plate with warm water and dish soap to remove skin oils',
+            'Adjust Z-Offset down by 0.03mm for a slightly firmer first-layer squish',
+            'Slow first layer speed to 30–40 mm/s with cooling fan at 0% for first 2 layers',
+            'Enable 5–8mm Outer Brim in your slicer to anchor sharp corners',
+          ],
+          recommendedAdjustment: {
+            temperature: 'Nozzle 215–225°C / Bed 60–65°C',
+            speed: 'First Layer 30 mm/s (Other layers 200–300 mm/s)',
+            retraction: 'Direct 0.8mm @ 35mm/s',
+            cooling: 'Layer 1–2: 0% (100% from Layer 3)',
+          },
+        },
+      };
+    }
+
+    const viewingNote = storeContext?.viewingProduct
+      ? `\n\nI see you're looking at [${storeContext.viewingProduct.name}] (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price}). Want my recommended slicer settings or printer compatibility tips for it?`
+      : '';
+
+    return {
+      modelUsed,
+      reply: `Hey there! Here is a quick rundown to help with your print setup:
+• High-Speed PLA+ & Matte PLA: Best for crisp details and effortless 300–500mm/s printing (Nozzle 215°C / Bed 60°C).
+• PETG-HF & ABS+: Ideal for tough mechanical brackets, car parts, and outdoor weather resistance (Nozzle 240°C / Bed 75°C).
+• Every order over NT$999 ships free within 24 hours, and code [PRINTCORE10] gets you 10% off.${viewingNote}
+
+Tell me which 3D printer model you're running or what part you're making, and I'll dial in the exact settings for you!`,
+    };
   }
 
-  return fallbackResult;
+  if (lang === 'ja') {
+    if (/送料|配送|発送|いつ届く|無料|ship/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【送料・スピード発送のご案内】
+• 送料無料ライン：全商品 NT$999 以上のご注文で送料無料となります（コンビニ受取・宅配便対応）。
+• 24時間以内発送：在庫商品はすべて台湾国内倉庫より24時間以内に発送いたします（16時までのご注文は当日出荷、通常1〜2営業日でお届け）。`,
+      };
+    }
+
+    if (/割引|クーポン|コード|セール|お得|ポイント|discount|promo/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【現在使えるお得なクーポン＆特典】
+• 【PRINTCORE10】：全商品対象・今すぐ使える 10% OFF クーポン！
+• 【GODDOG100】：NT$1,000 以上のご注文で NT$100 引き。
+• 【VIP95】：会員様向けの 5% OFF 優待コード。
+• 空スプール回収特典：使い終わった空スプールを返送いただくと、1個につき NT$20 分のポイントを還元いたします！`,
+      };
+    }
+
+    if (/ams|bambu|拓竹|x1c|p1s|a1/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【Bambu Lab AMS・高速プリンター対応について】
+• アダプター不要で完全対応：当店の1kgスプール（外径200mm・幅65mm）は強化プラスチック製のため、紙粉が出ず Bambu Lab AMS にそのままセット可能です。
+• 高速造形に最適化：High-Speed PLA+ や PETG-HF は最大体積流量 22〜28 mm³/s に対応し、X1C / P1S / A1 シリーズで美しい高速積層を実現します。
+• ご注意点：軟質フィラメントの TPU 95A のみ、AMS内部での詰まり防止のため背面外部ホルダーから直接給紙してください。`,
+      };
+    }
+
+    if ((/pla/.test(q) && /petg/.test(q)) || /違い|比較|どっち|おすすめ|選び方|vs/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【High-Speed PLA+ と PETG-HF の選び方・徹底比較】
+• High-Speed PLA+（ノズル 210〜225°C / ベッド 55〜60°C）：オーバーハングや細かいディテールが綺麗に仕上がり、反りもほぼゼロで初心者から高速機ユーザーまで一番人気の素材です（耐熱は約58°C）。
+• PETG-HF（ノズル 235〜250°C / ベッド 70〜75°C）：粘り強さと耐衝撃性に優れ、約78°Cまで耐えるため、夏場の車内パーツや屋外用ブラケット、スナップフィット部品に最適です。`,
+      };
+    }
+
+    if (/温度|設定|スライサー|ノズル|ベッド|パラメータ|速度|temp/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【主要マテリアルの推奨スライサー設定】
+• High-Speed PLA+ / マットPLA：ノズル 210〜225°C｜ベッド 55〜60°C｜冷却ファン 100%｜速度 250〜500 mm/s
+• PETG-HF 高速耐候：ノズル 235〜250°C｜ベッド 70〜75°C｜ファン 40〜60%｜リトラクション 0.8mm @ 30mm/s
+• TPU 95A 軟質エラストマー：ノズル 220〜230°C｜ベッド 45〜50°C｜速度 40〜60 mm/s（外部給紙）
+• ABS+ / ASA：ノズル 250〜265°C｜ベッド 95〜105°C｜エンクロージャー（庫内保温）推奨
+• PLA-CF 炭素繊維：ノズル 220〜235°C｜ベッド 60°C｜0.4mm以上の硬化鋼ノズル推奨`,
+      };
+    }
+
+    if (/糸引き|リトラクション|湿気|乾燥|クモの巣|string|拉絲/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【糸引き（ストリンギング）をピタッと止める3つの対策】
+1. フィラメントの乾燥：開封後の湿気は糸引きの最大の原因です。PLAは50°C、PETGは60°Cで4時間ほど乾燥させると驚くほど改善します。
+2. ノズル温度を5〜10°C下げる：樹脂の垂れを抑えるため、推奨温度の下限寄りでテストしてみてください。
+3. リトラクション設定：ダイレクト式（Bambu LabやK1等）では引き戻し距離 0.8mm・速度 35mm/s に設定し、「引き戻し時にワイプ」を有効にするのが効果的です。`,
+        solution: {
+          solutions: [
+            'フィラメント乾燥機（PLA 50°C / PETG 60°C）で4時間乾燥させ湿気を除去する',
+            'ノズル温度を5〜10°C下げて移動中の樹脂垂れを抑える',
+            'リトラクション距離を 0.8mm（速度 35mm/s）に設定し「引き戻し時にワイプ」を有効化する',
+            'トラベル（空走）速度を 300mm/s 以上に引き上げる',
+          ],
+          recommendedAdjustment: {
+            temperature: 'ノズル 205〜215°C (PLA) / 235°C (PETG)',
+            speed: 'トラベル速度 300〜400 mm/s',
+            retraction: 'ダイレクト式 0.8mm @ 35mm/s',
+            cooling: 'PLA 100% / PETG 50%',
+          },
+        },
+      };
+    }
+
+    if (/反り|剥がれ|定着|1層目|ベッド|warp|stick|翹邊|不黏/.test(q)) {
+      return {
+        modelUsed,
+        reply: `【1層目の定着不良・反り（ウォーピング）対策】
+1. PEIプレートの脱脂洗浄：指紋や皮脂が残っていると角から剥がれやすくなります。ぬるま湯と中性洗剤（食器用洗剤）でプレートを洗うと定着力が復活します。
+2. 1層目をゆっくり厚めに：初層速度を 35〜45 mm/s に落とし、最初の2層は冷却ファンをOFF、ベッド温度を +5°C 高めに設定してください。
+3. ブリム（Brim）の追加：底面積が広いモデルや角があるパーツは、スライサーで 5〜8mm の外側ブリムを付けると反りをしっかり抑えられます。`,
+        solution: {
+          solutions: [
+            'PEIビルドプレートをぬるま湯と中性洗剤で洗い、皮脂汚れを完全に落とす',
+            'Zオフセットを 0.03mm 下げて1層目の密着度を高める',
+            '初層スピードを 30〜35 mm/s に落とし、最初の2層は冷却ファンを0%にする',
+            'スライサーで 5〜8mm の外側ブリム（Brim）を有効にする',
+          ],
+          recommendedAdjustment: {
+            temperature: 'ノズル 215〜225°C / ベッド 60〜65°C',
+            speed: '1層目 30 mm/s（2層目以降 200〜300 mm/s）',
+            retraction: 'ダイレクト式 0.8mm @ 35mm/s',
+            cooling: '1〜2層目 0%（3層目以降 100%）',
+          },
+        },
+      };
+    }
+
+    const viewingNoteJa = storeContext?.viewingProduct
+      ? `\n\n現在ご覧いただいている【${storeContext.viewingProduct.name}】(${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price}) に合わせた最適なスライサー設定もすぐにご案内できます！`
+      : '';
+
+    return {
+      modelUsed,
+      reply: `ご質問ありがとうございます！用途に合わせたポイントをまとめました：
+• High-Speed PLA+ / マットPLA：高速300〜500mm/sでも積層痕が目立たず、フィギュアや雑貨に最適（ノズル 215°C / ベッド 60°C）。
+• PETG-HF / ABS+：耐衝撃・耐熱性が求められる治具や屋外パーツにおすすめ（ノズル 240°C / ベッド 75°C）。
+• 全品 NT$999 以上で送料無料・24時間以内発送、クーポン【PRINTCORE10】で 10% OFF になります。${viewingNoteJa}
+
+お使いの3Dプリンターの機種名や、作りたいパーツを教えていただければ、ベストな設定をご提案します！`,
+    };
+  }
+
+  if (/運費|免運|出貨|多久|物流|幾天|7-11|全家/.test(q)) {
+    return {
+      modelUsed,
+      reply: `【物流出貨與免運說明】
+• 免運門檻：全館單筆訂單滿 NT$999 即享免運優惠（支援 7-ELEVEN、全家超商取貨與黑貓宅配）。
+• 出貨時效：台灣現貨供應，每日 16:00 前下單當日火速寄出，超商取貨約 2 天送達門市、宅配約 1 至 2 個工作天送達。`,
+    };
+  }
+
+  if (/優惠|折扣|代碼|折價券|便宜|活動|紅利/.test(q)) {
+    return {
+      modelUsed,
+      reply: `【最新專屬優惠碼與回饋方案】
+• 優惠碼【PRINTCORE10】：全館耗材直接享 9 折優惠。
+• 優惠碼【GODDOG100】：單筆滿 NT$1,000 現折 NT$100。
+• 優惠碼【VIP95】：老客戶專屬 95 折優惠。
+• 空盤環保回收：寄回神狗勾或主流品牌 1kg 空線盤，每盤直接回饋 NT$20 購物金！`,
+    };
+  }
+
+  if (/ams|拓竹|bambu|x1|p1s|a1/.test(q)) {
+    return {
+      modelUsed,
+      reply: `【Bambu Lab 拓竹 AMS 與高速機相容性指南】
+• 原生直上免轉接環：神狗勾全系列 1kg 線材皆採用標準 200mm 外徑、65mm 寬度強化塑膠線盤，放入拓竹 AMS 絕不掉紙屑、不卡盤。
+• 高流量配方：High-Speed PLA+ 與 PETG-HF 支援高達 22–28 mm³/s 體積流量，完美適配 X1C、P1S、A1 全系列高速列印。
+• 實戰提醒：TPU 95A 彈性軟膠因材質柔軟，請勿放入 AMS，建議直接從機身後方外掛料架進料！`,
+    };
+  }
+
+  if ((/pla/.test(q) && /petg/.test(q)) || /差別|比較|選哪|哪個好|差異|vs/.test(q)) {
+    return {
+      modelUsed,
+      reply: `【High-Speed PLA+ 與 PETG-HF 實戰選材比較】
+• High-Speed PLA+（噴嘴 210–225°C / 熱床 55–60°C）：流動性極佳、懸垂與橋接表現最好、幾乎零翹邊，適合公仔模型、文創擺件與精密外殼（耐溫約 58°C）。
+• PETG-HF 高速耐候（噴嘴 235–250°C / 熱床 70–75°C）：具備優異韌性與抗衝擊力、耐溫達 78°C 且抗紫外線與防水，適合車內支架、戶外零件與卡扣結構件。`,
+    };
+  }
+
+  if (/溫度|幾度|參數|設定|切片|噴嘴|熱床|速度/.test(q)) {
+    return {
+      modelUsed,
+      reply: `【主力耗材建議切片參數一覽】
+• High-Speed PLA+ / 啞光 PLA：噴嘴 210–225°C｜熱床 55–60°C｜風扇 100%｜速度 250–500 mm/s
+• PETG-HF 高速耐候：噴嘴 235–250°C｜熱床 70–75°C｜風扇 40–60%｜回抽 0.8mm @ 30mm/s
+• TPU 95A 彈性軟膠：噴嘴 220–230°C｜熱床 45–50°C｜速度 40–60 mm/s（外掛直驅供料）
+• ABS+ / ASA 工程料：噴嘴 250–265°C｜熱床 95–105°C｜建議封箱保溫列印
+• PLA-CF 碳纖維：噴嘴 220–235°C｜熱床 60°C｜建議搭配 0.4mm 以上硬化鋼噴嘴`,
+    };
+  }
+
+  if (/拉絲|牽絲|蜘蛛網|漏料|回抽|受潮|烘乾/.test(q)) {
+    return {
+      modelUsed,
+      reply: `【快速解決 3D 列印拉絲（Stringing）3 步驟】
+1. 線材除濕烘乾：線材開袋後吸濕是最常見的拉絲主因，建議 PLA 以 50°C、PETG 以 60°C 烘乾 4 小時，氣泡與細毛會立刻消失。
+2. 調降噴嘴溫度：將噴嘴溫度微調降低 5–10°C，減少空駛移動時的殘料滴漏。
+3. 最佳化回抽與擦拭：近端直驅機型（如拓竹、K1）建議回抽距離設為 0.8mm、回抽速度 35mm/s，並在切片軟體勾選「回抽時擦拭 (Wipe)」。`,
+      solution: {
+        solutions: [
+          '將線材放入乾燥盒（PLA 50°C / PETG 60°C）烘烤 4 小時去除水氣微氣泡',
+          '噴嘴溫度調降 5–10°C，降低熔融塑料空駛時的滴漏',
+          '近端直驅回抽設為 0.8mm @ 35mm/s，並勾選「回抽時擦拭 (Wipe)」',
+          '提高空駛移動速度 (Travel Speed) 至 300mm/s 以上',
+        ],
+        recommendedAdjustment: {
+          temperature: '噴嘴 205–215°C (PLA) / 235°C (PETG)',
+          speed: '空駛速度 300–400 mm/s',
+          retraction: '近端 0.8mm @ 35mm/s / 遠端 4.5mm',
+          cooling: 'PLA 100% / PETG 50%',
+        },
+      },
+    };
+  }
+
+  if (/翹邊|不黏|脫落|首層|第一層|底板|熱床/.test(q)) {
+    return {
+      modelUsed,
+      reply: `【首層不黏與邊角翹邊（Warping）急救指南】
+1. 徹底清潔 PEI 鋼板：手部油脂會讓首層完全失去抓地力，請用溫水加洗碗精刷洗 PEI 彈簧鋼板並擦乾，效果遠勝單擦酒精。
+2. 放慢首層並提高床溫：首層速度降至 35–45 mm/s、前 2 層關閉冷卻風扇，並將熱床溫度調高 5°C。
+3. 開啟外圈裙邊（Brim）：列印大面積盒體或銳角零件時，在切片軟體開啟 5–8mm 外側 Brim，即可牢牢抓緊平台不翹曲。`,
+      solution: {
+        solutions: [
+          '以溫水加中性洗碗精徹底刷洗 PEI 彈簧鋼板表面，去除手部指紋油脂',
+          '微調 Z-Offset 降低 0.03mm–0.05mm 增強首層擠出壓實感',
+          '切片設定首層列印速度降至 30 mm/s，前 2 層完全關閉冷卻風扇',
+          '開啟切片外側裙邊 (Brim) 5mm–8mm 擴大邊角抓附面積',
+        ],
+        recommendedAdjustment: {
+          temperature: '噴嘴 215–225°C / 熱床 60–65°C',
+          speed: '首層 30 mm/s (其餘層 200–300 mm/s)',
+          retraction: '近端 0.8mm @ 35mm/s',
+          cooling: '首層 0% (第 3 層後開啟至 100%)',
+        },
+      },
+    };
+  }
+
+  const viewingNoteZh = storeContext?.viewingProduct
+    ? `\n\n看到您正在瀏覽【${storeContext.viewingProduct.name}】(${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})，需要我提供這款線材的專屬切片參數嗎？`
+    : '';
+
+  return {
+    modelUsed,
+    reply: `您好！為您整理最實用的選材與設定重點：
+• High-Speed PLA+ / 啞光 PLA：支援 300–500mm/s 高速列印、表面細膩無層紋（噴嘴 215°C / 熱床 60°C）。
+• PETG-HF / ABS+：高韌性耐衝擊、適合戶外耐候與車用機構件（噴嘴 240°C / 熱床 75°C）。
+• 全館滿 NT$999 免運、24H 快速出貨，輸入優惠碼【PRINTCORE10】再享 9 折優惠。${viewingNoteZh}
+
+您可以直接告訴我您使用的 3D 列印機型或想印的作品，我馬上幫您配出最佳參數！`,
+  };
 }
