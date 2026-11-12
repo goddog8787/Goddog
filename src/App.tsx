@@ -1447,7 +1447,7 @@ export default function App() {
             });
             setToastNotification({
               type: 'success',
-              message: `🎁 首購推薦達標！您與推薦人「${refRes.referrerName || '好友'}」已各獲得 300 點狗勾幣（NT$300）獎勵！`,
+              message: `首購推薦達標！您與推薦人「${refRes.referrerName || '好友'}」已各獲得 50 狗勾幣獎勵`,
             });
           }
         })

@@ -697,7 +697,7 @@ export async function saveUserProfileToFirestore(profile: any) {
                 inviteeEmail: userDoc.email || '',
                 status: 'registered_pending_order',
                 registeredAt: new Date().toISOString(),
-                rewardAmount: 300,
+                rewardAmount: 50,
               },
               ...existingRecords,
             ];
@@ -713,15 +713,15 @@ export async function saveUserProfileToFirestore(profile: any) {
 
         await addDoc(collection(db, 'users', referrerDoc.id, 'notifications'), {
           title: '好友已透過您的專屬連結完成註冊！',
-          message: `好友「${userDoc.name}」已透過您的專屬邀請連結完成註冊綁定！待好友完成首筆訂單付款後，系統將自動發放 $300 推廣獎勵與 300 點狗勾幣至您的帳戶。`,
+          message: `好友「${userDoc.name}」已透過您的專屬邀請連結完成註冊綁定！待好友完成首筆訂單付款後，系統將自動發放 50 狗勾幣至您的帳戶。`,
           read: false,
           createdAt: new Date().toISOString(),
           type: 'reward',
         });
 
         await addDoc(collection(db, 'users', profile.id, 'notifications'), {
-          title: '推薦碼綁定成功！完成首購即領 $300 獎勵',
-          message: `您已成功綁定「${userDoc.referredByName}」的專屬推薦連結（${userDoc.referredByCode}）！完成首筆訂單結帳付款後，您與好友將立即各得 300 點狗勾幣（價值 NT$300）獎勵！`,
+          title: '推薦碼綁定成功！完成首購即領 50 狗勾幣',
+          message: `您已成功綁定「${userDoc.referredByName}」的專屬推薦連結（${userDoc.referredByCode}）！完成首筆訂單結帳付款後，您與好友將立即各得 50 狗勾幣獎勵！`,
           read: false,
           createdAt: new Date().toISOString(),
           type: 'reward',
@@ -787,7 +787,7 @@ export async function bindReferralCodeForUser(
     });
     return {
       ok: true,
-      message: `成功綁定「${referrerDoc.data()?.name || '創客好友'}」的推薦碼！完成首筆訂單付款即可解鎖 300 狗勾幣獎勵！`,
+      message: `成功綁定「${referrerDoc.data()?.name || '創客好友'}」的推薦碼！完成首筆訂單付款即可解鎖 50 狗勾幣獎勵！`,
       updatedProfile: updated,
     };
   } catch (error) {
@@ -796,7 +796,7 @@ export async function bindReferralCodeForUser(
   }
 }
 
-// STAGE 2 OF REFERRAL: Verify both Registration AND Paid/Confirmed Order before issuing $300 reward to Referrer & Invitee
+// STAGE 2 OF REFERRAL: Verify both Registration AND Paid/Confirmed Order before issuing 50 G-Coins reward to Referrer & Invitee
 export async function processReferralOrderReward(
   buyerProfile: any,
   order: any
@@ -854,7 +854,7 @@ export async function processReferralOrderReward(
     const orderNum = order.orderNumber || order.id || `ORD-${Date.now()}`;
     const nowIso = new Date().toISOString();
 
-    // 1. Update Referrer's earnings (+300 cash reward, +300 G-Coins, +1 completed referral)
+    // 1. Update Referrer's earnings (+50 G-Coins, +1 completed referral)
     const existingRecords: any[] = Array.isArray(referrerData.referralRecords)
       ? referrerData.referralRecords
       : [];
@@ -868,7 +868,7 @@ export async function processReferralOrderReward(
           orderNumber: orderNum,
           orderAmount: order.totalAmount || order.total || 0,
           completedAt: nowIso,
-          rewardAmount: 300,
+          rewardAmount: 50,
         };
       }
       return rec;
@@ -883,7 +883,7 @@ export async function processReferralOrderReward(
         completedAt: nowIso,
         orderNumber: orderNum,
         orderAmount: order.totalAmount || order.total || 0,
-        rewardAmount: 300,
+        rewardAmount: 50,
       });
     }
 
@@ -897,16 +897,16 @@ export async function processReferralOrderReward(
     ).length;
 
     await updateDoc(referrerRef, {
-      points: Number(referrerData.points || 0) + 300,
-      referralEarnings: Number(referrerData.referralEarnings || 0) + 300,
+      points: Number(referrerData.points || 0) + 50,
+      referralEarnings: Number(referrerData.referralEarnings || 0) + 50,
       referrals: newCompletedCount,
       referralsCount: newCompletedCount,
       pendingReferrals: newPendingCount,
       referralRecords: updatedRecords,
     });
 
-    // 2. Update Buyer's profile (+300 G-Coins & mark referralOrderCompleted = true)
-    const newBuyerPoints = Number(buyerProfile.points ?? buyerData.points ?? 0) + 300;
+    // 2. Update Buyer's profile (+50 G-Coins & mark referralOrderCompleted = true)
+    const newBuyerPoints = Number(buyerProfile.points ?? buyerData.points ?? 0) + 50;
     const updatedBuyerProfile = {
       ...buyerData,
       ...buyerProfile,
@@ -927,16 +927,16 @@ export async function processReferralOrderReward(
 
     // 3. Send notifications to both Referrer & Invitee
     await addDoc(collection(db, 'users', referredByUid, 'notifications'), {
-      title: '🎉 邀請好友首購達標！$300 獎勵已入帳',
-      message: `您邀請的好友「${buyerProfile.name || buyerData.name || '創客會員'}」已完成註冊並成功下單（訂單編號：${orderNum}），系統已發放 NT$300 推廣獎金與 300 點狗勾幣至您的帳戶！`,
+      title: '🎉 邀請好友首購達標！50 狗勾幣已入帳',
+      message: `您邀請的好友「${buyerProfile.name || buyerData.name || '創客會員'}」已完成註冊並成功下單（訂單編號：${orderNum}），系統已發放 50 狗勾幣至您的帳戶！`,
       read: false,
       createdAt: nowIso,
       type: 'reward',
     });
 
     await addDoc(collection(db, 'users', buyerProfile.id, 'notifications'), {
-      title: '🎁 首購推薦獎勵 300 點狗勾幣已入帳！',
-      message: `感謝您透過好友「${referrerData.name || '創客好友'}」的推薦註冊並完成首筆訂單（${orderNum}），300 點狗勾幣（價值 NT$300）已自動發放至您的會員帳戶！`,
+      title: '🎁 首購推薦獎勵 50 狗勾幣已入帳！',
+      message: `感謝您透過好友「${referrerData.name || '創客好友'}」的推薦註冊並完成首筆訂單（${orderNum}），50 狗勾幣已自動發放至您的會員帳戶！`,
       read: false,
       createdAt: nowIso,
       type: 'reward',
@@ -945,7 +945,7 @@ export async function processReferralOrderReward(
     return {
       rewarded: true,
       referrerName: referrerData.name || '創客好友',
-      rewardPoints: 300,
+      rewardPoints: 50,
       updatedBuyerProfile,
     };
   } catch (error) {

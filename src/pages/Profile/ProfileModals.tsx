@@ -350,7 +350,7 @@ export const OrderModal: React.FC<{
         const refRes = await processReferralOrderReward(member, updated);
         if (refRes?.rewarded && refRes.updatedBuyerProfile && setMember) {
           setMember(refRes.updatedBuyerProfile);
-          showToast(`🎁 付款成功並解鎖好友首購推薦獎勵 +300 點狗勾幣！`);
+          showToast(`付款成功並解鎖好友首購推薦獎勵 +50 狗勾幣`);
         }
       }
     } finally {
@@ -805,14 +805,11 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
   const [printers, setPrinters] = useState<any[]>([]);
   const [isAdding, setIsAdding] = useState(false);
 
-  // Two-stage Brand -> Model selection state
   const [selectedBrandId, setSelectedBrandId] = useState<string>('bambu');
   const [selectedProfileId, setSelectedProfileId] = useState<string>('bambu-x1c');
-  const [searchKeyword, setSearchKeyword] = useState<string>('');
   const [customNickname, setCustomNickname] = useState<string>('');
   const [selectedNozzle, setSelectedNozzle] = useState<string>('0.4mm 硬化鋼噴嘴');
-  const [preferredFilament, setPreferredFilament] = useState<string>('PLA / PETG / PLA-CF');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [preferredFilament, setPreferredFilament] = useState<string>('PLA / PETG');
 
   useEffect(() => {
     if (isOpen) {
@@ -823,37 +820,18 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
     }
   }, [isOpen, member?.id]);
 
-  // Filtered models based on brand or search keyword
   const brandModels = useMemo(() => {
-    const q = searchKeyword.trim().toLowerCase();
-    if (q) {
-      const found = PRINTER_PROFILES.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.brand.toLowerCase().includes(q) ||
-          p.series.toLowerCase().includes(q) ||
-          p.id.toLowerCase().includes(q)
-      );
-      return found.length > 0 ? found : PRINTER_PROFILES;
-    }
     return getPrintersByBrand(selectedBrandId);
-  }, [selectedBrandId, searchKeyword]);
+  }, [selectedBrandId]);
 
   const activeProfile: PrinterProfile = useMemo(() => {
     return findPrinterProfile(selectedProfileId);
   }, [selectedProfileId]);
 
-  // Sync default nozzle & filament when profile changes
   useEffect(() => {
     if (activeProfile) {
-      setSelectedNozzle(
-        activeProfile.defaultNozzle ||
-          (activeProfile.specialNotes.includes('硬化鋼') ? '0.4mm 硬化鋼噴嘴' : '0.4mm 標準噴嘴')
-      );
-      setPreferredFilament(
-        activeProfile.defaultMaterial ||
-          (activeProfile.enclosure === 'full' ? 'PLA / PETG / ABS / ASA / CF' : 'PLA / Matte PLA / PETG')
-      );
+      setSelectedNozzle(activeProfile.defaultNozzle || '0.4mm 標準噴嘴');
+      setPreferredFilament(activeProfile.defaultMaterial || 'PLA / PETG');
     }
   }, [activeProfile]);
 
@@ -875,23 +853,19 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
       brand: profile.brand,
       name: displayTitle,
       series: profile.series,
-      type: `${profile.type}・${
-        profile.enclosure === 'full' ? '全封箱保溫' : profile.enclosure === 'optional' ? '可選封箱' : '開放式機身'
+      type: `${profile.extruder === 'direct' ? '直驅' : '遠程'} · ${
+        profile.enclosure === 'open' ? '開放式' : '封箱'
       }`,
       nozzle: selectedNozzle,
       material: preferredFilament,
-      maxSpeedMmS: profile.maxSpeedMmS,
-      maxNozzleTemp: profile.maxNozzleTemp,
-      maxBedTemp: profile.maxBedTemp,
-      multiColorSupport: profile.multiColorSupport,
-      retraction: profile.recommendedRetraction?.pla || '0.8mm @ 35mm/s',
-      specialNotes: profile.specialNotes,
+      maxSpeedMmS: profile.maxPrintSpeed,
+      maxNozzleTemp: profile.maxTempNozzle,
+      maxBedTemp: profile.maxTempBed,
       current: printers.length === 0,
     };
 
     saveToDb([...printers, newEntry]);
     setCustomNickname('');
-    setSearchKeyword('');
     setIsAdding(false);
   };
 
@@ -908,314 +882,140 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
   };
 
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="我的 3D 列印機車庫">
-      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-5 flex items-start gap-3">
-        <Printer className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-        <div className="text-xs text-indigo-900 leading-relaxed">
-          <p className="font-bold">已完整收錄市面 {PRINTER_BRANDS.length} 大廠牌、{PRINTER_PROFILES.length} 款熱門與經典機型系譜！</p>
-          <p className="text-indigo-700/80 mt-0.5">
-            支援先選品牌再選機型（含拓竹 H2D/X1C/A1、創想 Ender 初代至最新 K2/K3、SparkX i8、H3C、Infimech MX Pro、Anycubic K3/S1、QIDI Plus 4、Voron 等），綁定後可自動帶入切片參數與成就偵測！
-          </p>
-        </div>
-      </div>
-
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="我的列印機車庫">
       {/* Saved Printers List */}
-      <div className="space-y-3.5 mb-5">
+      <div className="space-y-3 mb-4">
         {printers.map((p) => (
           <div
             key={p.id}
             className={`bg-white p-4 rounded-2xl border transition-all ${
-              p.current ? 'border-indigo-500 shadow-md shadow-indigo-100/60' : 'border-slate-200 shadow-xs'
+              p.current ? 'border-indigo-500 shadow-sm' : 'border-slate-200'
             }`}
           >
-            <div className="flex justify-between items-start gap-2 mb-3">
+            <div className="flex justify-between items-start gap-2 mb-2.5">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {p.brand && (
-                    <span className="text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-md">
+                    <span className="text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md">
                       {p.brand}
                     </span>
                   )}
-                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
-                    {p.type || '高速機型'}
+                  <span className="text-[11px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
+                    {p.nozzle || '0.4mm'}
                   </span>
-                  {p.maxSpeedMmS && (
-                    <span className="text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded-md">
-                      {p.maxSpeedMmS} mm/s
-                    </span>
-                  )}
                 </div>
-                <h4 className="font-black text-slate-900 text-sm sm:text-base mt-1.5 leading-snug">
-                  {p.name}
-                </h4>
+                <h4 className="font-bold text-slate-900 text-sm mt-1.5">{p.name}</h4>
+                <p className="text-xs text-slate-500 mt-0.5">常用耗材：{p.material || 'PLA / PETG'}</p>
               </div>
               <button
                 onClick={() => handleDelete(p.id)}
                 className="text-slate-300 hover:text-rose-500 transition-colors p-1 cursor-pointer shrink-0"
-                title="移除此機台"
+                title="移除機台"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Hardware Spec Grid */}
-            <div className="grid grid-cols-2 gap-2 text-xs mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div>
-                <span className="text-[10px] text-slate-400 block">噴嘴與熱端配置</span>
-                <span className="font-bold text-slate-800">{p.nozzle || '0.4mm 標準噴嘴'}</span>
+            {p.current ? (
+              <div className="w-full bg-indigo-50 text-indigo-600 text-xs font-bold px-3 py-2 rounded-xl flex items-center justify-center gap-1.5">
+                <Check className="w-3.5 h-3.5" />
+                <span>預設機台</span>
               </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block">主力適配耗材</span>
-                <span className="font-bold text-indigo-700">{p.material || 'PLA / PETG'}</span>
-              </div>
-              {p.maxNozzleTemp && (
-                <div>
-                  <span className="text-[10px] text-slate-400 block">最高噴嘴 / 熱床溫控</span>
-                  <span className="font-mono font-bold text-slate-700">
-                    {p.maxNozzleTemp}°C / {p.maxBedTemp || 100}°C
-                  </span>
-                </div>
-              )}
-              {p.retraction && (
-                <div>
-                  <span className="text-[10px] text-slate-400 block">預設建議回抽</span>
-                  <span className="font-mono font-bold text-slate-700">{p.retraction}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              {p.current ? (
-                <div className="flex-1 bg-indigo-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-xs">
-                  <Check className="w-4 h-4" />
-                  <span>當前主力預設機台</span>
-                </div>
-              ) : (
-                <button
-                  onClick={() => handleSetDefault(p.id)}
-                  className="flex-1 text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 px-3 py-2 rounded-xl transition-colors cursor-pointer"
-                >
-                  設為主力預設機台
-                </button>
-              )}
+            ) : (
               <button
-                type="button"
-                onClick={() => {
-                  const text = `機型：${p.name}\n結構：${p.type}\n噴嘴：${p.nozzle || '0.4mm'}\n最高溫控：${p.maxNozzleTemp || 300}°C / ${p.maxBedTemp || 100}°C\n建議回抽：${p.retraction || '0.8mm @ 35mm/s'}\n主力耗材：${p.material || 'PLA/PETG'}`;
-                  navigator.clipboard.writeText(text);
-                  setCopiedId(String(p.id));
-                  setTimeout(() => setCopiedId(null), 2000);
-                }}
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer shrink-0"
+                onClick={() => handleSetDefault(p.id)}
+                className="w-full text-xs font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 px-3 py-2 rounded-xl transition-colors cursor-pointer"
               >
-                {copiedId === String(p.id) ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-emerald-700">已複製規格</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>複製規格</span>
-                  </>
-                )}
+                設為預設機台
               </button>
-            </div>
+            )}
           </div>
         ))}
 
         {printers.length === 0 && !isAdding && (
           <div className="text-center py-8 bg-white rounded-2xl border border-slate-100 p-4">
-            <Printer className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-            <p className="font-bold text-slate-600 text-sm">您的列印車庫尚未登錄機台</p>
-            <p className="text-xs text-slate-400 mt-1">新增機台可自動匹配噴嘴溫度與回抽參數，登錄 2 台以上還能解鎖「設備控」創客成就！</p>
+            <Printer className="w-9 h-9 text-slate-300 mx-auto mb-2" />
+            <p className="font-bold text-slate-600 text-sm">尚未新增列印機</p>
+            <p className="text-xs text-slate-400 mt-1">新增機台即可快速配對專屬切片參數</p>
           </div>
         )}
       </div>
 
-      {/* Add Printer Form: Step 1 (Brand) -> Step 2 (Model) */}
+      {/* Add Printer Form: Clean Brand -> Model */}
       {isAdding ? (
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border-2 border-indigo-200 shadow-lg space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-            <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
-              <Plus className="w-4 h-4 text-indigo-600" />
-              <span>新增愛機至車庫（先選品牌・再選機型）</span>
-            </h4>
-            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-              全機型資料庫
-            </span>
-          </div>
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3.5">
+          <h4 className="font-bold text-slate-900 text-sm">新增機台</h4>
 
-          {/* Fast Keyword Search */}
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">
-              🔍 快速關鍵字搜尋（支援輸入 SparkX i8、H3C、K3、K2、Infimech MX Pro、Ender-3、Plus 4 等）：
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchKeyword}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSearchKeyword(val);
-                  if (val.trim()) {
-                    const matched = findPrinterProfile(val);
-                    if (matched) {
-                      setSelectedBrandId(matched.brandId);
-                      setSelectedProfileId(matched.id);
-                    }
-                  }
-                }}
-                placeholder="輸入機型關鍵字立即定位..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none focus:border-indigo-500"
-              />
-              {searchKeyword && (
-                <button
-                  type="button"
-                  onClick={() => setSearchKeyword('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold cursor-pointer"
-                >
-                  清除
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Step 1: Select Brand Pills + Dropdown */}
-          <div>
-            <label className="text-[11px] font-black text-slate-800 block mb-1.5">
-              步驟一：先選擇 3D 印表機品牌
-            </label>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-2 scrollbar-hide">
-              {PRINTER_BRANDS.map((b) => {
-                const count = getPrintersByBrand(b.id).length;
-                const active = selectedBrandId === b.id && !searchKeyword;
-                return (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() => {
-                      setSearchKeyword('');
-                      setSelectedBrandId(b.id);
-                      const list = getPrintersByBrand(b.id);
-                      if (list.length > 0) setSelectedProfileId(list[0].id);
-                    }}
-                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
-                      active
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    <span>{b.icon}</span>
-                    <span>{b.shortName}</span>
-                    <span className="text-[10px] opacity-75">({count})</span>
-                  </button>
-                );
-              })}
-            </div>
-
+            <label className="text-xs font-bold text-slate-600 block mb-1">選擇品牌</label>
             <select
               value={selectedBrandId}
               onChange={(e) => {
                 const bid = e.target.value;
-                setSearchKeyword('');
                 setSelectedBrandId(bid);
                 const list = getPrintersByBrand(bid);
                 if (list.length > 0) setSelectedProfileId(list[0].id);
               }}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
             >
-              <option value="all">🌐 顯示全部品牌 ({PRINTER_PROFILES.length} 款機型)</option>
               {PRINTER_BRANDS.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.icon} {b.name} — {b.description}
+                  {b.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Step 2: Select Specific Printer Model */}
           <div>
-            <label className="text-[11px] font-black text-slate-800 block mb-1.5">
-              步驟二：再選擇機型型號（目前顯示 {brandModels.length} 款可選）
-            </label>
+            <label className="text-xs font-bold text-slate-600 block mb-1">選擇機型</label>
             <select
               value={selectedProfileId}
-              onChange={(e) => {
-                const pid = e.target.value;
-                setSelectedProfileId(pid);
-                const prof = findPrinterProfile(pid);
-                if (prof && selectedBrandId !== 'all') {
-                  setSelectedBrandId(prof.brandId);
-                }
-              }}
-              className="w-full px-3.5 py-2.5 rounded-xl border-2 border-indigo-300 bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600"
+              onChange={(e) => setSelectedProfileId(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-900 focus:outline-none focus:border-indigo-500"
             >
               {brandModels.map((m) => (
                 <option key={m.id} value={m.id}>
-                  【{m.series}】{m.name}（{m.type} / {m.enclosure === 'full' ? '全封箱' : '開放式'} / {m.maxSpeedMmS}mm/s）
+                  {m.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Auto-detected Hardware Spec Preview Card */}
-          <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-1.5 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="font-black text-indigo-950">{activeProfile.name}</span>
-              <span className="text-[10px] font-bold bg-indigo-600 text-white px-2 py-0.5 rounded-full">
-                極速 {activeProfile.maxSpeedMmS} mm/s
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
-              <span>結構：<strong>{activeProfile.type}</strong></span>
-              <span>艙體：<strong>{activeProfile.enclosure === 'full' ? '全封箱恆溫' : activeProfile.enclosure === 'optional' ? '可加裝封箱' : '開放式'}</strong></span>
-              <span>最高溫：<strong>{activeProfile.maxNozzleTemp}°C / {activeProfile.maxBedTemp}°C</strong></span>
-              <span>多色：<strong>{activeProfile.multiColorSupport}</strong></span>
-            </div>
-            <p className="text-[11px] text-indigo-800/90 leading-snug pt-0.5">
-              💡 {activeProfile.specialNotes}
-            </p>
-          </div>
-
-          {/* Optional Customization: Nozzle, Preferred Material & Nickname */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
             <div>
-              <label className="text-[11px] font-bold text-slate-600 block mb-1">噴嘴口徑與材質：</label>
+              <label className="text-xs font-bold text-slate-600 block mb-1">噴嘴規格</label>
               <select
                 value={selectedNozzle}
                 onChange={(e) => setSelectedNozzle(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-white"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800"
               >
-                <option value="0.4mm 硬化鋼噴嘴">0.4mm 硬化鋼噴嘴 (耐磨直印碳纖)</option>
-                <option value="0.4mm 標準黃銅/不銹鋼噴嘴">0.4mm 標準黃銅/不銹鋼噴嘴</option>
-                <option value="0.2mm 精細微縮噴嘴">0.2mm 精細公仔微縮噴嘴</option>
-                <option value="0.6mm 大流量耐磨硬化鋼噴嘴">0.6mm 大流量耐磨硬化鋼噴嘴</option>
-                <option value="0.8mm 超大流量原型噴嘴">0.8mm 超大流量快速原型噴嘴</option>
+                <option value="0.4mm 硬化鋼噴嘴">0.4mm 硬化鋼</option>
+                <option value="0.4mm 標準噴嘴">0.4mm 標準噴嘴</option>
+                <option value="0.2mm 精細噴嘴">0.2mm 精細噴嘴</option>
+                <option value="0.6mm 大流量噴嘴">0.6mm 大流量</option>
+                <option value="0.8mm 超大流量噴嘴">0.8mm 超大流量</option>
               </select>
             </div>
             <div>
-              <label className="text-[11px] font-bold text-slate-600 block mb-1">常印主力耗材：</label>
+              <label className="text-xs font-bold text-slate-600 block mb-1">常用耗材</label>
               <input
                 type="text"
                 value={preferredFilament}
                 onChange={(e) => setPreferredFilament(e.target.value)}
-                placeholder="例：PLA / PETG / PLA-CF"
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-800 bg-white"
+                placeholder="PLA / PETG"
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800"
               />
             </div>
           </div>
 
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">
-              機台自訂暱稱或備註（選填，若品牌未列出亦可直接填寫自訂型號）：
-            </label>
+            <label className="text-xs font-bold text-slate-600 block mb-1">備註暱稱（選填）</label>
             <input
               type="text"
               value={customNickname}
               onChange={(e) => setCustomNickname(e.target.value)}
-              placeholder="例如：書房一號機、改裝 E3D Revo 熱端..."
-              className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+              placeholder="例如：工作機 1 號"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
             />
           </div>
 
@@ -1223,16 +1023,16 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
             <button
               type="button"
               onClick={() => setIsAdding(false)}
-              className="flex-1 py-3 text-slate-600 font-bold bg-slate-100 hover:bg-slate-200 rounded-xl text-xs cursor-pointer"
+              className="flex-1 py-2.5 text-slate-600 font-bold bg-slate-100 hover:bg-slate-200 rounded-xl text-xs cursor-pointer"
             >
               取消
             </button>
             <button
               type="button"
               onClick={handleAddPrinter}
-              className="flex-1 py-3 text-white font-bold bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs shadow-md cursor-pointer"
+              className="flex-1 py-2.5 text-white font-bold bg-indigo-600 hover:bg-indigo-700 rounded-xl text-xs cursor-pointer"
             >
-              儲存並加入車庫
+              確認新增
             </button>
           </div>
         </div>
@@ -1240,10 +1040,10 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
         <button
           type="button"
           onClick={() => setIsAdding(true)}
-          className="w-full py-4 border-2 border-dashed border-indigo-300 bg-indigo-50/40 rounded-2xl text-indigo-700 font-black hover:bg-indigo-50 hover:border-indigo-400 transition-colors flex items-center justify-center gap-2 cursor-pointer text-sm"
+          className="w-full py-3.5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-600 font-bold hover:border-indigo-400 hover:text-indigo-600 transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-sm"
         >
-          <Plus className="w-5 h-5" />
-          <span>新增 3D 列印機（先選品牌再選機型）</span>
+          <Plus className="w-4 h-4" />
+          <span>新增機台</span>
         </button>
       )}
     </ModalWrapper>
@@ -1473,13 +1273,13 @@ export const ReferralModal: React.FC<{
   };
 
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="邀請好友・雙重驗證賺 $300">
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="邀請好友賺狗勾幣">
       <div className="space-y-5">
         {/* Hero Card with Unique Link & Code */}
         <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 rounded-3xl p-5 sm:p-6 text-white shadow-lg shadow-indigo-500/20">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[10px] font-black uppercase tracking-wider bg-white/15 border border-white/20 px-2.5 py-1 rounded-full text-amber-300">
-              專屬帳號獨立識別碼：{uniqueReferralCode}
+              專屬推薦碼：{uniqueReferralCode}
             </span>
             <button
               type="button"
@@ -1492,10 +1292,10 @@ export const ReferralModal: React.FC<{
           </div>
 
           <h3 className="font-black text-xl sm:text-2xl mb-1.5">
-            邀請好友註冊並完成首購，雙方各得 $300！
+            邀請好友註冊並下單，雙方各得 50 狗勾幣！
           </h3>
           <p className="text-indigo-100 text-xs leading-relaxed mb-4">
-            每個會員皆擁有全站唯一的專屬推薦連結與代碼。當好友透過您的連結<strong className="text-amber-300">「1. 完成註冊綁定」且「2. 完成首筆訂單付款」</strong>後，系統將自動核發 <strong className="text-amber-300">NT$ 300 推廣獎金 + 300 點狗勾幣</strong> 至雙方帳戶！
+            每個會員皆擁有專屬推薦連結與代碼。當好友透過您的連結<strong className="text-amber-300">完成註冊並完成首筆訂單付款</strong>後，系統將自動發放 <strong className="text-amber-300">50 狗勾幣</strong> 至雙方帳戶！
           </p>
 
           {/* 3-Step Verification Pipeline */}
@@ -1519,7 +1319,7 @@ export const ReferralModal: React.FC<{
                 3
               </div>
               <div className="font-bold text-emerald-300">首購付款完成</div>
-              <div className="text-[10px] text-indigo-200">自動入帳 $300</div>
+              <div className="text-[10px] text-indigo-200">各得 50 狗勾幣</div>
             </div>
           </div>
 
@@ -1568,24 +1368,7 @@ export const ReferralModal: React.FC<{
         {/* 3-Column Real-Time Verification Dashboard */}
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="font-black text-slate-900 text-sm">我的推廣追蹤與獎金核發狀態</h4>
-            <button
-              onClick={handleWithdraw}
-              disabled={referralEarnings <= 0 || withdrawing}
-              className={`text-xs font-bold px-3 py-1.5 rounded-full transition-colors flex items-center gap-1 cursor-pointer ${
-                referralEarnings > 0
-                  ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
-                  : 'text-slate-400 bg-slate-100 cursor-not-allowed'
-              }`}
-            >
-              {withdrawing ? (
-                '處理中...'
-              ) : (
-                <>
-                  <Download className="w-3 h-3" /> 提領至狗勾幣
-                </>
-              )}
-            </button>
+            <h4 className="font-black text-slate-900 text-sm">邀請追蹤狀態</h4>
           </div>
 
           <div className="grid grid-cols-3 gap-2.5">
@@ -1596,23 +1379,22 @@ export const ReferralModal: React.FC<{
               </p>
             </div>
             <div className="bg-emerald-50/70 border border-emerald-100 p-3 rounded-xl text-center">
-              <p className="text-[11px] font-bold text-emerald-800 mb-1">已下單・達標領獎</p>
+              <p className="text-[11px] font-bold text-emerald-800 mb-1">已下單・達標</p>
               <p className="text-xl font-black text-emerald-600">
                 {completedReferrals} <span className="text-[10px] font-medium text-emerald-700">人</span>
               </p>
             </div>
             <div className="bg-indigo-50/70 border border-indigo-100 p-3 rounded-xl text-center">
-              <p className="text-[11px] font-bold text-indigo-800 mb-1">可提領獎金</p>
+              <p className="text-[11px] font-bold text-indigo-800 mb-1">累積獲得狗勾幣</p>
               <p className="text-xl font-black text-indigo-600">
-                <span className="text-xs">$</span>
-                {referralEarnings}
+                {completedReferrals * 50} <span className="text-[10px] font-medium text-indigo-700">幣</span>
               </p>
             </div>
           </div>
 
           {/* Detailed Referral Records List */}
           <div className="pt-2 border-t border-slate-100">
-            <p className="text-xs font-bold text-slate-700 mb-2">邀請好友驗證紀錄明細：</p>
+            <p className="text-xs font-bold text-slate-700 mb-2">邀請好友明細：</p>
             {referralRecords.length > 0 ? (
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {referralRecords.map((rec, idx) => {
@@ -1638,7 +1420,7 @@ export const ReferralModal: React.FC<{
                             : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {isCompleted ? '✅ 已下單・已發放 $300' : '⏳ 已註冊・待首購下單'}
+                        {isCompleted ? '已下單・已發放 50 幣' : '已註冊・待首購下單'}
                       </span>
                     </div>
                   );
@@ -1646,7 +1428,7 @@ export const ReferralModal: React.FC<{
               </div>
             ) : (
               <div className="text-center py-4 bg-slate-50 rounded-xl text-xs text-slate-400">
-                尚無好友邀請紀錄，立即複製上方專屬連結分享給創客好友吧！
+                尚無好友邀請紀錄，複製上方專屬連結分享給好友吧！
               </div>
             )}
           </div>
@@ -1659,8 +1441,8 @@ export const ReferralModal: React.FC<{
             {member?.referredBy && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
                 {member.referralOrderCompleted
-                  ? '✅ 已完成首購並領取 $300 獎勵'
-                  : `⏳ 已綁定（${member.referredByCode || member.referredByName || '好友'}）・下單即領 $300`}
+                  ? '已完成首購並領取 50 狗勾幣'
+                  : `已綁定（${member.referredByCode || member.referredByName || '好友'}）・下單領 50 幣`}
               </span>
             )}
           </div>
@@ -1686,8 +1468,8 @@ export const ReferralModal: React.FC<{
             <p className="text-xs text-slate-500 leading-relaxed">
               您已成功綁定推薦人 <strong className="text-indigo-600">{member.referredByName || member.referredByCode || '創客好友'}</strong>！
               {member.referralOrderCompleted
-                ? ` 您已完成首筆訂單（${member.referralOrderNumber || '已付款'}），雙方 300 點狗勾幣獎勵已核發入帳！`
-                : ' 只要完成首筆訂單結帳付款，系統將立即自動發放 300 點狗勾幣至您與好友的帳戶！'}
+                ? ` 您已完成首筆訂單（${member.referralOrderNumber || '已付款'}），雙方 50 狗勾幣獎勵已入帳！`
+                : ' 只要完成首筆訂單結帳付款，系統將自動發放 50 狗勾幣至您與好友的帳戶！'}
             </p>
           )}
         </div>

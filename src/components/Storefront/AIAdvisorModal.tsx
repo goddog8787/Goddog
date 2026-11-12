@@ -92,48 +92,10 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
     return findPrinterProfile(selectedPrinterId);
   }, [selectedPrinterId]);
 
-  // Filtered printers list for 2-stage Brand -> Model selector + search
+  // Filtered printers list for Brand -> Model selector
   const visiblePrinters = useMemo(() => {
-    const q = printerSearchQuery.trim().toLowerCase();
-    if (q) {
-      const matches = PRINTER_PROFILES.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.brand.toLowerCase().includes(q) ||
-          p.series.toLowerCase().includes(q) ||
-          p.id.toLowerCase().includes(q)
-      );
-      return matches.length > 0 ? matches : PRINTER_PROFILES;
-    }
     return getPrintersByBrand(selectedBrandFilter);
-  }, [selectedBrandFilter, printerSearchQuery]);
-
-  // Concise 1-line engineer note helper to prevent awkward multi-line orphan wraps
-  const concisePrinterNote = useMemo(() => {
-    const raw = currentPrinter.specialNotes || '';
-    if (lang === 'en') {
-      if (raw.includes('標配硬化鋼')) return 'Includes hardened steel nozzle for direct carbon fiber printing; crack top glass slightly for PLA.';
-      if (raw.includes('Unicorn') || raw.includes('獨角獸')) return 'Quick-swap Unicorn steel nozzle supports high-speed carbon fiber and engineering filaments.';
-      if (raw.includes('快拆式熱端')) return 'Quick-swap hotend with auto flow calibration delivers ultra-clean first layers on PLA & PETG.';
-      if (raw.includes('180x180')) return 'Compact, whisper-quiet desktop printer with multi-color support—ideal for everyday PLA & PETG.';
-      if (currentPrinter.enclosure === 'full') return 'Fully enclosed heated chamber suppresses warping on ABS, ASA, and engineering filaments.';
-      return 'Open-frame design excels at cooling PLA & PETG; use an enclosure tent if printing ABS.';
-    }
-    if (lang === 'ja') {
-      if (raw.includes('標配硬化鋼')) return '硬化鋼ノズル標準装備で炭素繊維もそのまま造形可能。PLA造形時は天面を少し開けて放熱してください。';
-      if (raw.includes('Unicorn') || raw.includes('獨角獸')) return '一体型ユニコーン鋼ノズル搭載、炭素繊維や高温エンプラの高速造形に対応。';
-      if (raw.includes('快拆式熱端')) return 'クイック交換ホットエンド＆自動流量補正により、PLA/PETGの1層目が非常に綺麗に仕上がります。';
-      if (raw.includes('180x180')) return '静音・省スペース設計でマルチカラー対応。日常のPLA/PETG造形に最適です。';
-      if (currentPrinter.enclosure === 'full') return 'フル密閉チャンバー構造により、ABS等の高温エンジニアリング素材の反りや割れを抑えます。';
-      return 'オープンフレーム構造で冷却効率が高くPLA/PETGに最適。高温素材は保温カバー推奨。';
-    }
-    if (raw.includes('標配硬化鋼')) return '標配硬化鋼噴嘴，直印碳纖免改裝；印 PLA 建議上蓋微開散熱。';
-    if (raw.includes('Unicorn') || raw.includes('獨角獸')) return '標配一體式鋼頭喉管，支援高速列印碳纖與耐溫工程耗材。';
-    if (raw.includes('快拆式熱端')) return '快拆熱端搭配全自動流量補償，首層平整度與 PLA/PETG 表現極佳。';
-    if (raw.includes('180x180')) return '緊湊靜音桌面機型，支援多色進料，日常列印 PLA/PETG 首選。';
-    if (currentPrinter.enclosure === 'full') return '全封閉恆溫艙體設計，能有效抑制高溫工程耗材收縮與翹邊。';
-    return '開放式機身散熱優異，印 PLA/PETG 表現穩定；印高溫料建議加保溫罩。';
-  }, [currentPrinter, lang]);
+  }, [selectedBrandFilter]);
 
   // Real-time 21-material multi-variable mathematical response surface & thermodynamic slicer engine
   const liveMatch = useMemo(() => {
@@ -196,7 +158,6 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
       if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         if (data && data.material) {
-          // Ensure mathematical slicer parameters stay synchronized with liveMatch physics
           setRecommendation({
             ...data,
             material: liveMatch.materialInfo.fullName,
@@ -216,7 +177,6 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
         }
       }
 
-      // Localized precision report (supports zh-TW, en, ja)
       await new Promise((resolve) => setTimeout(resolve, 250));
       setRecommendation({
         material: liveMatch.materialInfo.fullName,
@@ -300,7 +260,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
         className="bg-white w-full h-full sm:h-auto sm:max-h-[94vh] sm:rounded-3xl rounded-none sm:max-w-4xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden relative flex flex-col cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Top Header - Single-line title & concise subtitle */}
+        {/* Modal Top Header */}
         <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-blue-950 text-white px-4 py-4 sm:px-6 sm:py-5 relative border-b border-indigo-500/20">
           <button
             id="close-ai-advisor-modal-btn"
@@ -323,16 +283,13 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                 <span className="text-[10px] bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-full shadow-xs whitespace-nowrap shrink-0">
                   Gemini 3.8
                 </span>
-                <span className="hidden sm:inline-flex text-[10px] bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
-                  {lang === 'en' ? 'Smart Match' : lang === 'ja' ? 'スマート算出' : '動態切片精算'}
-                </span>
               </div>
               <p className="text-[11px] sm:text-xs text-indigo-200/90 mt-0.5 truncate">
                 {lang === 'en'
                   ? 'Select printer brand & model to compute ideal filament and slicer settings.'
                   : lang === 'ja'
                   ? 'メーカーと機種を選択し、最適なフィラメントとスライス設定を即時算出。'
-                  : '先選品牌再選機型（含 SparkX i8 / H3C / K3 / Infimech 等全機型），即時精算切片參數'}
+                  : '依印表機型與性能指標，即時精算最佳線材與切片參數'}
               </p>
             </div>
           </div>
@@ -342,120 +299,34 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
         <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 max-h-[82vh] overflow-y-auto">
           {!recommendation ? (
             <div className="space-y-4 sm:space-y-5">
-              {/* SECTION 1: TWO-STAGE 3D PRINTER SELECTOR (1. BRAND -> 2. MODEL) */}
+              {/* SECTION 1: CLEAN BRAND -> MODEL SELECTOR */}
               <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
-                    <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
-                    <span>
-                      {lang === 'en'
-                        ? '1. Select Printer Brand & Model'
-                        : lang === 'ja'
-                        ? '1. メーカーと機種を選択'
-                        : '1. 先選品牌・再選 3D 印表機型號'}
-                    </span>
-                  </label>
-                  <span className="text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
-                    完整收錄 {PRINTER_BRANDS.length} 大廠牌・{PRINTER_PROFILES.length} 款機型系譜
+                <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                  <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>
+                    {lang === 'en' ? '1. Select Printer' : lang === 'ja' ? '1. プリンターを選択' : '1. 選擇 3D 印表機'}
                   </span>
-                </div>
+                </label>
 
-                {/* Fast keyword search input for instant model lookup */}
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={printerSearchQuery}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setPrinterSearchQuery(val);
-                      if (val.trim()) {
-                        const matched = findPrinterProfile(val);
-                        if (matched) {
-                          setSelectedPrinterId(matched.id);
-                          setSelectedBrandFilter(matched.brandId);
-                        }
-                      }
-                    }}
-                    placeholder="🔍 快速搜尋機型關鍵字（例如：SparkX i8、H3C、K3、K2、Infimech MX Pro、Ender-3、Plus 4...）"
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-                  />
-                  {printerSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setPrinterSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] bg-slate-200 hover:bg-slate-300 text-slate-700 px-1.5 py-0.5 rounded font-bold cursor-pointer"
-                    >
-                      清除
-                    </button>
-                  )}
-                </div>
-
-                {/* Two-stage Brand -> Model Dropdowns + Brand Quick Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px] scrollbar-none">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPrinterSearchQuery('');
-                      setSelectedBrandFilter('all');
-                    }}
-                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap text-xs shrink-0 ${
-                      selectedBrandFilter === 'all' && !printerSearchQuery
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                    }`}
-                  >
-                    全部品牌 ({PRINTER_PROFILES.length})
-                  </button>
-                  {PRINTER_BRANDS.map((b) => {
-                    const count = getPrintersByBrand(b.id).length;
-                    return (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => {
-                          setPrinterSearchQuery('');
-                          setSelectedBrandFilter(b.id);
-                          const matching = getPrintersByBrand(b.id);
-                          if (matching.length > 0 && !matching.some((m) => m.id === selectedPrinterId)) {
-                            setSelectedPrinterId(matching[0].id);
-                          }
-                        }}
-                        className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap text-xs flex items-center gap-1 shrink-0 ${
-                          selectedBrandFilter === b.id && !printerSearchQuery
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                        }`}
-                      >
-                        <span>{b.icon}</span>
-                        <span>{b.shortName}</span>
-                        <span className="opacity-70 text-[10px]">({count})</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Step 1 (Brand Dropdown) & Step 2 (Model Dropdown) */}
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                  <div className="sm:col-span-5 relative">
-                    <div className="text-[10px] font-bold text-slate-500 mb-1">步驟一：選擇廠牌</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-500 mb-1">選擇品牌</div>
                     <div className="relative">
                       <select
                         value={selectedBrandFilter}
                         onChange={(e) => {
                           const newBrand = e.target.value;
-                          setPrinterSearchQuery('');
                           setSelectedBrandFilter(newBrand);
                           const matching = getPrintersByBrand(newBrand);
                           if (matching.length > 0) {
                             setSelectedPrinterId(matching[0].id);
                           }
                         }}
-                        className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none cursor-pointer shadow-2xs truncate"
+                        className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:border-indigo-500 outline-none appearance-none cursor-pointer"
                       >
-                        <option value="all">🌐 顯示全部廠牌 ({PRINTER_PROFILES.length} 款)</option>
                         {PRINTER_BRANDS.map((b) => (
                           <option key={b.id} value={b.id}>
-                            {b.icon} {b.name} ({getPrintersByBrand(b.id).length} 款)
+                            {b.name}
                           </option>
                         ))}
                       </select>
@@ -463,72 +334,22 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="sm:col-span-7 relative">
-                    <div className="text-[10px] font-bold text-slate-500 mb-1">
-                      步驟二：選擇機型系列（共 {visiblePrinters.length} 款可選）
-                    </div>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-500 mb-1">選擇機型</div>
                     <div className="relative">
                       <select
                         value={selectedPrinterId}
-                        onChange={(e) => {
-                          const newId = e.target.value;
-                          setSelectedPrinterId(newId);
-                          const prof = findPrinterProfile(newId);
-                          if (prof && selectedBrandFilter !== 'all') {
-                            setSelectedBrandFilter(prof.brandId);
-                          }
-                        }}
-                        className="w-full pl-3.5 pr-9 py-2.5 bg-white border border-indigo-300 rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none cursor-pointer shadow-2xs truncate"
+                        onChange={(e) => setSelectedPrinterId(e.target.value)}
+                        className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:border-indigo-500 outline-none appearance-none cursor-pointer"
                       >
                         {visiblePrinters.map((printer) => (
                           <option key={printer.id} value={printer.id}>
-                            {printer.name}（{printer.type}・{printer.enclosure === 'full' ? '全封箱' : printer.enclosure === 'optional' ? '可選封箱' : '開放式'}・{printer.maxSpeedMmS}mm/s）
+                            {printer.name}
                           </option>
                         ))}
                       </select>
-                      <ChevronDown className="w-4 h-4 text-indigo-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
-                  </div>
-                </div>
-
-                {/* Selected Printer Specs Bar - Balanced 4-pill Grid + Single-line Note */}
-                <div className="p-3 bg-indigo-50/70 border border-indigo-100 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-black text-indigo-950 flex items-center gap-1 whitespace-nowrap">
-                      <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                      <span>機型硬體規格</span>
-                    </span>
-                    {currentPrinter.multiColorSupport && (
-                      <span className="bg-purple-100/80 border border-purple-200 text-purple-800 px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap">
-                        {currentPrinter.multiColorSupport}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px]">
-                    <div className="bg-white border border-indigo-100 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-                      <span className="text-slate-400">結構</span>
-                      <span className="font-bold text-indigo-900 whitespace-nowrap">{currentPrinter.type}</span>
-                    </div>
-                    <div className="bg-white border border-indigo-100 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-                      <span className="text-slate-400">艙體</span>
-                      <span className={`font-bold whitespace-nowrap ${currentPrinter.enclosure === 'full' ? 'text-emerald-700' : 'text-amber-700'}`}>
-                        {currentPrinter.enclosure === 'full' ? '全封箱保溫' : '開放式機身'}
-                      </span>
-                    </div>
-                    <div className="bg-white border border-indigo-100 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-                      <span className="text-slate-400">極速</span>
-                      <span className="font-mono font-bold text-slate-800 whitespace-nowrap">{currentPrinter.maxSpeedMmS} mm/s</span>
-                    </div>
-                    <div className="bg-white border border-indigo-100 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
-                      <span className="text-slate-400">溫控</span>
-                      <span className="font-mono font-bold text-slate-800 whitespace-nowrap">{currentPrinter.maxNozzleTemp}°/{currentPrinter.maxBedTemp}°C</span>
-                    </div>
-                  </div>
-
-                  <div className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-0.5">
-                    <span className="shrink-0">💡</span>
-                    <span className="font-medium leading-snug">{concisePrinterNote}</span>
                   </div>
                 </div>
               </div>
@@ -926,27 +747,19 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                 {/* Instant 6-Cell Slicer Parameters Preview */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                      {currentPrinter.type === 'Resin' ? 'UV 曝光時間' : '噴嘴擠出溫度'}
-                    </div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">噴嘴擠出溫度</div>
                     <div className="font-mono font-bold text-amber-300 mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.nozzleTemp}</div>
                   </div>
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                      {currentPrinter.type === 'Resin' ? '底層曝光設定' : '熱床溫度設定'}
-                    </div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">熱床溫度設定</div>
                     <div className="font-mono font-bold text-amber-300 mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.bedTemp}</div>
                   </div>
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                      {currentPrinter.type === 'Resin' ? 'Z 軸抬升速度' : '適配列印速度'}
-                    </div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">適配列印速度</div>
                     <div className="font-mono font-bold text-cyan-300 mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.speed}</div>
                   </div>
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
-                    <div className="text-[10px] text-slate-400 whitespace-nowrap">
-                      {currentPrinter.type === 'Resin' ? '樹脂槽環境溫' : '模型冷卻風扇'}
-                    </div>
+                    <div className="text-[10px] text-slate-400 whitespace-nowrap">模型冷卻風扇</div>
                     <div className="font-mono font-bold text-white mt-0.5 whitespace-nowrap">{liveMatch.materialInfo.fan}</div>
                   </div>
                   <div className="p-2.5 bg-white/5 rounded-lg border border-white/10">
@@ -981,7 +794,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
 - 推薦熱床板: ${liveMatch.materialInfo.bedType}
 - 機箱環境: ${liveMatch.materialInfo.enclosureNeeded}
 - 建議噴嘴: ${nozzleSize}
-- 機型支援: ${currentPrinter.name} (噴嘴上限: ${currentPrinter.maxNozzleTemp}°C, 熱床上限: ${currentPrinter.maxBedTemp}°C)`;
+- 機型支援: ${currentPrinter.name} (噴嘴上限: ${currentPrinter.maxTempNozzle}°C, 熱床上限: ${currentPrinter.maxTempBed}°C)`;
                       navigator.clipboard.writeText(text);
                       recordSlicerUsageForAchievement();
                       setCopiedSlicer(true);

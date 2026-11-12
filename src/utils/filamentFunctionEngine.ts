@@ -824,61 +824,15 @@ export function computeFilamentMatchByFunction(
   const nozzleMm = parseFloat(nozzleSize.replace('mm', '')) || 0.4;
   const noteLower = customNote.toLowerCase();
 
-  // Special Case: SLA / LCD Resin Printer
-  if (printer.type === 'Resin') {
-    const resinKey: FilamentFormulaKey = T >= 3 || H >= 65 ? 'resin_tough' : 'resin_8k';
-    const spec = POLYMER_SPECS[resinKey];
-    const matchedProd = findBestCatalogProduct(products, spec);
-    const baseExp = resinKey === 'resin_tough' ? 2.2 : 1.9;
-    const maxExp = Math.round((baseExp + (T - 1) * 0.15) * 10) / 10;
-    const liftSpeed = Math.max(60, 120 - T * 10);
-
-    return {
-      materialKey: resinKey,
-      materialInfo: {
-        name: lang === 'en' ? spec.nameEn : lang === 'ja' ? spec.nameJa : spec.nameZh,
-        fullName: lang === 'en' ? spec.fullNameEn : lang === 'ja' ? spec.fullNameJa : spec.fullNameZh,
-        nozzleTemp: lang === 'en' ? 'Resin Vat 23°C - 28°C' : lang === 'ja' ? 'レジン液温 23°C - 28°C' : '樹脂槽恆溫 23°C - 28°C',
-        bedTemp: `405nm UV · 底層曝光 ${Math.round(baseExp * 12)}s`,
-        speed: `層曝光 ${baseExp}s - ${maxExp}s (抬升 ${liftSpeed} mm/m)`,
-        fan: lang === 'en' ? 'Activated Carbon Filter' : lang === 'ja' ? '活性炭フィルター稼働' : '開啟機艙活性碳淨化',
-        volumetricFlow: '0.05mm 層厚微米曝光',
-        layerHeight: '0.05 mm',
-        retraction: `Z軸抬升高度 6mm @ ${liftSpeed} mm/min`,
-        bedType: '鐳雕高抓附成型平台',
-        enclosureNeeded: '防紫外線遮光罩必備',
-        productMaterial: spec.fallbackMaterialTag,
-        preferredProductId: spec.preferredProductId,
-        badge: lang === 'en' ? spec.badgeEn : lang === 'ja' ? spec.badgeJa : spec.badgeZh,
-      },
-      score: 98,
-      reason:
-        lang === 'en'
-          ? `Detected SLA/LCD resin printer (${printer.name}). Computed 405nm exposure curve (${baseExp}–${maxExp}s/layer) for Lv.${T} toughness.`
-          : lang === 'ja'
-          ? `光造形機（${printer.name}）を検出し、靭性Lv.${T}に最適な405nm露光時間（${baseExp}〜${maxExp}秒/層）を算出しました。`
-          : `偵測到光固化機型（${printer.name}），已依韌性 Lv.${T} 與耐溫 ${H}°C 函數推算最佳層曝光時間 ${baseExp}s - ${maxExp}s。`,
-      alerts: [],
-      product: matchedProd,
-      telemetry: {
-        volumetricFlowMm3S: 10,
-        layerHeightMm: 0.05,
-        lineWidthMm: 0.05,
-        firstLayerSpeedMmS: 25,
-        chamberTargetC: 25,
-      },
-    };
-  }
-
   // Hardware capabilities
-  const printerSpeedCap = Math.max(80, Number(printer.maxSpeedMmS) || 300);
-  const printerNozzleCap = Math.max(240, Number(printer.maxNozzleTemp) || 260);
-  const printerBedCap = Math.max(70, Number(printer.maxBedTemp) || 100);
-  const isEnclosed = printer.enclosure === 'full';
+  const printerSpeedCap = Math.max(80, Number(printer.maxPrintSpeed) || 300);
+  const printerNozzleCap = Math.max(240, Number(printer.maxTempNozzle) || 260);
+  const printerBedCap = Math.max(70, Number(printer.maxTempBed) || 100);
+  const isEnclosed = printer.enclosure === 'enclosed' || printer.enclosure === 'heated_chamber';
   const isBowden = printer.extruder === 'bowden';
   const isBambuWithAms =
     printer.brand.toLowerCase().includes('bambu') &&
-    printer.multiColorSupport.toLowerCase().includes('ams');
+    Boolean(printer.amsCompatible);
   const hasHardenedNozzle =
     printer.specialNotes.includes('硬化鋼') ||
     printer.specialNotes.includes('Unicorn') ||
@@ -1316,14 +1270,13 @@ export function computeFilamentMatchByFunction(
         : `耐磨提醒：${spec.nameZh} 含高強度纖維微粒，請確認已換裝 0.4mm 以上硬化鋼噴嘴以免擴孔。`
     );
   }
-  if (spec.isElastomer && (printer.multiColorSupport.includes('AMS') || printer.multiColorSupport.includes('ACE') || printer.multiColorSupport.includes('MMU'))) {
-    const feederName = printer.multiColorSupport.split(' ')[0];
+  if (spec.isElastomer && printer.amsCompatible) {
     alerts.push(
       lang === 'en'
-        ? `Feeder Note: Do not load flexible ${spec.nameEn} into ${feederName}—feed directly from the external spool holder.`
+        ? `Feeder Note: Do not load flexible ${spec.nameEn} into the multi-color feeder—feed directly from the external spool holder.`
         : lang === 'ja'
-        ? `給紙注意：軟質フィラメントは${feederName}に通さず、外部スプールホルダーから直接給紙してください。`
-        : `供料提醒：軟質彈性線材請勿裝入 ${feederName} 多色進料器，請改由機身外掛料架直接進料。`
+        ? `給紙注意：軟質フィラメントはマルチカラー給紙機に通さず、外部スプールホルダーから直接給紙してください。`
+        : `供料提醒：軟質彈性線材請勿裝入多色進料器，請改由機身外掛料架直接進料。`
     );
   }
 

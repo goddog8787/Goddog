@@ -229,7 +229,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="mb-5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-2">
               <Share2 className="w-4 h-4 shrink-0 text-emerald-500" />
               <span>
-                已自動套用好友邀請碼 <strong className="font-mono underline">{pendingRefCode}</strong>！完成註冊並下單首購即贈 300 狗勾幣！
+                已自動套用好友邀請碼 <strong className="font-mono underline">{pendingRefCode}</strong>！完成註冊並下單首購即贈 50 狗勾幣！
               </span>
             </div>
           )}
@@ -494,16 +494,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <h3 className="font-black text-lg mb-1 flex items-center gap-2 flex-wrap">
                 <Printer className="w-5 h-5 text-indigo-300" />
                 <span>{lang === 'en' ? 'My Printer Garage' : lang === 'ja' ? 'マイプリンターガレージ' : '我的列印機車庫'}</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-indigo-100 font-bold">
-                  {printerGarageCount > 0 ? `已綁定 ${printerGarageCount} 台` : '收錄 15 大廠牌全機型'}
-                </span>
+                {printerGarageCount > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-indigo-100 font-bold">
+                    已綁定 {printerGarageCount} 台
+                  </span>
+                )}
               </h3>
               <p className="text-indigo-200 text-xs leading-relaxed">
                 {lang === 'en'
-                  ? 'Select Brand & Model (Bambu, Creality Ender~K3, SparkX i8, H3C, Infimech MX Pro & more)!'
+                  ? 'Select brand & model for tailored filament parameters'
                   : lang === 'ja'
-                  ? 'ブランドから機種を選択して最適なスライサー設定を取得！'
-                  : '先選廠牌再選機型（含拓竹、Ender~K2/K3、SparkX i8、H3C、Infimech MX Pro 等全系列）！'}
+                  ? 'ブランドと機種を選択して最適なパラメータを取得'
+                  : '設定您的 3D 列印機型，自動配對最佳切片參數'}
               </p>
             </div>
             <button onClick={() => openModal("printers")} className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-sm font-bold backdrop-blur-sm transition-colors cursor-pointer shrink-0">
@@ -522,7 +524,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               { icon: Sparkles, label: lang === 'en' ? 'My Subscriptions' : lang === 'ja' ? 'サブスク管理' : '我的訂閱管理', desc: lang === 'en' ? 'Billing cycle, points, plan changes' : lang === 'ja' ? '契約期間、ポイント残高、プラン変更' : '查看週期、剩餘點數、變更或取消方案', color: 'text-indigo-600', bg: 'bg-indigo-50', action: () => navigate('/subscription') },
               { icon: Medal, label: lang === 'en' ? 'Maker Achievements' : lang === 'ja' ? 'メイカーアチーブメント' : '創客成就', desc: lang === 'en' ? 'Unlock badges and secret discounts' : lang === 'ja' ? '限定バッジと特別割引を獲得' : '即時偵測 12 項徽章進度與領取里程碑神券', color: 'text-amber-500', bg: 'bg-amber-50', action: () => openModal('achievements') },
               { icon: MapPin, label: lang === 'en' ? 'Saved Addresses' : lang === 'ja' ? '配送先住所' : '地址資訊', desc: lang === 'en' ? 'Manage shipping and billing addresses' : lang === 'ja' ? '配送先とお届け先住所の管理' : '管理您的常用收件與發票地址', color: 'text-sky-500', bg: 'bg-sky-50', action: () => openModal('address') },
-              { icon: Share2, label: lang === 'en' ? 'Refer & Earn' : lang === 'ja' ? '友達紹介' : '推廣賺現金', desc: lang === 'en' ? 'Unique link • Verified on registration & order' : lang === 'ja' ? '専用リンク・登録＆注文完了で両方に$300' : '每人專屬連結・好友完成註冊＋首單即發放 $300', color: 'text-emerald-500', bg: 'bg-emerald-50', action: () => openModal('referral') },
+              { icon: Share2, label: lang === 'en' ? 'Refer & Earn' : lang === 'ja' ? '友達紹介' : '邀請好友賺狗勾幣', desc: lang === 'en' ? 'Unique link • 50 G-Coins each on registration & order' : lang === 'ja' ? '専用リンク・登録＆注文完了で両方に50 G-Coins' : '專屬連結・好友完成註冊＋首單即發放 50 狗勾幣', color: 'text-emerald-500', bg: 'bg-emerald-50', action: () => openModal('referral') },
               { 
                 icon: History, 
                 label: lang === 'en' ? 'Recently Viewed' : lang === 'ja' ? '最近閲覧した商品' : '最近瀏覽', 

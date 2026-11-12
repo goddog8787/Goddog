@@ -979,7 +979,7 @@ app.post('/api/ai/recommend-filament', async (req, res) => {
 
 【用戶硬體與需求設定】：
 - 3D 印表機型號: ${matchedPrinter.name}
-- 機型結構特點: ${matchedPrinter.enclosure === 'full' ? '全封箱恆溫艙體' : '開放式機身'} / 擠出機: ${matchedPrinter.extruder}
+- 機型結構特點: ${matchedPrinter.enclosure !== 'open' ? '全封箱恆溫艙體' : '開放式機身'} / 擠出機: ${matchedPrinter.extruder}
 - 耐溫極限需求: ${H}°C
 - 結構韌性與抗衝擊等級: ${T} / 5 星
 - 列印便利與新手友善度: ${E} / 5 星
