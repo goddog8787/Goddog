@@ -332,274 +332,297 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   }
 
   return (
-    <div className="max-w-xl mx-auto min-h-screen bg-slate-50 pb-32">
+    <div className="max-w-6xl mx-auto min-h-[75vh] pb-24 lg:pb-12">
       <AnimatePresence>
         {toastMsg && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3"
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700"
           >
-            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <span className="font-bold text-sm whitespace-nowrap">{toastMsg}</span>
           </motion.div>
         )}
       </AnimatePresence>
+
       {/* Header Profile Section */}
-      <div className="bg-slate-900 px-6 pt-12 pb-24 rounded-b-[40px] text-white relative overflow-hidden shadow-xl shadow-slate-900/20">
-        {/* Decorative background elements */}
+      <div className="bg-slate-900 px-6 sm:px-8 lg:px-10 pt-8 sm:pt-10 pb-20 sm:pb-24 rounded-3xl text-white relative overflow-hidden shadow-xl shadow-slate-900/20 border border-slate-800">
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-48 h-48 bg-sky-500/20 rounded-full blur-3xl pointer-events-none"></div>
         
-        <div className="flex items-center gap-5 relative z-10">
-          <div className="w-20 h-20 bg-gradient-to-tr from-indigo-500 to-sky-400 rounded-full p-1 shadow-lg">
-            <div className="w-full h-full bg-slate-900 rounded-full border-2 border-slate-900 flex items-center justify-center overflow-hidden">
-              <User className="w-8 h-8 text-indigo-300" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
+          <div className="flex items-center gap-5">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-tr from-indigo-500 to-sky-400 rounded-full p-1 shadow-lg shrink-0">
+              <div className="w-full h-full bg-slate-900 rounded-full border-2 border-slate-900 flex items-center justify-center overflow-hidden">
+                <User className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-300" />
+              </div>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight truncate">{member?.name || (lang === 'en' ? 'Guest' : lang === 'ja' ? 'ゲスト' : '訪客')}</h2>
+              <p className="text-slate-400 text-xs sm:text-sm mt-0.5 truncate">{member?.email || ""}</p>
+              <div className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border backdrop-blur-sm ${titleColorClass}`}>
+                <TitleIcon className={`w-3.5 h-3.5 ${titleIconClass}`} />
+                <span className={makerTitle === '列印大神' || makerTitle === '3D Print Master' || makerTitle === '3Dプリント達人' ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-200 to-yellow-500 animate-gold-shine drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]' : ''}>
+                  {makerTitle}
+                </span>
+              </div>
             </div>
           </div>
-          <div>
-            <h2 className="text-2xl font-black tracking-tight">{member?.name || (lang === 'en' ? 'Guest' : lang === 'ja' ? 'ゲスト' : '訪客')}</h2>
-            <p className="text-slate-400 text-sm mt-1">{member?.email || ""} </p>
-            <div className={`mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border backdrop-blur-sm ${titleColorClass}`}>
-              <TitleIcon className={`w-3.5 h-3.5 ${titleIconClass}`} />
-              <span className={makerTitle === '列印大神' || makerTitle === '3D Print Master' || makerTitle === '3Dプリント達人' ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-200 to-yellow-500 animate-gold-shine drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]' : ''}>
-                {makerTitle}
-              </span>
-            </div>
+
+          {/* Desktop Quick Account Actions */}
+          <div className="hidden lg:flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => openModal("orders", "all")}
+              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-white transition-colors cursor-pointer"
+            >
+              {lang === 'en' ? 'Order History' : lang === 'ja' ? '注文履歴' : '查看所有訂單'}
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-sm transition-colors cursor-pointer"
+            >
+              {lang === 'en' ? 'Back to Store' : lang === 'ja' ? 'ストアへ戻る' : '繼續選購耗材'}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Main Content Area - overlaps the header */}
-      <div className="px-4 -mt-14 relative z-20 space-y-5">
+      {/* Main Content Area - Responsive 2-Column Desktop Grid overlapping header */}
+      <div className="px-2 sm:px-6 -mt-12 sm:-mt-14 relative z-20 grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
         
-        {/* Subscription Upgrade Banner */}
-        <div 
-          onClick={() => navigate('/subscription')}
-          className={`rounded-3xl p-5 sm:p-6 shadow-lg flex items-center justify-between cursor-pointer hover:scale-[1.02] transition-transform active:scale-95 text-white overflow-hidden relative ${
-            isVipActive
-              ? 'bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-indigo-500/20 border border-indigo-400'
-              : 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-amber-500/20'
-          }`}
-        >
-          {/* Decorative background elements */}
-          <div className="absolute -right-6 -top-10 opacity-10">
-            <Package className="w-32 h-32" />
-          </div>
-          <div className="absolute right-20 -bottom-8 opacity-10">
-            <Sparkles className="w-24 h-24" />
-          </div>
-
-          <div className="flex items-center gap-4 relative z-10 min-w-0 flex-1">
-            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm border border-white/20 shadow-inner shrink-0">
-              {isVipActive 
-                ? <Sparkles className="w-6 h-6 text-amber-300 drop-shadow" />
-                : <Package className="w-6 h-6 text-white drop-shadow" />
-              }
+        {/* Left Column (5/12 on Desktop): VIP, Wallet & Printer Garage */}
+        <div className="lg:col-span-5 space-y-5">
+          {/* Subscription Upgrade Banner */}
+          <div 
+            onClick={() => navigate('/subscription')}
+            className={`rounded-3xl p-5 sm:p-6 shadow-lg flex items-center justify-between cursor-pointer hover:scale-[1.01] transition-transform active:scale-98 text-white overflow-hidden relative ${
+              isVipActive
+                ? 'bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-indigo-500/20 border border-indigo-400'
+                : 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-amber-500/20'
+            }`}
+          >
+            <div className="absolute -right-6 -top-10 opacity-10">
+              <Package className="w-32 h-32" />
             </div>
-            <div className="min-w-0 flex-1">
-              <h3 className="font-black text-lg sm:text-xl drop-shadow-sm flex items-center gap-2 flex-wrap text-balance">
+            <div className="absolute right-20 -bottom-8 opacity-10">
+              <Sparkles className="w-24 h-24" />
+            </div>
+
+            <div className="flex items-center gap-4 relative z-10 min-w-0 flex-1">
+              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm border border-white/20 shadow-inner shrink-0">
                 {isVipActive 
-                  ? (lang === 'en' ? `Elite ${member?.subscriptionPlan} Maker` : lang === 'ja' ? `VIP ${member?.subscriptionPlan} メイカー` : `尊榮 ${member?.subscriptionPlan} 創客`)
-                  : (lang === 'en' ? 'Maker VIP Club' : lang === 'ja' ? 'メイカー VIP クラブ' : '創客 VIP 俱樂部')}
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm whitespace-nowrap shrink-0 ${
-                  isVipActive 
-                    ? 'bg-amber-400 text-amber-900' 
-                    : 'bg-white text-amber-600'
-                }`}>
-                  {isVipActive ? (lang === 'en' ? 'Active' : lang === 'ja' ? '有効' : '已啟用') : (lang === 'en' ? 'Inactive' : lang === 'ja' ? '未加入' : '未開通')}
-                </span>
-              </h3>
-              <p className="text-white/90 text-xs sm:text-sm mt-0.5 font-medium drop-shadow-sm text-pretty line-clamp-2">
-                {isVipActive && member?.subscriptionExpiry
-                  ? (lang === 'en'
-                      ? `VIP Perks Active! 5% Off storewide, ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} days remaining`
-                      : lang === 'ja'
-                      ? `VIP特典適用中！全品5%OFF、残り ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 日`
-                      : `VIP 權益生效中！全館 95 折，剩餘 ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 天`)
-                  : (lang === 'en' ? 'Join VIP to enjoy 5% OFF storewide & exclusive privileges' : lang === 'ja' ? 'VIP加入で全品5%OFF＆限定特権を獲得' : '加入 VIP，立享全館 95 折優惠與專屬尊榮權益')}
-              </p>
+                  ? <Sparkles className="w-6 h-6 text-amber-300 drop-shadow" />
+                  : <Package className="w-6 h-6 text-white drop-shadow" />
+                }
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-black text-lg drop-shadow-sm flex items-center gap-2 flex-wrap text-balance">
+                  {isVipActive 
+                    ? (lang === 'en' ? `Elite ${member?.subscriptionPlan} Maker` : lang === 'ja' ? `VIP ${member?.subscriptionPlan} メイカー` : `尊榮 ${member?.subscriptionPlan} 創客`)
+                    : (lang === 'en' ? 'Maker VIP Club' : lang === 'ja' ? 'メイカー VIP クラブ' : '創客 VIP 俱樂部')}
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm whitespace-nowrap shrink-0 ${
+                    isVipActive 
+                      ? 'bg-amber-400 text-amber-900' 
+                      : 'bg-white text-amber-600'
+                  }`}>
+                    {isVipActive ? (lang === 'en' ? 'Active' : lang === 'ja' ? '有効' : '已啟用') : (lang === 'en' ? 'Inactive' : lang === 'ja' ? '未加入' : '未開通')}
+                  </span>
+                </h3>
+                <p className="text-white/90 text-xs sm:text-sm mt-0.5 font-medium drop-shadow-sm text-pretty line-clamp-2">
+                  {isVipActive && member?.subscriptionExpiry
+                    ? (lang === 'en'
+                        ? `VIP Perks Active! 5% Off storewide, ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} days remaining`
+                        : lang === 'ja'
+                        ? `VIP特典適用中！全品5%OFF、残り ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 日`
+                        : `VIP 權益生效中！全館 95 折，剩餘 ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 天`)
+                    : (lang === 'en' ? 'Join VIP to enjoy 5% OFF storewide & exclusive privileges' : lang === 'ja' ? 'VIP加入で全品5%OFF＆限定特権を獲得' : '加入 VIP，立享全館 95 折優惠與專屬尊榮權益')}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-6 h-6 text-white/70 relative z-10 shrink-0" />
+          </div>
+
+          {/* Wallet / Points Card */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+            <div className="text-center flex-1 border-r border-slate-100 dark:border-slate-800 py-2">
+              <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'G-Coins' : lang === 'ja' ? 'G-コイン' : '狗勾幣 (G-Coin)'}</p>
+              <p className="text-2xl font-black text-slate-800 dark:text-white font-mono tabular-nums">{member?.points || 0}</p>
+            </div>
+            <div onClick={() => openModal('coupons')} className="text-center flex-1 border-r border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors py-2 rounded-xl">
+              <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Coupons' : lang === 'ja' ? 'クーポン' : '優惠券'}</p>
+              <p className="text-2xl font-black text-slate-800 dark:text-white font-mono tabular-nums">{member?.coupons?.length || 0}<span className="text-xs font-sans text-slate-500 dark:text-slate-400 ml-1">{lang === 'en' ? ' pcs' : lang === 'ja' ? ' 枚' : '張'}</span></p>
+            </div>
+            <div className="text-center flex-1 py-2">
+              <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Credit Rebate' : lang === 'ja' ? 'ポイント還元' : '紅利折抵金'}</p>
+              <p className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">NT$ {Math.floor((member?.points || 0) * 0.1)}</p>
             </div>
           </div>
-          <ChevronRight className="w-6 h-6 text-white/70 relative z-10" />
-        </div>
 
-        {/* Wallet / Points Card */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-center justify-between">
-          <div className="text-center flex-1 border-r border-slate-100 py-2">
-            <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'G-Coins' : lang === 'ja' ? 'G-コイン' : '狗勾幣 (G-Coin)'}</p>
-            <p className="text-2xl font-black text-slate-800">{member?.points || 0}</p>
-          </div>
-          <div onClick={() => openModal('coupons')} className="text-center flex-1 border-r border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors py-2 rounded-xl">
-            <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Coupons' : lang === 'ja' ? 'クーポン' : '優惠券'}</p>
-            <p className="text-2xl font-black text-slate-800">{member?.coupons?.length || 0}<span className="text-xs text-slate-500 ml-1">{lang === 'en' ? ' pcs' : lang === 'ja' ? ' 枚' : '張'}</span></p>
-          </div>
-          <div className="text-center flex-1">
-            <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Credit Rebate' : lang === 'ja' ? 'ポイント還元' : '紅利折抵金'}</p>
-            <p className="text-2xl font-black text-indigo-600">NT$ {Math.floor((member?.points || 0) * 0.1)}</p>
-          </div>
-        </div>
-
-        {/* Order Management Section */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <h3 className="font-black text-slate-900 text-lg">{lang === 'en' ? 'My Orders' : lang === 'ja' ? 'マイ注文' : '我的訂單'}</h3>
-              {ordersCount > 0 && (
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
-                  共 {ordersCount} 筆
-                </span>
-              )}
+          {/* 3D Printer Garage (Special Feature) */}
+          <div className="bg-gradient-to-br from-indigo-600 to-slate-900 rounded-3xl p-6 shadow-lg shadow-indigo-900/10 text-white relative overflow-hidden border border-indigo-500/20">
+            <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none translate-x-4 translate-y-4">
+              <Printer className="w-32 h-32" />
             </div>
-            <button onClick={() => openModal("orders", "all")} className="text-xs font-bold text-slate-400 flex items-center hover:text-indigo-600 transition-colors cursor-pointer">
-              {lang === 'en' ? 'View All' : lang === 'ja' ? 'すべて見る' : '查看全部'} <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex justify-between items-start px-1">
-            {[
-              { icon: CreditCard, label: lang === 'en' ? 'Unpaid' : lang === 'ja' ? '未払い' : '待付款', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '待付款').length, tabId: 'unpaid' },
-              { icon: Package, label: lang === 'en' ? 'Processing' : lang === 'ja' ? '発送準備中' : '待出貨', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '待出貨').length, tabId: 'processing' },
-              { icon: Clock, label: lang === 'en' ? 'Shipping' : lang === 'ja' ? '配送中' : '運送中', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '運送中').length, tabId: 'shipping' },
-              { icon: CheckCircle2, label: lang === 'en' ? 'Completed' : lang === 'ja' ? '完了' : '已完成', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '已完成').length, tabId: 'done' },
-              { icon: ShieldCheck, label: lang === 'en' ? 'Returns' : lang === 'ja' ? '返品・交換' : '退換貨', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '退換貨').length, tabId: 'returning' },
-            ].map((item, i) => (
-              <button key={i} onClick={() => openModal('orders', item.tabId)} className="flex flex-col items-center gap-2 relative group cursor-pointer flex-1">
-                <div className="w-11 h-11 rounded-2xl bg-slate-50 text-slate-500 flex items-center justify-center group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all duration-300 group-hover:-translate-y-1 relative">
-                  <item.icon className="w-5 h-5" />
-                  {item.count > 0 && (
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                      {item.count}
+            <div className="relative z-10 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-black text-lg mb-1 flex items-center gap-2 flex-wrap text-balance">
+                  <Printer className="w-5 h-5 text-indigo-300 shrink-0" />
+                  <span>{lang === 'en' ? 'My Printer Garage' : lang === 'ja' ? 'マイプリンターガレージ' : '我的列印機車庫'}</span>
+                  {printerGarageCount > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-indigo-100 font-bold whitespace-nowrap tabular-nums">
+                      已綁定 {printerGarageCount} 台
                     </span>
                   )}
-                </div>
-                <span className="text-[11px] font-bold text-slate-600">{item.label}</span>
+                </h3>
+                <p className="text-indigo-200 text-xs leading-relaxed text-pretty line-clamp-2">
+                  {lang === 'en'
+                    ? 'Select brand & model for tailored filament parameters'
+                    : lang === 'ja'
+                    ? 'ブランドと機種を選択して最適なパラメータを取得'
+                    : '設定您的 3D 列印機型，自動配對最佳切片參數'}
+                </p>
+              </div>
+              <button onClick={() => openModal("printers")} className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-sm font-bold backdrop-blur-sm transition-colors cursor-pointer shrink-0 whitespace-nowrap">
+                {lang === 'en' ? 'Manage' : lang === 'ja' ? '管理' : '管理機台'}
               </button>
-            ))}
+            </div>
           </div>
         </div>
 
-        {/* 3D Printer Garage (Special Feature) */}
-        <div className="bg-gradient-to-br from-indigo-600 to-slate-900 rounded-3xl p-6 shadow-lg shadow-indigo-900/10 text-white relative overflow-hidden">
-          <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none translate-x-4 translate-y-4">
-            <Printer className="w-32 h-32" />
-          </div>
-          <div className="relative z-10 flex items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h3 className="font-black text-lg mb-1 flex items-center gap-2 flex-wrap text-balance">
-                <Printer className="w-5 h-5 text-indigo-300 shrink-0" />
-                <span>{lang === 'en' ? 'My Printer Garage' : lang === 'ja' ? 'マイプリンターガレージ' : '我的列印機車庫'}</span>
-                {printerGarageCount > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-indigo-100 font-bold whitespace-nowrap">
-                    已綁定 {printerGarageCount} 台
+        {/* Right Column (7/12 on Desktop): Orders, Services & Account Settings */}
+        <div className="lg:col-span-7 space-y-5">
+          {/* Order Management Section */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/80 dark:border-slate-800">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-slate-900 dark:text-white text-lg">{lang === 'en' ? 'My Orders' : lang === 'ja' ? 'マイ注文' : '我的訂單'}</h3>
+                {ordersCount > 0 && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 tabular-nums">
+                    共 {ordersCount} 筆
                   </span>
                 )}
-              </h3>
-              <p className="text-indigo-200 text-xs leading-relaxed text-pretty line-clamp-2">
-                {lang === 'en'
-                  ? 'Select brand & model for tailored filament parameters'
-                  : lang === 'ja'
-                  ? 'ブランドと機種を選択して最適なパラメータを取得'
-                  : '設定您的 3D 列印機型，自動配對最佳切片參數'}
-              </p>
+              </div>
+              <button onClick={() => openModal("orders", "all")} className="text-xs font-bold text-slate-400 flex items-center hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer">
+                {lang === 'en' ? 'View All' : lang === 'ja' ? 'すべて見る' : '查看全部'} <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-            <button onClick={() => openModal("printers")} className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-sm font-bold backdrop-blur-sm transition-colors cursor-pointer shrink-0 whitespace-nowrap">
-              {lang === 'en' ? 'Manage' : lang === 'ja' ? '管理' : '管理機台'}
-            </button>
-          </div>
-        </div>
-
-        {/* Services Menu */}
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="p-5 border-b border-slate-100">
-            <h3 className="font-black text-slate-900 text-lg">{lang === 'en' ? 'Exclusive Services' : lang === 'ja' ? '専有サービス' : '專屬服務'}</h3>
-          </div>
-          <div className="divide-y divide-slate-50">
-            {[
-              { icon: Sparkles, label: lang === 'en' ? 'My Subscriptions' : lang === 'ja' ? 'サブスク管理' : '我的訂閱管理', desc: lang === 'en' ? 'Billing cycle, points, plan changes' : lang === 'ja' ? '契約期間、ポイント残高、プラン変更' : '查看週期、剩餘點數、變更或取消方案', color: 'text-indigo-600', bg: 'bg-indigo-50', action: () => navigate('/subscription') },
-              { icon: Medal, label: lang === 'en' ? 'Maker Achievements' : lang === 'ja' ? 'メイカーアチーブメント' : '創客成就', desc: lang === 'en' ? 'Unlock badges and secret discounts' : lang === 'ja' ? '限定バッジと特別割引を獲得' : '即時偵測 12 項徽章進度與領取里程碑神券', color: 'text-amber-500', bg: 'bg-amber-50', action: () => openModal('achievements') },
-              { icon: MapPin, label: lang === 'en' ? 'Saved Addresses' : lang === 'ja' ? '配送先住所' : '地址資訊', desc: lang === 'en' ? 'Manage shipping and billing addresses' : lang === 'ja' ? '配送先とお届け先住所の管理' : '管理您的常用收件與發票地址', color: 'text-sky-500', bg: 'bg-sky-50', action: () => openModal('address') },
-              { icon: Share2, label: lang === 'en' ? 'Refer & Earn' : lang === 'ja' ? '友達紹介' : '邀請好友賺狗勾幣', desc: lang === 'en' ? 'Unique link • 50 G-Coins each on registration & order' : lang === 'ja' ? '専用リンク・登録＆注文完了で両方に50 G-Coins' : '專屬連結・好友完成註冊＋首單即發放 50 狗勾幣', color: 'text-emerald-500', bg: 'bg-emerald-50', action: () => openModal('referral') },
-              { 
-                icon: History, 
-                label: lang === 'en' ? 'Recently Viewed' : lang === 'ja' ? '最近閲覧した商品' : '最近瀏覽', 
-                desc: historyCount > 0 
-                  ? (lang === 'en' ? `${historyCount} items saved • Cloud Synced` : lang === 'ja' ? `${historyCount} 件保存済み • クラウド同期` : `已儲存 ${historyCount} 筆看過的耗材 • 雲端永久同步`) 
-                  : (lang === 'en' ? 'Revisit High-Speed filaments you browsed' : lang === 'ja' ? '閲覧した高速PLAフィラメントを確認' : '找回您看過的高速 PLA 耗材（支援單筆刪除）'), 
-                badge: historyCount > 0 ? `${historyCount}` : undefined,
-                color: 'text-purple-500', 
-                bg: 'bg-purple-50', 
-                action: () => openModal('history') 
-              },
-            ].map((item, i) => (
-              <button key={i} onClick={item.action} className="w-full flex items-center p-4 hover:bg-slate-50 transition-colors text-left group cursor-pointer">
-                <div className={`w-12 h-12 rounded-2xl ${item.bg} ${item.color} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}>
-                  <item.icon className="w-6 h-6" />
-                </div>
-                <div className="ml-4 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-bold text-slate-900 text-sm text-balance">{item.label}</p>
-                    {item.badge && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-mono font-bold whitespace-nowrap">
-                        {item.badge}
+            <div className="flex justify-between items-start px-1">
+              {[
+                { icon: CreditCard, label: lang === 'en' ? 'Unpaid' : lang === 'ja' ? '未払い' : '待付款', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '待付款').length, tabId: 'unpaid' },
+                { icon: Package, label: lang === 'en' ? 'Processing' : lang === 'ja' ? '発送準備中' : '待出貨', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '待出貨').length, tabId: 'processing' },
+                { icon: Clock, label: lang === 'en' ? 'Shipping' : lang === 'ja' ? '配送中' : '運送中', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '運送中').length, tabId: 'shipping' },
+                { icon: CheckCircle2, label: lang === 'en' ? 'Completed' : lang === 'ja' ? '完了' : '已完成', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '已完成').length, tabId: 'done' },
+                { icon: ShieldCheck, label: lang === 'en' ? 'Returns' : lang === 'ja' ? '返品・交換' : '退換貨', count: genuineMemberOrders.filter((o:any) => classifyOrderStatusLabel(o) === '退換貨').length, tabId: 'returning' },
+              ].map((item, i) => (
+                <button key={i} onClick={() => openModal('orders', item.tabId)} className="flex flex-col items-center gap-2 relative group cursor-pointer flex-1">
+                  <div className="w-11 h-11 rounded-2xl bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-300 flex items-center justify-center group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/70 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-all duration-300 group-hover:-translate-y-1 relative">
+                    <item.icon className="w-5 h-5" />
+                    {item.count > 0 && (
+                      <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm tabular-nums">
+                        {item.count}
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 text-pretty line-clamp-2">{item.desc}</p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-slate-400 transition-colors shrink-0 ml-2" />
-              </button>
-            ))}
+                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">{item.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* System Settings */}
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="divide-y divide-slate-50">
-            {[
-              ...((member?.email || auth.currentUser?.email || '').trim().toLowerCase() === 'babe0615@gmail.com'
-                ? [
-                    {
-                      icon: ShieldCheck,
-                      label: lang === 'en' ? 'Admin Portal (Owner Only)' : lang === 'ja' ? '管理パネル（オーナー専用）' : '進入營運管理後台（管理員專屬）',
-                      action: () => navigate('/admin'),
-                    },
-                  ]
-                : []),
-              { icon: HeadphonesIcon, label: lang === 'en' ? 'Contact Support' : lang === 'ja' ? 'お問い合わせ' : '聯絡客服中心', action: () => navigate('/contact') },
-              { icon: Bell, label: lang === 'en' ? 'Notifications' : lang === 'ja' ? '通知設定' : '通知設定', action: () => openModal('notifications') },
-              { icon: HelpCircle, label: lang === 'en' ? 'Frequently Asked Questions (FAQ)' : lang === 'ja' ? 'よくある質問 (FAQ)' : '常見問題 (FAQ)', action: () => openModal('faq') },
-              { icon: Settings, label: lang === 'en' ? 'Account & Security' : lang === 'ja' ? 'アカウントとセキュリティ' : '帳號與安全', action: () => openModal('settings') },
-            ].map((item, i) => (
-              <button 
-                key={i} 
-                onClick={item.action}
-                className="w-full flex items-center p-4 hover:bg-slate-50 transition-colors text-left group cursor-pointer"
-              >
-                <item.icon className="w-5 h-5 text-slate-400 shrink-0" />
-                <span className="ml-4 flex-1 font-bold text-slate-700 text-sm">{item.label}</span>
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-slate-400 transition-colors" />
-              </button>
-            ))}
+          {/* Services Menu */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="font-black text-slate-900 dark:text-white text-lg">{lang === 'en' ? 'Exclusive Services' : lang === 'ja' ? '専有サービス' : '專屬服務'}</h3>
+            </div>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              {[
+                { icon: Sparkles, label: lang === 'en' ? 'My Subscriptions' : lang === 'ja' ? 'サブスク管理' : '我的訂閱管理', desc: lang === 'en' ? 'Billing cycle, points, plan changes' : lang === 'ja' ? '契約期間、ポイント残高、プラン変更' : '查看週期、剩餘點數、變更或取消方案', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/60', action: () => navigate('/subscription') },
+                { icon: Medal, label: lang === 'en' ? 'Maker Achievements' : lang === 'ja' ? 'メイカーアチーブメント' : '創客成就', desc: lang === 'en' ? 'Unlock badges and secret discounts' : lang === 'ja' ? '限定バッジと特別割引を獲得' : '即時偵測 12 項徽章進度與領取里程碑神券', color: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/60', action: () => openModal('achievements') },
+                { icon: MapPin, label: lang === 'en' ? 'Saved Addresses' : lang === 'ja' ? '配送先住所' : '地址資訊', desc: lang === 'en' ? 'Manage shipping and billing addresses' : lang === 'ja' ? '配送先とお届け先住所の管理' : '管理您的常用收件與發票地址', color: 'text-sky-500 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/60', action: () => openModal('address') },
+                { icon: Share2, label: lang === 'en' ? 'Refer & Earn' : lang === 'ja' ? '友達紹介' : '邀請好友賺狗勾幣', desc: lang === 'en' ? 'Unique link • 50 G-Coins each on registration & order' : lang === 'ja' ? '専用リンク・登録＆注文完了で両方に50 G-Coins' : '專屬連結・好友完成註冊＋首單即發放 50 狗勾幣', color: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/60', action: () => openModal('referral') },
+                { 
+                  icon: History, 
+                  label: lang === 'en' ? 'Recently Viewed' : lang === 'ja' ? '最近閲覧した商品' : '最近瀏覽', 
+                  desc: historyCount > 0 
+                    ? (lang === 'en' ? `${historyCount} items saved • Cloud Synced` : lang === 'ja' ? `${historyCount} 件保存済み • クラウド同期` : `已儲存 ${historyCount} 筆看過的耗材 • 雲端永久同步`) 
+                    : (lang === 'en' ? 'Revisit High-Speed filaments you browsed' : lang === 'ja' ? '閲覧した高速PLAフィラメントを確認' : '找回您看過的高速 PLA 耗材（支援單筆刪除）'), 
+                  badge: historyCount > 0 ? `${historyCount}` : undefined,
+                  color: 'text-purple-500 dark:text-purple-400', 
+                  bg: 'bg-purple-50 dark:bg-purple-950/60', 
+                  action: () => openModal('history') 
+                },
+              ].map((item, i) => (
+                <button key={i} onClick={item.action} className="w-full flex items-center p-4 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left group cursor-pointer">
+                  <div className={`w-11 h-11 rounded-2xl ${item.bg} ${item.color} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}>
+                    <item.icon className="w-5 h-5" />
+                  </div>
+                  <div className="ml-4 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-bold text-slate-900 dark:text-white text-sm text-balance">{item.label}</p>
+                      {item.badge && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-mono font-bold whitespace-nowrap tabular-nums">
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 text-pretty line-clamp-2">{item.desc}</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors shrink-0 ml-2" />
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Logout Button */}
-        <div className="pt-6 pb-4">
-          <button onClick={async () => {
-            if (onLogout) {
-              await onLogout();
-            } else {
-              await logOut();
-              setMember(null);
-            }
-            showToast(lang === 'en' ? 'Signed out successfully!' : lang === 'ja' ? '正常にログアウトしました！' : '已經安全登出您的帳號！');
-          }} className="w-full py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-rose-50 hover:text-rose-600 transition-colors cursor-pointer">
-            {lang === 'en' ? 'Sign Out' : lang === 'ja' ? 'ログアウト' : '登出帳號'}
-          </button>
-          <p className="text-center text-[10px] font-bold text-slate-300 mt-6 tracking-wider uppercase">
-            PrintCore 3D v2.4.1 (2026.09)
-          </p>
+          {/* System Settings */}
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200/80 dark:border-slate-800 overflow-hidden">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              {[
+                ...((member?.email || auth.currentUser?.email || '').trim().toLowerCase() === 'babe0615@gmail.com'
+                  ? [
+                      {
+                        icon: ShieldCheck,
+                        label: lang === 'en' ? 'Admin Portal (Owner Only)' : lang === 'ja' ? '管理パネル（オーナー専用）' : '進入營運管理後台（管理員專屬）',
+                        action: () => navigate('/admin'),
+                      },
+                    ]
+                  : []),
+                { icon: HeadphonesIcon, label: lang === 'en' ? 'Contact Support' : lang === 'ja' ? 'お問い合わせ' : '聯絡客服中心', action: () => navigate('/contact') },
+                { icon: Bell, label: lang === 'en' ? 'Notifications' : lang === 'ja' ? '通知設定' : '通知設定', action: () => openModal('notifications') },
+                { icon: HelpCircle, label: lang === 'en' ? 'Frequently Asked Questions (FAQ)' : lang === 'ja' ? 'よくある質問 (FAQ)' : '常見問題 (FAQ)', action: () => openModal('faq') },
+                { icon: Settings, label: lang === 'en' ? 'Account & Security' : lang === 'ja' ? 'アカウントとセキュリティ' : '帳號與安全', action: () => openModal('settings') },
+              ].map((item, i) => (
+                <button 
+                  key={i} 
+                  onClick={item.action}
+                  className="w-full flex items-center p-4 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left group cursor-pointer"
+                >
+                  <item.icon className="w-5 h-5 text-slate-400 dark:text-slate-500 shrink-0" />
+                  <span className="ml-4 flex-1 font-bold text-slate-700 dark:text-slate-200 text-sm">{item.label}</span>
+                  <ChevronRight className="w-5 h-5 text-slate-300 dark:text-slate-600 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Logout Button */}
+          <div className="pt-2 pb-4">
+            <button onClick={async () => {
+              if (onLogout) {
+                await onLogout();
+              } else {
+                await logOut();
+                setMember(null);
+              }
+              showToast(lang === 'en' ? 'Signed out successfully!' : lang === 'ja' ? '正常にログアウトしました！' : '已經安全登出您的帳號！');
+            }} className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black rounded-2xl hover:bg-rose-50 dark:hover:bg-rose-950/60 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer border border-slate-200/60 dark:border-slate-700">
+              {lang === 'en' ? 'Sign Out' : lang === 'ja' ? 'ログアウト' : '登出帳號'}
+            </button>
+            <p className="text-center text-[10px] font-bold text-slate-300 dark:text-slate-600 mt-5 tracking-wider uppercase">
+              PrintCore 3D v2.4.1 (2026.09)
+            </p>
+          </div>
         </div>
 
       

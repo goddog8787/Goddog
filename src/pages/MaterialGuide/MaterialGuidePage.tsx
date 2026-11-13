@@ -537,7 +537,7 @@ export const MaterialGuidePage: React.FC<MaterialGuidePageProps> = ({
                 </div>
 
                 {/* Pro Tips */}
-                <div className="bg-amber-50/70 dark:bg-amber-950/30 border-l-2 border-amber-500 p-2.5 rounded-r-lg text-xs text-amber-900 dark:text-amber-300 mb-4">
+                <div className="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 p-3 rounded-xl text-xs text-amber-900 dark:text-amber-300 mb-4 leading-relaxed">
                   <span className="font-bold">{labels.tipsLabel}</span> {tipsText}
                 </div>
               </div>

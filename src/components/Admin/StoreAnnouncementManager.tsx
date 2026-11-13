@@ -261,7 +261,7 @@ export const StoreAnnouncementManager: React.FC = () => {
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-rose-500" />
-                工作室自取與退換貨收件地址
+                配送服務與退換貨聯繫說明
               </label>
               <input
                 type="text"

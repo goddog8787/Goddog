@@ -23,7 +23,7 @@ const getFilename = () => {
 const __filename = getFilename();
 const __dirname = __filename ? path.dirname(__filename) : process.cwd();
 
-dotenv.config({ override: true });
+dotenv.config();
 
 // Ensure firebase-applet-config.json exists immediately on cold boot
 try {
@@ -50,8 +50,24 @@ try {
   }
 } catch {}
 
+function resolveCliArg(flag: string): string | undefined {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === flag && args[i + 1] && !args[i + 1].startsWith('-')) {
+      return args[i + 1];
+    }
+    if (arg.startsWith(`${flag}=`)) {
+      return arg.slice(flag.length + 1);
+    }
+  }
+  return undefined;
+}
+
 const app = express();
-const PORT = process.env.NODE_ENV === 'production' ? Number(process.env.PORT) || 3000 : 3000;
+const parsedPort = Number(resolveCliArg('--port') || process.env.PORT || 3000);
+const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
+const HOST = resolveCliArg('--host') || process.env.HOST || '0.0.0.0';
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -391,24 +407,33 @@ function checkModelTierAccess(requestedModel: string, tier?: string): { allowed:
 // 長對話記憶壓縮管線 (Memory Compression Pipeline)
 // 對話超過 5 輪時，舊對話一律強制調用平價模型 (Gemini Flash) 提取 200 字摘要，再注入高階模型
 // -------------------------------------------------------------
+const conversationSummaryCache = new Map<string, { summary: string; timestamp: number }>();
+
 async function compressConversationMemorySafely(
   history: Array<{ role: 'user' | 'model'; text: string }>,
   customApiKey?: string
 ): Promise<{ summary: string; recentHistory: Array<{ role: 'user' | 'model'; text: string }> }> {
-  if (history.length <= 5) {
+  // 超過 5 輪對話（> 10 則訊息）才觸發平價 Flash 模型記憶壓縮，確保近期 4 輪完整保留
+  if (history.length <= 10) {
     return { summary: '', recentHistory: history };
   }
 
-  const olderTurns = history.slice(0, -2);
-  const recentHistory = history.slice(-2);
+  const olderTurns = history.slice(0, -6);
+  const recentHistory = history.slice(-6);
 
   const olderTranscript = olderTurns
     .map(t => `${t.role === 'user' ? '用戶' : '顧問'}: ${t.text}`)
     .join('\n');
 
+  const cacheKey = `${olderTurns.length}:${olderTranscript.slice(0, 80)}:${olderTranscript.slice(-120)}`;
+  const cached = conversationSummaryCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 600000) {
+    return { summary: cached.summary, recentHistory };
+  }
+
   const ai = getAIClient(customApiKey);
   if (!ai) {
-    const simpleFallbackSummary = olderTranscript.slice(-250);
+    const simpleFallbackSummary = olderTranscript.slice(-200);
     return { summary: simpleFallbackSummary, recentHistory };
   }
 
@@ -428,7 +453,7 @@ ${olderTranscript}`;
         model: 'gemini-3.1-flash-lite',
         contents: summaryPrompt,
         config: {
-          maxOutputTokens: 300,
+          maxOutputTokens: 280,
           temperature: 0.2,
         },
       }),
@@ -436,10 +461,17 @@ ${olderTranscript}`;
     );
 
     const summaryText = summaryResponse?.text?.trim() || '';
-    const cleanSummary = summaryText.slice(0, 250);
+    const cleanSummary = summaryText.slice(0, 200);
+    if (cleanSummary) {
+      if (conversationSummaryCache.size >= 200) {
+        const oldestKey = conversationSummaryCache.keys().next().value;
+        if (oldestKey) conversationSummaryCache.delete(oldestKey);
+      }
+      conversationSummaryCache.set(cacheKey, { summary: cleanSummary, timestamp: Date.now() });
+    }
     return { summary: cleanSummary, recentHistory };
   } catch {
-    return { summary: '', recentHistory: history.slice(-4) };
+    return { summary: olderTranscript.slice(-200), recentHistory };
   }
 }
 
@@ -618,6 +650,30 @@ async function generateGeminiChatSafely(
 // Live Firestore AI Bridge Worker (powers https://goddog.space real-time Gemini inference without CORS or exposed keys)
 // -------------------------------------------------------------
 const processedBridgeRequests = new Set<string>();
+let bridgeInitTimer: NodeJS.Timeout | null = null;
+let aiBridgeUnsubscribe: (() => void) | null = null;
+
+function stopFirestoreAIBridgeWorker() {
+  if (bridgeInitTimer) {
+    clearTimeout(bridgeInitTimer);
+    bridgeInitTimer = null;
+  }
+  if (aiBridgeUnsubscribe) {
+    try {
+      aiBridgeUnsubscribe();
+    } catch {}
+    aiBridgeUnsubscribe = null;
+  }
+}
+
+function scheduleFirestoreAIBridgeWorker(delayMs = 1500) {
+  if (bridgeInitTimer || aiBridgeUnsubscribe) return;
+  bridgeInitTimer = setTimeout(() => {
+    bridgeInitTimer = null;
+    startFirestoreAIBridgeWorker();
+  }, delayMs);
+  bridgeInitTimer.unref?.();
+}
 
 async function startFirestoreAIBridgeWorker() {
   try {
@@ -659,7 +715,12 @@ async function startFirestoreAIBridgeWorker() {
       fsWhere('status', '==', 'pending')
     );
 
-    fsOnSnapshot(
+    if (aiBridgeUnsubscribe) {
+      try {
+        aiBridgeUnsubscribe();
+      } catch {}
+    }
+    aiBridgeUnsubscribe = fsOnSnapshot(
       pendingQuery,
       (snapshot) => {
         snapshot.docChanges().forEach(async (change) => {
@@ -786,10 +847,6 @@ async function startFirestoreAIBridgeWorker() {
     console.log('[AI Bridge] Init notice:', e?.message || e);
   }
 }
-
-setTimeout(() => {
-  startFirestoreAIBridgeWorker();
-}, 1500);
 
 // -------------------------------------------------------------
 // 0. 後台商品目錄持久化同步 API (Admin Product Catalog Persistence & Direct Source Code Update)
@@ -1377,8 +1434,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
       ? rawMessages.slice(0, -1)
       : rawMessages;
 
-    const history: Array<{ role: 'user' | 'model'; text: string }> = historyPool
-      .slice(-8)
+    const normalizedFullHistory: Array<{ role: 'user' | 'model'; text: string }> = historyPool
       .map((m) => ({
         role: (m.sender === 'user' || m.role === 'user' ? 'user' : 'model') as 'user' | 'model',
         text: m.text?.trim() || '',
@@ -1388,6 +1444,11 @@ app.post('/api/ai/chat/stream', async (req, res) => {
     const clientApiKey = (req.body?.apiKey || '').trim();
     const effectiveApiKey = (clientApiKey || runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 
+    const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
+      normalizedFullHistory,
+      requestedModel === 'local-expert' ? '' : effectiveApiKey
+    );
+
     let contextNotes = '';
     if (storeContext?.viewingProduct) {
       contextNotes +=
@@ -1396,6 +1457,9 @@ app.post('/api/ai/chat/stream', async (req, res) => {
           : lang === 'ja'
           ? `\n【現在閲覧中の商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`
           : `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
+    }
+    if (memorySummary) {
+      contextNotes += `\n【早期對話壓縮記憶摘要】：\n${memorySummary}\n`;
     }
 
     const systemPrompt =
@@ -1456,6 +1520,9 @@ ${contextNotes}`;
       }
       streamedAnyChunk = true;
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+    }
+    if (streamedAnyChunk) {
+      totalCustomerQueriesServed++;
     }
 
     if (!streamedAnyChunk && !clientDisconnected && !abortController.signal.aborted) {
@@ -1528,9 +1595,8 @@ app.post('/api/ai/chat', async (req, res) => {
       ? rawMessages.slice(0, -1)
       : rawMessages;
 
-    // Filter and map to { role: 'user' | 'model', text: string }, capped at recent 12 turns for optimal memory
-    const history: Array<{ role: 'user' | 'model'; text: string }> = historyPool
-      .slice(-12)
+    // Filter and map to { role: 'user' | 'model', text: string }
+    const normalizedFullHistory: Array<{ role: 'user' | 'model'; text: string }> = historyPool
       .map((m) => ({
         role: (m.sender === 'user' || m.role === 'user' ? 'user' : 'model') as 'user' | 'model',
         text: m.text?.trim() || '',
@@ -1545,6 +1611,12 @@ app.post('/api/ai/chat', async (req, res) => {
       savePersistedOwnerApiKey(clientApiKey);
     }
 
+    const targetModel = requestedModel || 'gemini-3.8-flash';
+    const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
+      normalizedFullHistory,
+      targetModel === 'local-expert' ? '' : effectiveApiKey
+    );
+
     // Contextual information from store state
     let storeContextNotes = '';
     if (storeContext?.viewingProduct) {
@@ -1555,8 +1627,10 @@ app.post('/api/ai/chat', async (req, res) => {
           ? `\n【現在閲覧中の商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`
           : `\n【當前瀏覽商品】：${storeContext.viewingProduct.name} (${storeContext.viewingProduct.material}, NT$${storeContext.viewingProduct.price})\n`;
     }
+    if (memorySummary) {
+      storeContextNotes += `\n【早期對話壓縮記憶摘要】：\n${memorySummary}\n`;
+    }
 
-    const targetModel = requestedModel || 'gemini-3.8-flash';
     const targetDisplayName = MODEL_DISPLAY_NAMES[targetModel] || targetModel;
     const lower = latestUserMessage.toLowerCase();
     const cacheKey = `${lang}_${targetModel}_${lower}_${history.length > 0 ? history[history.length - 1].text : ''}`;
@@ -1603,7 +1677,7 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
     if (targetModel !== 'local-expert' && effectiveApiKey) {
       try {
         const geminiReply = await generateGeminiChatSafely(
-          history.slice(-8),
+          history,
           systemPrompt,
           latestUserMessage,
           targetModel,
@@ -4527,7 +4601,7 @@ function generateLogisticsTrackingInfo(params: {
       time: formatStepTime(3.5),
       title: '智慧倉儲理貨與防潮抽真空包裝',
       desc: '耗材出庫品質檢驗無誤、充填高分子變色矽膠乾燥劑、雙層鋁箔防潮袋抽真空密封完成。',
-      location: '神狗勾 3D 台灣自動化耗材發貨倉 (新竹/嘉義理貨中心)',
+      location: '神狗勾 3D 台灣自動化耗材發貨倉',
       status: isProc ? 'current' : 'done'
     });
   } else {
@@ -4818,6 +4892,8 @@ app.all('/api/*', (req, res) => {
 });
 
 let activeHttpServer: any = null;
+let activeViteServer: any = null;
+let isShuttingDown = false;
 
 async function startServer() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -4853,67 +4929,7 @@ async function startServer() {
   };
   app.use(express.static(path.resolve(process.cwd(), 'public'), staticOptions));
 
-  let viteMiddleware: any = null;
   const useProdStatic = process.env.NODE_ENV === 'production' && hasBuiltDist;
-
-  if (useProdStatic) {
-    app.use(express.static(distPath, staticOptions));
-    app.get('*', (_req, res) => {
-      const indexPath = path.join(distPath, 'index.html');
-      res.sendFile(indexPath, (err) => {
-        if (err && !res.headersSent) {
-          res.status(200).send('<!doctype html><html><body><div id="root">載入中...</div></body></html>');
-        }
-      });
-    });
-  } else {
-    // Dynamic middleware that delegates to Vite once ready, or falls back to dist if available
-    const distStatic = express.static(distPath, staticOptions);
-    app.use((req, res, next) => {
-      if (viteMiddleware) {
-        return viteMiddleware(req, res, next);
-      }
-      if (hasBuiltDist) {
-        return distStatic(req, res, () => {
-          if (req.method === 'GET' && !req.path.startsWith('/api/')) {
-            return res.sendFile(path.join(distPath, 'index.html'));
-          }
-          next();
-        });
-      }
-      if (req.method === 'GET' && !req.path.startsWith('/api/')) {
-        return res.status(200).send('<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="1"></head><body>載入中...</body></html>');
-      }
-      next();
-    });
-  }
-
-  // Bind port 3000 immediately so the control plane health check succeeds right away
-  const tryListen = (targetPort = PORT, retries = 10, delay = 400) => {
-    const s: any = app.listen(targetPort, '0.0.0.0', () => {
-      activeHttpServer = s;
-      console.log(`[神狗勾 Server] Running on http://0.0.0.0:${targetPort} (env: ${process.env.NODE_ENV || 'development'})`);
-    });
-
-    s.on('error', (err: any) => {
-      if (err.code === 'EADDRINUSE') {
-        try { s.close(); } catch {}
-        if (targetPort !== 3000) {
-          console.warn(`[神狗勾 Server] Port ${targetPort} occupied by supervisor, switching to port 3000...`);
-          return tryListen(3000, retries, delay);
-        }
-        if (retries > 0) {
-          console.warn(`[神狗勾 Server] Port ${targetPort} busy, retrying in ${delay}ms (${retries} attempts left)...`);
-          setTimeout(() => {
-            tryListen(targetPort, retries - 1, delay);
-          }, delay);
-          return;
-        }
-      }
-      console.error('[神狗勾 Server] Fatal server error:', err);
-    });
-  };
-  tryListen();
 
   if (!useProdStatic && isDev) {
     try {
@@ -4928,10 +4944,98 @@ async function startServer() {
         },
         appType: 'spa',
       });
-      viteMiddleware = vite.middlewares;
+      activeViteServer = vite;
+      app.use(vite.middlewares);
     } catch (e) {
       console.error('[神狗勾 Server] Vite middleware init error:', e);
     }
+  }
+
+  if (useProdStatic || !activeViteServer) {
+    if (hasBuiltDist) {
+      app.use(express.static(distPath, staticOptions));
+      app.get('*', (_req, res) => {
+        const indexPath = path.join(distPath, 'index.html');
+        res.sendFile(indexPath, (err) => {
+          if (err && !res.headersSent) {
+            res.status(503).send('<!doctype html><html><body>應用程式尚未就緒，請稍後重試。</body></html>');
+          }
+        });
+      });
+    } else if (!activeViteServer) {
+      console.error('[神狗勾 Server] Neither Vite middleware nor built dist/index.html is available.');
+    }
+  }
+
+  const tryListen = (targetPort = PORT, retries = 25, delay = 300) => {
+    if (isShuttingDown) return;
+
+    const s: any = app.listen(targetPort, HOST, () => {
+      activeHttpServer = s;
+      try {
+        s.keepAliveTimeout = 5000;
+        s.headersTimeout = 10000;
+      } catch {}
+      console.log(`[神狗勾 Server] Running on http://${HOST}:${targetPort} (env: ${process.env.NODE_ENV || 'development'})`);
+      scheduleFirestoreAIBridgeWorker(1500);
+    });
+
+    s.on('error', (err: any) => {
+      if (isShuttingDown) return;
+      if (err.code === 'EADDRINUSE') {
+        try { s.close(); } catch {}
+        if (retries > 0) {
+          console.warn(`[神狗勾 Server] Port ${targetPort} busy, retrying in ${delay}ms (${retries} attempts left)...`);
+          setTimeout(() => {
+            tryListen(targetPort, retries - 1, delay);
+          }, delay);
+          return;
+        }
+      }
+      console.error('[神狗勾 Server] Fatal server error:', err);
+      process.exit(1);
+    });
+  };
+  tryListen();
+}
+
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[神狗勾 Server] ${signal} received, exiting cleanly.`);
+
+  const forceExitTimer = setTimeout(() => {
+    process.exit(0);
+  }, 1500);
+  forceExitTimer.unref?.();
+
+  stopFirestoreAIBridgeWorker();
+
+  const closeTasks: Promise<void>[] = [];
+  if (activeHttpServer) {
+    closeTasks.push(
+      new Promise<void>((resolve) => {
+        try { activeHttpServer.closeAllConnections?.(); } catch {}
+        try {
+          activeHttpServer.close(() => resolve());
+        } catch {
+          resolve();
+        }
+      })
+    );
+  }
+  if (activeViteServer) {
+    closeTasks.push(
+      Promise.resolve()
+        .then(() => activeViteServer.close())
+        .catch(() => {})
+    );
+  }
+
+  try {
+    await Promise.allSettled(closeTasks);
+  } finally {
+    process.exit(0);
   }
 }
 
@@ -4946,20 +5050,13 @@ process.on('uncaughtException', (err: any) => {
   }
 });
 process.on('SIGTERM', () => {
-  console.log('[神狗勾 Server] SIGTERM received, exiting cleanly.');
-  if (activeHttpServer) {
-    try { activeHttpServer.closeAllConnections?.(); } catch {}
-    try { activeHttpServer.close(); } catch {}
-  }
-  process.exit(0);
+  void gracefulShutdown('SIGTERM');
 });
 process.on('SIGINT', () => {
-  console.log('[神狗勾 Server] SIGINT received, exiting cleanly.');
-  if (activeHttpServer) {
-    try { activeHttpServer.closeAllConnections?.(); } catch {}
-    try { activeHttpServer.close(); } catch {}
-  }
-  process.exit(0);
+  void gracefulShutdown('SIGINT');
 });
 
-startServer();
+startServer().catch((err) => {
+  console.error('[神狗勾 Server] Startup failed:', err);
+  process.exit(1);
+});

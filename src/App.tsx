@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Navbar 
@@ -19,9 +19,6 @@ import {
   CheckoutModal 
 } from './components/Storefront/CheckoutModal';
 import { 
-  AIAdvisorModal 
-} from './components/Storefront/AIAdvisorModal';
-import { 
   TrackingModal 
 } from './components/Storefront/TrackingModal';
 import { 
@@ -36,26 +33,21 @@ import {
 import { 
   AuthModal 
 } from './components/Auth/AuthModal';
-import { 
-  AdminDashboard 
-} from './components/Admin/AdminDashboard';
-import { 
-  FilamentLabModal 
-} from './components/Storefront/FilamentLabModal';
-import { 
-  ProductComparisonModal 
-} from './components/Storefront/ProductComparisonModal';
 import { RecentlyViewedSection } from './components/Storefront/RecentlyViewedSection';
-import { HistoryModal } from './pages/Profile/ProfileModals';
 import { 
   WishlistDrawer 
 } from './components/Storefront/WishlistDrawer';
-import { 
-  SpoolRecycleModal 
-} from './components/Storefront/SpoolRecycleModal';
 import {
   DraggableChatWidget
 } from './components/Storefront/DraggableChatWidget';
+
+// Lazy-loaded heavy secondary modals & routes to reduce initial bundle payload
+const AdminDashboard = React.lazy(() => import('./components/Admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const AIAdvisorModal = React.lazy(() => import('./components/Storefront/AIAdvisorModal').then(m => ({ default: m.AIAdvisorModal })));
+const FilamentLabModal = React.lazy(() => import('./components/Storefront/FilamentLabModal').then(m => ({ default: m.FilamentLabModal })));
+const ProductComparisonModal = React.lazy(() => import('./components/Storefront/ProductComparisonModal').then(m => ({ default: m.ProductComparisonModal })));
+const SpoolRecycleModal = React.lazy(() => import('./components/Storefront/SpoolRecycleModal').then(m => ({ default: m.SpoolRecycleModal })));
+const HistoryModal = React.lazy(() => import('./pages/Profile/ProfileModals').then(m => ({ default: m.HistoryModal })));
 import { 
   INITIAL_PRODUCTS, 
   SUBSCRIPTION_PLANS, 
@@ -159,17 +151,17 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { PrivacyPolicy } from './pages/Legal/PrivacyPolicy';
-import { TermsOfService } from './pages/Legal/TermsOfService';
-import { RefundPolicy } from './pages/Legal/RefundPolicy';
-import { ContactUs } from './pages/Legal/ContactUs';
-import { BlogList } from './pages/Blog/BlogList';
-import { BlogPostPage } from './pages/Blog/BlogPostPage';
-import { AboutUs } from './pages/Legal/AboutUs';
-import { FAQPage } from './pages/FAQ/FAQPage';
-import { ProfilePage } from './pages/Profile';
-import { SubscriptionPage } from './pages/Subscription/SubscriptionPage';
-import { MaterialGuidePage } from './pages/MaterialGuide/MaterialGuidePage';
+const PrivacyPolicy = React.lazy(() => import('./pages/Legal/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = React.lazy(() => import('./pages/Legal/TermsOfService').then(m => ({ default: m.TermsOfService })));
+const RefundPolicy = React.lazy(() => import('./pages/Legal/RefundPolicy').then(m => ({ default: m.RefundPolicy })));
+const ContactUs = React.lazy(() => import('./pages/Legal/ContactUs').then(m => ({ default: m.ContactUs })));
+const BlogList = React.lazy(() => import('./pages/Blog/BlogList').then(m => ({ default: m.BlogList })));
+const BlogPostPage = React.lazy(() => import('./pages/Blog/BlogPostPage').then(m => ({ default: m.BlogPostPage })));
+const AboutUs = React.lazy(() => import('./pages/Legal/AboutUs').then(m => ({ default: m.AboutUs })));
+const FAQPage = React.lazy(() => import('./pages/FAQ/FAQPage').then(m => ({ default: m.FAQPage })));
+const ProfilePage = React.lazy(() => import('./pages/Profile').then(m => ({ default: m.ProfilePage })));
+const SubscriptionPage = React.lazy(() => import('./pages/Subscription/SubscriptionPage').then(m => ({ default: m.SubscriptionPage })));
+const MaterialGuidePage = React.lazy(() => import('./pages/MaterialGuide/MaterialGuidePage').then(m => ({ default: m.MaterialGuidePage })));
 import { Footer } from './components/Footer';
 import { SEO } from './components/SEO';
 import { evaluateProductDeepSearch } from './utils/productSearch';
@@ -922,19 +914,64 @@ export default function App() {
             });
             saveCustomerOrderRecord(newOrder, ownerUid).catch(console.warn);
 
-            // 成功入帳後才扣除購物車
+            // 成功入帳後才扣除購物車並扣減商品庫存
             setCartItems([]);
             saveCustomerCart(ownerUid, [], { explicitClear: true }).catch(console.warn);
             localStorage.removeItem('printcore_pending_order');
 
-            // 會員更新累計點數與消費
+            if (Array.isArray(newOrder.items) && newOrder.items.length > 0) {
+              setProducts((prevCatalog) => {
+                let nextCatalog = prevCatalog;
+                for (const orderItem of newOrder.items) {
+                  const targetProd = nextCatalog.find((p) => p.id === orderItem.productId);
+                  if (targetProd) {
+                    const updatedProd: FilamentProduct = {
+                      ...targetProd,
+                      stock: Math.max(0, targetProd.stock - orderItem.quantity),
+                    };
+                    nextCatalog = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
+                  }
+                }
+                return nextCatalog;
+              });
+            }
+
+            // 會員更新累計點數、消費紀錄、核銷一次性會員券並完整持久化
             if (ownerUid) {
-              setMember(prev => ({
-                ...prev,
-                points: (prev?.points || 0) + newOrder.pointsEarned - (newOrder.pointsDeduction || 0),
-                totalSpent: (prev?.totalSpent || 0) + newOrder.total,
-                ordersCount: (prev?.ordersCount || 0) + 1,
-              }));
+              const usedCouponUpper = (newOrder.couponCode || '').trim().toUpperCase();
+              setMember((prev) => {
+                const remainingCoupons = usedCouponUpper && Array.isArray(prev?.coupons)
+                  ? prev.coupons.filter((c: any) => String(c?.code || '').trim().toUpperCase() !== usedCouponUpper)
+                  : prev?.coupons;
+                const updatedMember = sanitizeCustomerProfile({
+                  ...prev,
+                  id: ownerUid,
+                  points: Math.max(0, (prev?.points || 0) + newOrder.pointsEarned - (newOrder.pointsDeduction || 0)),
+                  totalSpent: (prev?.totalSpent || 0) + newOrder.total,
+                  ordersCount: (prev?.ordersCount || 0) + 1,
+                  ...(remainingCoupons ? { coupons: remainingCoupons } : {}),
+                });
+                try {
+                  localStorage.setItem('printcore_member', JSON.stringify(updatedMember));
+                } catch {}
+                saveUserProfileToFirestore(updatedMember);
+                saveCustomerUserData(ownerUid, 'profile', updatedMember).catch(console.warn);
+                saveCustomerProfileDoc(ownerUid, updatedMember).catch(console.warn);
+                saveStoredCustomerSession({
+                  id: updatedMember.id,
+                  name: updatedMember.name,
+                  email: updatedMember.email,
+                  tier: updatedMember.tier,
+                  points: updatedMember.points,
+                  totalSpent: updatedMember.totalSpent || 0,
+                  isLoggedIn: true,
+                });
+                processReferralOrderReward(updatedMember, newOrder).catch(console.warn);
+                return updatedMember;
+              });
+            }
+            if (newOrder.couponCode && typeof window !== 'undefined') {
+              window.dispatchEvent(new Event('printcore_coupons_updated'));
             }
 
             setToastNotification({
@@ -1448,14 +1485,19 @@ export default function App() {
       }
     }
     setProducts(nextCatalog);
-    // Add loyalty points to member profile & verify Stage 2 Referral Reward (Registered + First Order Completed)
+    // Add loyalty points to member profile, consume single-use coupon & verify Stage 2 Referral Reward
     if (isLoggedIn && activeUid) {
+      const usedCouponUpper = (newOrder.couponCode || '').trim().toUpperCase();
+      const remainingCoupons = usedCouponUpper && Array.isArray(member?.coupons)
+        ? member.coupons.filter((c: any) => String(c?.code || '').trim().toUpperCase() !== usedCouponUpper)
+        : member?.coupons;
       const updatedMember = sanitizeCustomerProfile({
         ...member,
         id: activeUid,
         points: Math.max(0, (member?.points || 0) - newOrder.pointsDeduction + newOrder.pointsEarned),
         totalSpent: (member?.totalSpent || 0) + newOrder.total,
         ordersCount: (member?.ordersCount || 0) + 1,
+        ...(remainingCoupons ? { coupons: remainingCoupons } : {}),
       });
       setMember(updatedMember);
       saveUserProfileToFirestore(updatedMember);
@@ -1584,6 +1626,13 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8 pb-32 sm:pb-36 lg:pb-8 overflow-x-hidden">
+        <Suspense
+          fallback={
+            <div className="py-24 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full border-3 border-indigo-200 border-t-indigo-600 animate-spin" />
+            </div>
+          }
+        >
         <Routes>
           <Route path="/privacy-policy" element={<><SEO title={lang === 'en' ? 'Privacy Policy - GodDog 3D' : lang === 'ja' ? 'プライバシーポリシー - 神狗勾 3D' : '隱私權保護政策 - 神狗勾 3D'} description={lang === 'en' ? 'GodDog 3D Filaments Store Privacy Policy' : lang === 'ja' ? '神狗勾3Dフィラメント公式ストア プライバシーポリシー' : '神狗勾耗材商城隱私權保護政策'} url="/privacy-policy" /><PrivacyPolicy lang={lang} /></>} />
           <Route path="/terms" element={<><SEO title={lang === 'en' ? 'Terms of Service - GodDog 3D' : lang === 'ja' ? '利用規約 - 神狗勾 3D' : '服務條款 - 神狗勾 3D'} description={lang === 'en' ? 'GodDog 3D Filaments Store Terms of Service' : lang === 'ja' ? '神狗勾3Dフィラメント公式ストア 利用規約' : '神狗勾耗材商城服務條款'} url="/terms" /><TermsOfService lang={lang} /></>} />
@@ -1637,17 +1686,17 @@ export default function App() {
           /* ================================================================= */
           /* CUSTOMER STOREFRONT VIEW                                          */
           /* ================================================================= */
-          <div className="space-y-4 sm:space-y-8">
+          <div className="space-y-4 sm:space-y-5 lg:space-y-6">
             {/* Guest Welcome & Sign-In Reward Banner */}
             {!isLoggedIn && (
-              <div className="bg-gradient-to-r from-amber-500/15 via-indigo-500/15 to-purple-500/15 border border-amber-500/30 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-md backdrop-blur-xs">
+              <div className="bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-purple-500/10 border border-amber-500/25 rounded-2xl p-3 sm:px-5 sm:py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-sm backdrop-blur-xs">
                 <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-500 flex items-center justify-center shrink-0 border border-amber-400/30 shadow-sm">
-                    <Gift className="w-5 h-5" />
+                  <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-500 flex items-center justify-center shrink-0 border border-amber-400/30 shadow-xs">
+                    <Gift className="w-4.5 h-4.5" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                      {lang === 'en' ? 'New Member Gift: Sign in for 100 G-Coins & Free Shipping!' : lang === 'ja' ? '新規特典：ログインで100 G-Coin＆送料無料進呈！' : '🎁 新客專屬好禮：登入即領 100 點積分與免運優惠'}
+                      {lang === 'en' ? 'New Member Gift: Sign in for 100 G-Coins & Free Shipping!' : lang === 'ja' ? '新規特典：ログインで100 G-Coin＆送料無料進呈！' : '新客專屬好禮：登入即領 100 點積分與免運優惠'}
                     </div>
                     <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
                       {lang === 'en' ? '1-click Google login, cash discount points & live package tracking.' : lang === 'ja' ? 'Googleログインでポイント即時付与＆配送追跡。' : '一鍵 Google 登入，享購物現金折抵與超商包裹即時追蹤'}
@@ -1657,7 +1706,7 @@ export default function App() {
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
                   <button
                     onClick={() => setIsAuthOpen(true)}
-                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-amber-500 hover:from-indigo-500 hover:to-amber-400 text-white text-xs font-bold shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-amber-500 hover:from-indigo-500 hover:to-amber-400 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
                   >
                     <User className="w-3.5 h-3.5 shrink-0" />
                     <span>{lang === 'en' ? 'Sign In / Claim' : lang === 'ja' ? 'ログインして受取' : '立即登入領取'}</span>
@@ -1668,17 +1717,17 @@ export default function App() {
             
             {/* Hero Banner (Responsive: Mobile sleek card & Desktop grand layout) */}
             <section className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white p-5 sm:p-8 lg:p-10 shadow-xl border border-slate-800">
-              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
                 {/* Left Column: Heading & Description */}
-                <div className="lg:col-span-7 space-y-3 sm:space-y-4">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] sm:text-xs font-bold tracking-wide whitespace-nowrap">
+                <div className="lg:col-span-7 flex flex-col justify-center space-y-3 sm:space-y-4">
+                  <div className="inline-flex items-center gap-1.5 text-indigo-300 text-[11px] sm:text-xs font-bold tracking-wider uppercase">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span>
                       {lang === 'en' ? '2026 600mm/s Bambu AMS & Creality K1 Verified' : lang === 'ja' ? '2026最新 600mm/s Bambu AMS＆K1公式対応' : '2026 拓竹 AMS・Creality K1 高速專用線材'}
                     </span>
                   </div>
 
-                  <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight">
+                  <h1 className="text-2xl sm:text-4xl lg:text-[42px] xl:text-5xl font-black tracking-tight leading-[1.15] text-balance">
                     {lang === 'en' ? (
                       <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">Ultra-Smooth</span> 3D Filaments & Slicing Solutions</>
                     ) : lang === 'ja' ? (
@@ -1688,16 +1737,16 @@ export default function App() {
                     )}
                   </h1>
 
-                  <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
+                  <p className="text-xs sm:text-sm lg:text-[15px] text-slate-300 leading-relaxed max-w-xl text-pretty">
                     {lang === 'en' ? 'All spools pass ±0.02mm laser inspection with vacuum foil packaging. Supports NewebPay checkout and Free Shipping over NT$999.' : lang === 'ja' ? '全品±0.02mmレーザー検品＆アルミ真空包装。NewebPay決済対応、NT$999以上で送料無料。' : '全館通過 ±0.02mm 光學線徑檢驗與鋁箔真空防潮包裝。支援藍新安全金流與超商取貨，滿 NT$999 享免運優惠。'}
                   </p>
 
                   {/* Action CTA Buttons */}
-                  <div className="pt-1.5 flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                  <div className="pt-1 flex items-center gap-3 flex-wrap sm:flex-nowrap">
                     <button
                       id="hero-ai-advisor-cta-btn"
                       onClick={() => setIsAIAdvisorOpen(true)}
-                      className="flex-1 sm:flex-initial justify-center px-4 sm:px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer transition-all active:scale-98 whitespace-nowrap"
+                      className="flex-1 sm:flex-initial justify-center px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 cursor-pointer transition-all active:scale-98 whitespace-nowrap"
                     >
                       <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
                       <span>{lang === 'en' ? 'AI Filament Advisor' : lang === 'ja' ? 'AI機種別マッチング' : 'AI 耗材智能配對'}</span>
@@ -1709,7 +1758,7 @@ export default function App() {
                         const el = document.getElementById('storefront-product-grid');
                         el?.scrollIntoView({ behavior: 'smooth' });
                       }}
-                      className="flex-1 sm:flex-initial justify-center px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-xs text-white border border-white/20 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
+                      className="flex-1 sm:flex-initial justify-center px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-xs text-white border border-white/20 text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
                     >
                       <span>{lang === 'en' ? 'Browse Catalog ↓' : lang === 'ja' ? '商品一覧を見る ↓' : '選購全部耗材 ↓'}</span>
                     </button>
@@ -1717,35 +1766,35 @@ export default function App() {
                 </div>
 
                 {/* Right Column: Desktop Spec Highlights Badge Grid */}
-                <div className="hidden lg:grid lg:col-span-5 grid-cols-2 gap-3">
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-indigo-500/30 hover:border-indigo-500/60 transition-colors">
-                    <div className="text-indigo-400 text-xs font-bold uppercase tracking-wider">High Speed</div>
-                    <div className="text-2xl font-black text-white mt-1">600 <span className="text-xs font-semibold text-slate-400">mm/s</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                <div className="hidden lg:grid lg:col-span-5 grid-cols-2 gap-3.5 content-center">
+                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-indigo-500/30 hover:border-indigo-400/60 transition-colors flex flex-col justify-between">
+                    <div className="text-indigo-400 text-[11px] font-bold uppercase tracking-wider">High Speed</div>
+                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">600 <span className="text-xs font-sans font-semibold text-slate-400">mm/s</span></div>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
                       {lang === 'en' ? 'High-flow extrusion, strong bonding' : lang === 'ja' ? '高速吐出でも層間密着強度抜群' : '高速出膠不碳化・層間結合強'}
                     </p>
                   </div>
 
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-cyan-500/30 hover:border-cyan-500/60 transition-colors">
-                    <div className="text-cyan-400 text-xs font-bold uppercase tracking-wider">Precision</div>
-                    <div className="text-2xl font-black text-white mt-1">±0.02 <span className="text-xs font-semibold text-slate-400">mm</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-cyan-500/30 hover:border-cyan-400/60 transition-colors flex flex-col justify-between">
+                    <div className="text-cyan-400 text-[11px] font-bold uppercase tracking-wider">Precision</div>
+                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">±0.02 <span className="text-xs font-sans font-semibold text-slate-400">mm</span></div>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
                       {lang === 'en' ? 'Laser-calibrated, zero nozzle clogs' : lang === 'ja' ? '高精度真円度でノズル詰まりゼロ' : '光學校準同心度・列印不卡料'}
                     </p>
                   </div>
 
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-amber-500/30 hover:border-amber-500/60 transition-colors">
-                    <div className="text-amber-400 text-xs font-bold uppercase tracking-wider">AMS Ready</div>
-                    <div className="text-2xl font-black text-white mt-1">100% <span className="text-xs font-semibold text-slate-400">{lang === 'en' ? 'Compatible' : lang === 'ja' ? '対応' : '相容'}</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-amber-500/30 hover:border-amber-400/60 transition-colors flex flex-col justify-between">
+                    <div className="text-amber-400 text-[11px] font-bold uppercase tracking-wider">AMS Ready</div>
+                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">100% <span className="text-xs font-sans font-semibold text-slate-400">{lang === 'en' ? 'Compatible' : lang === 'ja' ? '対応' : '相容'}</span></div>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
                       {lang === 'en' ? 'Standard 200mm spools for AMS' : lang === 'ja' ? '標準200mm径でAMS多色対応' : '標準 200mm 盤徑・多色順暢進料'}
                     </p>
                   </div>
 
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-emerald-500/30 hover:border-emerald-500/60 transition-colors">
-                    <div className="text-emerald-400 text-xs font-bold uppercase tracking-wider">Local Fast</div>
-                    <div className="text-2xl font-black text-white mt-1">24H <span className="text-xs font-semibold text-slate-400">{lang === 'en' ? 'Dispatch' : lang === 'ja' ? '発送' : '出貨'}</span></div>
-                    <p className="text-[11px] text-slate-400 mt-1 whitespace-nowrap">
+                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-emerald-500/30 hover:border-emerald-400/60 transition-colors flex flex-col justify-between">
+                    <div className="text-emerald-400 text-[11px] font-bold uppercase tracking-wider">Local Fast</div>
+                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">24H <span className="text-xs font-sans font-semibold text-slate-400">{lang === 'en' ? 'Dispatch' : lang === 'ja' ? '発送' : '出貨'}</span></div>
+                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
                       {lang === 'en' ? 'Taiwan warehouse rapid dispatch' : lang === 'ja' ? '台湾国内倉庫より24Hスピード発送' : '台灣現貨・7-11/全家快速發貨'}
                     </p>
                   </div>
@@ -1756,81 +1805,89 @@ export default function App() {
               <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-20 pointer-events-none hidden lg:block bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-500 via-cyan-500/20 to-transparent"></div>
             </section>
 
-            {/* App Services Matrix ("金剛區" - 4 Major Features Row) */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700/80 shadow-2xs">
-              <div className="grid grid-cols-4 gap-1.5 sm:gap-4">
-                {/* 1. AI Bot Chat (AI 機器人聊天) */}
+            {/* App Services Matrix ("金剛區" - Stacked on Mobile, Sleek Horizontal Tool Strip on Desktop) */}
+            <div className="bg-white dark:bg-slate-800 rounded-2xl p-2.5 sm:p-3 lg:p-3.5 border border-slate-200 dark:border-slate-700/80 shadow-2xs">
+              <div className="grid grid-cols-4 gap-1.5 sm:gap-3 lg:gap-4">
+                {/* 1. AI Bot Chat */}
                 <button
                   id="quick-action-ai-bot"
                   onClick={() => setIsCustomerSupportOpen(true)}
-                  className="flex flex-col items-center justify-center p-1.5 sm:p-3 rounded-xl hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40 transition-all cursor-pointer group active:scale-95 text-center"
+                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40 border border-transparent hover:border-indigo-200/60 dark:hover:border-indigo-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3"
                 >
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-sky-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/25 group-hover:scale-105 transition-transform relative">
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-sky-500 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20 group-hover:scale-105 transition-transform relative shrink-0">
                     <Bot className="w-5 h-5 text-sky-200" />
-                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-800 animate-pulse" />
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-800" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 whitespace-nowrap">
-                    {lang === 'en' ? 'AI Support' : lang === 'ja' ? 'AIサポート' : 'AI 機器人'}
-                  </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
-                    {lang === 'en' ? 'Smart Support' : lang === 'ja' ? 'スマート診断' : '智能客服/排查'}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 whitespace-nowrap">
+                      {lang === 'en' ? 'AI Support' : lang === 'ja' ? 'AIサポート' : 'AI 機器人'}
+                    </span>
+                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
+                      {lang === 'en' ? 'Smart Support' : lang === 'ja' ? 'スマート診断' : '智能客服與技術排查'}
+                    </span>
+                  </div>
                 </button>
 
                 {/* 2. Maker Lab */}
                 <button
                   id="quick-action-filament-lab"
                   onClick={() => setIsFilamentLabOpen(true)}
-                  className="flex flex-col items-center justify-center p-1.5 sm:p-3 rounded-xl hover:bg-cyan-50/60 transition-all cursor-pointer group active:scale-95 text-center"
+                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-cyan-50/70 dark:hover:bg-cyan-950/40 border border-transparent hover:border-cyan-200/60 dark:hover:border-cyan-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3"
                 >
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center text-white shadow-md shadow-cyan-500/20 group-hover:scale-105 transition-transform">
-                    <Wrench className="w-5 h-5 text-cyan-200" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center text-white shadow-sm shadow-cyan-500/20 group-hover:scale-105 transition-transform shrink-0">
+                    <Wrench className="w-5 h-5 text-cyan-100" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-cyan-600 whitespace-nowrap">
-                    {lang === 'en' ? 'Maker Lab' : lang === 'ja' ? '計算ツール' : '創客工具'}
-                  </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
-                    {lang === 'en' ? 'Cost & Volume' : lang === 'ja' ? '見積・残量' : '報價/餘量'}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 whitespace-nowrap">
+                      {lang === 'en' ? 'Maker Lab' : lang === 'ja' ? '計算ツール' : '創客工具'}
+                    </span>
+                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
+                      {lang === 'en' ? 'Cost & Volume' : lang === 'ja' ? '見積・残量' : '成本試算 / 線材餘量'}
+                    </span>
+                  </div>
                 </button>
 
                 {/* 3. Spool Recycling */}
                 <button
                   id="quick-action-recycle"
                   onClick={() => setIsRecycleOpen(true)}
-                  className="flex flex-col items-center justify-center p-1.5 sm:p-3 rounded-xl hover:bg-emerald-50/60 transition-all cursor-pointer group active:scale-95 text-center"
+                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 border border-transparent hover:border-emerald-200/60 dark:hover:border-emerald-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3"
                 >
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-                    <Recycle className="w-5 h-5 text-emerald-200" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-500/20 group-hover:scale-105 transition-transform shrink-0">
+                    <Recycle className="w-5 h-5 text-emerald-100" />
                   </div>
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-emerald-600 whitespace-nowrap">
-                    {lang === 'en' ? 'Eco Spool' : lang === 'ja' ? '空盤還元' : '空盤換幣'}
-                  </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
-                    {lang === 'en' ? 'Cash Rewards' : lang === 'ja' ? 'ポイント還元' : '折抵現金'}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 whitespace-nowrap">
+                      {lang === 'en' ? 'Eco Spool' : lang === 'ja' ? '空盤還元' : '空盤換幣'}
+                    </span>
+                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
+                      {lang === 'en' ? 'Cash Rewards' : lang === 'ja' ? 'ポイント還元' : '空盤回收折抵現金'}
+                    </span>
+                  </div>
                 </button>
 
                 {/* 4. Product Compare */}
                 <button
                   id="quick-action-compare"
                   onClick={() => setIsCompareModalOpen(true)}
-                  className="flex flex-col items-center justify-center p-1.5 sm:p-3 rounded-xl hover:bg-purple-50/60 transition-all cursor-pointer group active:scale-95 text-center relative"
+                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-purple-50/70 dark:hover:bg-purple-950/40 border border-transparent hover:border-purple-200/60 dark:hover:border-purple-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3 relative"
                 >
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-md shadow-purple-500/20 group-hover:scale-105 transition-transform">
-                    <Scale className="w-5 h-5 text-purple-200" />
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-purple-500/20 group-hover:scale-105 transition-transform shrink-0">
+                    <Scale className="w-5 h-5 text-purple-100" />
                   </div>
                   {comparisonIds.length > 0 && (
-                    <span className="absolute top-1 right-2 bg-rose-500 text-white text-[9px] font-extrabold h-4 min-w-4 px-1 rounded-full flex items-center justify-center shadow-xs">
+                    <span className="absolute top-1.5 right-2 bg-rose-500 text-white text-[9px] font-extrabold h-4 min-w-4 px-1 rounded-full flex items-center justify-center shadow-xs tabular-nums">
                       {comparisonIds.length}
                     </span>
                   )}
-                  <span className="mt-1.5 text-[11px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-purple-600 whitespace-nowrap">
-                    {lang === 'en' ? 'Compare' : lang === 'ja' ? 'スペック比較' : '規格對比'}
-                  </span>
-                  <span className="text-[9px] text-slate-400 hidden sm:block whitespace-nowrap">
-                    {lang === 'en' ? 'Side-by-side' : lang === 'ja' ? 'スペック横断' : '多款橫向PK'}
-                  </span>
+                  <div className="min-w-0">
+                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 whitespace-nowrap">
+                      {lang === 'en' ? 'Compare' : lang === 'ja' ? 'スペック比較' : '規格對比'}
+                    </span>
+                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
+                      {lang === 'en' ? 'Side-by-side' : lang === 'ja' ? 'スペック横断' : '多款耗材橫向 PK'}
+                    </span>
+                  </div>
                 </button>
               </div>
             </div>
@@ -1860,58 +1917,58 @@ export default function App() {
               </div>
             </div>
 
-            <div className="hidden sm:grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <div className="hidden sm:grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                   <Truck className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
                     {lang === 'en' ? 'Real-Time Logistics' : lang === 'ja' ? 'リアルタイム配送追跡' : '即時物流追蹤'}
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                     {lang === 'en' ? 'CVS 24H Rapid Dispatch' : lang === 'ja' ? '24時間以内スピード発送' : '超商交貨便 24H 快速出貨'}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
                   <ShieldCheck className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
                     {lang === 'en' ? 'NewebPay Secured Gateway' : lang === 'ja' ? '安全決済ゲートウェイ' : '藍新安全金流'}
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {lang === 'en' ? 'Cards / Apple Pay / ATM' : lang === 'ja' ? '各種カード / Apple Pay / ATM' : '信用卡/Apple Pay (LINE Pay暫未開放)'}
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {lang === 'en' ? 'Cards / Apple Pay / ATM' : lang === 'ja' ? '各種カード / Apple Pay / ATM' : '信用卡 / Apple Pay / ATM'}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                   <Flame className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
                     {lang === 'en' ? 'Bambu AMS 100% Ready' : lang === 'ja' ? 'Bambu AMS 完全対応' : 'Bambu AMS 完美相容'}
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                     {lang === 'en' ? 'Anti-binding spool geometry' : lang === 'ja' ? '噛み込み防止エコ設計' : '防卡線環保卷軸設計'}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center shrink-0">
+              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
                   <RotateCcw className="w-5 h-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
                     {lang === 'en' ? 'Moisture-Free Warranty' : lang === 'ja' ? '防湿品質保証' : '原廠防潮保固'}
                   </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                     {lang === 'en' ? '100% Replacement if unsealed' : lang === 'ja' ? '未開封不良は100%無償交換' : '未拆封破損 100% 免費換新'}
                   </div>
                 </div>
@@ -1919,7 +1976,7 @@ export default function App() {
             </div>
 
             {/* Search Autocomplete & Filter Chips Bar */}
-            <div className="bg-white dark:bg-slate-800 p-3.5 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3">
+            <div className="bg-white dark:bg-slate-800 p-3.5 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3.5">
               {/* Top Row: Search Autocomplete with Material and Brand suggestions + Sort */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div className="flex-1 max-w-2xl">
@@ -1937,7 +1994,7 @@ export default function App() {
                 {/* Sort selector & Count */}
                 <div className="flex items-center justify-between md:justify-end gap-3 text-xs shrink-0">
                   <span className="text-slate-500 dark:text-slate-400 text-[11px] sm:text-xs">
-                    {lang === 'en' ? 'Filtered: ' : lang === 'ja' ? '絞り込み: ' : '篩選：'}<strong className="text-slate-900 dark:text-slate-100 font-mono">{filteredAndSortedProducts.length}</strong> {lang === 'en' ? 'items' : lang === 'ja' ? '件' : '款'}
+                    {lang === 'en' ? 'Filtered: ' : lang === 'ja' ? '絞り込み: ' : '篩選：'}<strong className="text-slate-900 dark:text-slate-100 font-mono tabular-nums">{filteredAndSortedProducts.length}</strong> {lang === 'en' ? 'items' : lang === 'ja' ? '件' : '款'}
                   </span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-slate-500 dark:text-slate-400 font-medium hidden xs:inline">
@@ -1946,7 +2003,7 @@ export default function App() {
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as any)}
-                      className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500/20"
                     >
                       <option value="popular">{lang === 'en' ? 'Most Popular (Default)' : lang === 'ja' ? '人気順 (デフォルト)' : '熱銷排行 (預設)'}</option>
                       <option value="price_low">{lang === 'en' ? 'Price: Low to High' : lang === 'ja' ? '価格: 安い順' : '價格：由低至高'}</option>
@@ -1958,8 +2015,8 @@ export default function App() {
               </div>
 
               {/* Bottom Row: Category Material Filter Chips + Reset Filter */}
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 flex-wrap sm:flex-nowrap">
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none w-full sm:w-auto">
+              <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-700/80 flex-wrap lg:flex-nowrap">
+                <div className="flex items-center gap-1.5 overflow-x-auto lg:flex-wrap lg:overflow-visible pb-1 lg:pb-0 scrollbar-none w-full lg:w-auto">
                   <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1 select-none">
                     {lang === 'en' ? 'Material:' : lang === 'ja' ? '材質:' : '材質：'}
                   </span>
@@ -1971,13 +2028,13 @@ export default function App() {
                         key={mat}
                         id={`filter-material-${mat}`}
                         onClick={() => setSelectedMaterial(mat)}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.92 }}
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.94 }}
                         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
                         className={`relative px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1.5 ${
                           isSelected
-                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:bg-slate-700 hover:text-slate-900 dark:text-slate-100'
+                            ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
+                            : 'bg-slate-100 dark:bg-slate-900/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white border border-transparent dark:border-slate-700/60'
                         }`}
                       >
                         {isSelected && (
@@ -1989,11 +2046,11 @@ export default function App() {
                         )}
                         <span className="relative z-10 flex items-center gap-1.5">
                           {isSelected && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-300" />
                           )}
                           <span>{mat === 'All' ? t.allCategories : translateMaterial(mat, lang)}</span>
                           <span
-                            className={`text-[10px] font-mono px-1 rounded-md transition-colors ${
+                            className={`text-[10px] font-mono tabular-nums px-1 rounded-md transition-colors ${
                               isSelected ? 'bg-white/25 text-white' : 'bg-slate-200 dark:bg-slate-700/80 text-slate-500 dark:text-slate-400'
                             }`}
                           >
@@ -2016,7 +2073,7 @@ export default function App() {
                       setSearchQuery('');
                       setSelectedMaterial('All');
                     }}
-                    className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200 transition-colors cursor-pointer shrink-0 ml-auto"
+                    className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-800/60 transition-colors cursor-pointer shrink-0 ml-auto whitespace-nowrap"
                   >
                     {lang === 'en' ? 'Reset Filters ✕' : lang === 'ja' ? '条件をクリア ✕' : '重設所有篩選 ✕'}
                   </motion.button>
@@ -2059,7 +2116,7 @@ export default function App() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.22, ease: 'easeInOut' }}
-                    className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-5"
+                    className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 lg:gap-6"
                   >
                     {filteredAndSortedProducts.map((product, idx) => (
                       <React.Fragment key={product.id}>
@@ -2177,6 +2234,7 @@ export default function App() {
           </>}
         />
         </Routes>
+        </Suspense>
       </main>
 
       {/* Floating Desktop Skyscraper (Hidden when ads disabled) */}
@@ -2275,6 +2333,7 @@ export default function App() {
         />
       )}
 
+      <Suspense fallback={null}>
       {isAIAdvisorOpen && (
         <AIAdvisorModal
           isOpen={isAIAdvisorOpen}
@@ -2288,6 +2347,7 @@ export default function App() {
           }}
         />
       )}
+      </Suspense>
 
       {isTrackingOpen && (
         <TrackingModal
@@ -2374,7 +2434,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Maker Lab (Calculator & Slicer Profiles) Modal */}
+      {/* Maker Lab, Comparison, History & Recycle Lazy Modals */}
+      <Suspense fallback={null}>
       {isFilamentLabOpen && (
         <FilamentLabModal
           isOpen={isFilamentLabOpen}
@@ -2452,6 +2513,7 @@ export default function App() {
           lang={lang}
         />
       )}
+      </Suspense>
 
       {/* Free Draggable AI Floating Chat & Advisor Bubble with Recycle / Hide Drop Zone */}
       <DraggableChatWidget

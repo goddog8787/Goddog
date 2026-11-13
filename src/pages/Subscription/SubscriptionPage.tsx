@@ -555,7 +555,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
   }
 
   return (
-    <div className="space-y-5 max-w-4xl mx-auto pb-16">
+    <div className="space-y-6 max-w-6xl mx-auto pb-16 px-1 sm:px-2">
       <SEO 
         title="VIP 會員方案與訂閱管理" 
         description="開通或管理神狗勾 3D 創客 VIP 會員方案，享全館 95 折、雙倍點數與優先出貨。" 

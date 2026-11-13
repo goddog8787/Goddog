@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, 
   Truck, 
@@ -86,6 +86,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   });
   const [shippingAddress, setShippingAddress] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const formErrorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (formError && formErrorRef.current) {
+      formErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [formError]);
 
   useEffect(() => {
     setCustomerName(member?.name && isValidCustomerName(member.name) ? member.name : '');
@@ -97,9 +104,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
   const [showManualCvsInput, setShowManualCvsInput] = useState(false);
 
-  // Invoice
+  // Invoice (with per-user preference persistence)
   const [invoiceType, setInvoiceType] = useState<'cloud' | 'mobile_barcode' | 'tax_id'>('cloud');
   const [invoiceCarrierValue, setInvoiceCarrierValue] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const uid = member?.id && !member.id.startsWith('guest') ? member.id : (auth.currentUser?.uid || 'guest');
+      const savedPref = localStorage.getItem(`printcore_invoice_pref_${uid}`);
+      if (savedPref) {
+        const parsed = JSON.parse(savedPref);
+        if (parsed?.invoiceType === 'cloud' || parsed?.invoiceType === 'mobile_barcode' || parsed?.invoiceType === 'tax_id') {
+          setInvoiceType(parsed.invoiceType);
+          setInvoiceCarrierValue(typeof parsed.invoiceCarrierValue === 'string' ? parsed.invoiceCarrierValue : '');
+        }
+      }
+    } catch {}
+  }, [isOpen, member?.id]);
 
   // Payment gateway (default to credit_card)
   const [paymentGateway, setPaymentGateway] = useState<PaymentGateway>('credit_card');
@@ -212,7 +234,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const vipDiscountAmount = isVip ? Math.floor(rawSubtotal * 0.05) : 0;
   const subtotal = rawSubtotal - vipDiscountAmount;
 
-  // Auto-apply initialCouponCode forwarded from CartDrawer when CheckoutModal opens
+  // Auto-apply or reset initialCouponCode forwarded from CartDrawer when CheckoutModal opens
   useEffect(() => {
     if (!isOpen) {
       setFormError(null);
@@ -230,9 +252,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           label: res.label,
         });
         setCouponError('');
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(res.errorMessage || '');
       }
+    } else {
+      setCouponCode('');
+      setAppliedCoupon(null);
+      setCouponError('');
     }
   }, [isOpen, initialCouponCode]);
+
+  // Re-validate applied coupon when subtotal or VIP membership changes
+  useEffect(() => {
+    if (!isOpen || !appliedCoupon) return;
+    const res = validateCoupon(appliedCoupon.code, subtotal, isVip, member?.coupons || []);
+    if (!res.isValid || !res.coupon) {
+      setAppliedCoupon(null);
+      setCouponError(res.errorMessage || `商品金額變動，已自動取消「${appliedCoupon.code}」`);
+    } else if (
+      res.discountAmount !== appliedCoupon.discountAmount ||
+      res.freeShipping !== appliedCoupon.freeShipping
+    ) {
+      setAppliedCoupon({
+        code: appliedCoupon.code,
+        discountAmount: res.discountAmount,
+        freeShipping: res.freeShipping,
+        label: res.label,
+      });
+    }
+  }, [isOpen, subtotal, isVip]);
 
   // Free shipping thresholds matching screenshot style:
   // Home delivery threshold: NT$ 1,500 (Fee: NT$ 100)
@@ -412,11 +461,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
+  const isValidTaiwanTaxId = (taxId: string) => {
+    if (!/^\d{8}$/.test(taxId)) return false;
+    const weights = [1, 2, 1, 2, 1, 2, 4, 1];
+    let sum = 0;
+    for (let i = 0; i < 8; i++) {
+      const prod = Number(taxId[i]) * weights[i];
+      sum += Math.floor(prod / 10) + (prod % 10);
+    }
+    return sum % 5 === 0 || (taxId[6] === '7' && (sum + 1) % 5 === 0);
+  };
+
   const handleStartPayment = async () => {
     setFormError(null);
 
     const missingFields: string[] = [];
-    if (!shippingAddress) missingFields.push('物流取件門市或配送地址');
+    if (!shippingAddress.trim()) missingFields.push('物流取件門市或配送地址');
     if (!customerName.trim()) missingFields.push('收件人姓名');
     if (!customerPhone.trim()) missingFields.push('聯絡電話');
     if (!customerEmail.trim()) missingFields.push('電子郵件信箱');
@@ -425,6 +485,38 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       setFormError(`請填寫以下必填資料：${missingFields.join('、')}`);
       return;
     }
+
+    const phoneDigits = customerPhone.replace(/\D/g, '');
+    if (phoneDigits.length < 8) {
+      setFormError('聯絡電話格式有誤，請輸入至少 8 碼有效電話號碼（例：0912345678）。');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())) {
+      setFormError('電子郵件信箱格式不正確，請確認後再試。');
+      return;
+    }
+
+    const normalizedCarrier = invoiceCarrierValue.trim().toUpperCase();
+    if (invoiceType === 'mobile_barcode') {
+      if (!/^\/[0-9A-Z.+\-]{7}$/.test(normalizedCarrier)) {
+        setFormError('手機條碼載具格式不正確，須為「/」開頭共 8 碼英數或符號（例：/AB8892.）。');
+        return;
+      }
+    } else if (invoiceType === 'tax_id') {
+      if (!isValidTaiwanTaxId(normalizedCarrier)) {
+        setFormError('公司統一編號格式錯誤，請輸入正確的 8 碼營利事業統一編號。');
+        return;
+      }
+    }
+
+    try {
+      const uid = member?.id && !member.id.startsWith('guest') ? member.id : (auth.currentUser?.uid || 'guest');
+      localStorage.setItem(
+        `printcore_invoice_pref_${uid}`,
+        JSON.stringify({ invoiceType, invoiceCarrierValue: invoiceType === 'cloud' ? '' : normalizedCarrier })
+      );
+    } catch {}
 
     await triggerNewebPayCheckout(paymentGateway);
   };
@@ -1204,7 +1296,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 <div className="mt-6 space-y-3">
                   {formError && (
-                    <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-start gap-2">
+                    <div
+                      ref={formErrorRef}
+                      className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-start gap-2"
+                    >
                       <span className="shrink-0 mt-0.5">⚠️</span>
                       <span className="leading-relaxed break-words flex-1">{formError}</span>
                     </div>

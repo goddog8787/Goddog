@@ -4,7 +4,6 @@ import {
   Cpu, 
   Sparkles, 
   CheckCircle2, 
-  MapPin, 
   Mail, 
   Phone, 
   Gauge,
@@ -40,8 +39,6 @@ const CONTENT: Record<LanguageCode, {
   recycleHeading: string;
   recycleDesc: string;
   workshopHeading: string;
-  addressLabel: string;
-  addressVal: string;
   emailLabel: string;
   emailVal: string;
   phoneLabel: string;
@@ -53,7 +50,7 @@ const CONTENT: Record<LanguageCode, {
 }> = {
   'zh-TW': {
     seoTitle: '關於我們 - 神狗勾 3D 耗材商城與創客實驗室',
-    seoDesc: '深入認識神狗勾 3D 創客團隊：專注於高速 3D 列印線材研發、±0.02mm 雙軸光學測徑品管、12 台主流高速印表機實測驗證與台灣在地實體創客工作室。',
+    seoDesc: '深入認識神狗勾 3D 創客團隊：專注於高速 3D 列印線材研發、±0.02mm 雙軸光學測徑品管與 12 台主流高速印表機實測驗證。',
     badge: '台灣在地專業 3D 列印材料研發與品保品牌',
     title: '關於神狗勾 3D 創客實驗室',
     subtitle: '我們是一群熱愛 3D 列印、開源硬體與高分子材料工程的台灣創客。因為自己深知「印到一半卡料、受潮牽絲、公差不良」的痛苦，所以創立了神狗勾商城，為創客帶來真正值得信賴的高速線材。',
@@ -82,9 +79,7 @@ const CONTENT: Record<LanguageCode, {
     },
     recycleHeading: '永續創客計畫：空盤回收換積分',
     recycleDesc: '熱愛造物的同時，我們也深知塑膠廢棄物對環境的負擔。神狗勾開創了台灣首見的「空盤回收循環機制」：凡購買本商城線材使用完畢之空膠盤，均可於下次購物時累積換購創客紅利積分，或是郵寄回實驗室進行回收再造。我們致力於推動可拆卸式無軸補充包（Refill Spool），從源頭減少包裝浪費。',
-    workshopHeading: '實體創客工作室與營業資訊',
-    addressLabel: '工作室地址：',
-    addressVal: '嘉義縣民雄鄉福樂村埤角1-50號（歡迎預約自取參觀）',
+    workshopHeading: '品牌與線上客服資訊',
     emailLabel: '官方客服信箱：',
     emailVal: 'babe0615@gmail.com',
     phoneLabel: '技術諮詢電話：',
@@ -96,7 +91,7 @@ const CONTENT: Record<LanguageCode, {
   },
   'en': {
     seoTitle: 'About Us - GodDog 3D Filament Store & Maker Lab',
-    seoDesc: 'Learn about the GodDog 3D Maker Team: Dedicated to high-speed 3D printing filament R&D, ±0.02mm dual-axis laser optical caliper QA, 12 flagship high-speed test rigs, and local physical maker laboratory.',
+    seoDesc: 'Learn about the GodDog 3D Maker Team: Dedicated to high-speed 3D printing filament R&D, ±0.02mm dual-axis laser optical caliper QA, and 12 flagship high-speed test rigs.',
     badge: 'Taiwan Professional 3D Printing Materials R&D & Quality Assurance',
     title: 'About GodDog 3D Maker Laboratory',
     subtitle: 'We are a team of Taiwanese makers passionate about 3D printing, open hardware, and polymer materials engineering. Because we know the pain of mid-print clogs, moisture stringing, and inconsistent tolerances, we founded GodDog Store to bring makers truly dependable high-speed filaments.',
@@ -125,9 +120,7 @@ const CONTENT: Record<LanguageCode, {
     },
     recycleHeading: 'Sustainable Maker Initiative: Spool Recycling Program',
     recycleDesc: 'As passionate makers, we take plastic packaging waste seriously. GodDog pioneered Taiwan\'s first spool recycling circular loop: empty spools purchased from us can be redeemed for maker reward points or mailed back to our lab for repurposing. We also provide spool-less refill packs to eliminate waste at the source.',
-    workshopHeading: 'Physical Workshop & Business Information',
-    addressLabel: 'Studio Address: ',
-    addressVal: 'No. 1-50, Pijiao, Fule Village, Minxiong Township, Chiayi County 621, Taiwan',
+    workshopHeading: 'Brand & Customer Service Information',
     emailLabel: 'Official Customer Service: ',
     emailVal: 'babe0615@gmail.com',
     phoneLabel: 'Technical Support Hotline: ',
@@ -139,7 +132,7 @@ const CONTENT: Record<LanguageCode, {
   },
   'ja': {
     seoTitle: '会社概要・ラボ案内 - 神狗勾 (GodDog) 3Dフィラメントストア',
-    seoDesc: '神狗勾 3D メイカーチーム：超高速 3D プリンター用フィラメント研究開発、±0.02mm 2軸レーザー測定品質管理、12台の実機検証フリート、台湾自社工房のご紹介。',
+    seoDesc: '神狗勾 3D メイカーチーム：超高速 3D プリンター用フィラメント研究開発、±0.02mm 2軸レーザー測定品質管理、12台の実機検証フリートのご紹介。',
     badge: '台湾発 プロ仕様 3D プリンティング材料開発・品質保証ブランド',
     title: '神狗勾 (GodDog) 3D メイカーラボについて',
     subtitle: '私たちは 3D プリンティング、オープンソースハードウェア、高分子高機能材料工学を深く愛する台湾のメイカー集団です。「印刷途中のノズル詰まり・吸湿糸引き・線径公差ムラ」の苦痛を誰よりも知っているからこそ、メイカーが心から信頼できる超高速フィラメントストアを設立しました。',
@@ -168,9 +161,7 @@ const CONTENT: Record<LanguageCode, {
     },
     recycleHeading: 'サステナブル活動：空スプール回収ポイント還元',
     recycleDesc: 'ものづくりを愛する者として、プラスチック廃棄物の環境負荷にも真摯に向き合っています。神狗勾では、使用済み空スプールをご返送いただくことで次回のお買い物で使えるメイカーポイントを進呈するリサイクルプログラムを実施。スプールレスなリフィル（Refill）補充パックの普及にも力を注いでいます。',
-    workshopHeading: '実店舗工房・事業者情報',
-    addressLabel: '工房所在地：',
-    addressVal: '台湾 嘉義県民雄郷福楽村埤角1-50号（事前予約による店頭受取・見学可能）',
+    workshopHeading: 'ブランド・サポート情報',
     emailLabel: '公式サポート窓口：',
     emailVal: 'babe0615@gmail.com',
     phoneLabel: '技術相談ダイヤル：',
@@ -187,7 +178,7 @@ export const AboutUs: React.FC<AboutUsProps> = ({ lang: propLang }) => {
   const c = CONTENT[activeLang] || CONTENT['zh-TW'];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 sm:py-12 mt-2">
+    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12 mt-2">
       <SEO 
         title={c.seoTitle} 
         description={c.seoDesc} 
@@ -296,10 +287,6 @@ export const AboutUs: React.FC<AboutUsProps> = ({ lang: propLang }) => {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs sm:text-sm text-slate-300">
           <div className="space-y-2.5">
-            <div className="flex items-start gap-2">
-              <MapPin className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-              <span>{c.addressLabel}{c.addressVal}</span>
-            </div>
             <div className="flex items-center gap-2">
               <Mail className="w-4 h-4 text-cyan-400 shrink-0" />
               <span>{c.emailLabel}{c.emailVal}</span>

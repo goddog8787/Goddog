@@ -158,7 +158,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const saved = localStorage.getItem('printcore_logistics_settings');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed.senderAddress === 'string' && (parsed.senderAddress.includes('1-50') || parsed.senderAddress.includes('福樂村'))) {
+          parsed.senderAddress = '台灣線上物流集貨中心';
+        }
+        return parsed;
       } catch (e) {
         console.error(e);
       }
@@ -182,7 +186,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       newebpayLogisticsTestMode: false,
       senderName: '神狗勾 3D 台灣官方旗艦店',
       senderPhone: '0911-331-772',
-      senderAddress: '嘉義縣民雄鄉福樂村埤角1-50號',
+      senderAddress: '台灣線上物流集貨中心',
     };
   });
 

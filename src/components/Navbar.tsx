@@ -181,11 +181,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems: NavItem[] = [
     { id: 'store', label: t.navCatalog, icon: Layers },
-    { id: 'blog', label: t.bottomBlog || '創客專欄', icon: BookOpen, badge: 'HOT' },
+    { id: 'blog', label: t.bottomBlog || '創客專欄', icon: BookOpen },
     { id: 'guide', label: t.bottomGuide || '材質指南', icon: Compass },
     { id: 'faq', label: t.navFaq || '常見問題', icon: HelpCircle },
     { id: 'filament-lab', label: t.makerTools || '創客工具', icon: Wrench },
-    { id: 'ai-advisor', label: t.navAiAdvisor, icon: Sparkles, badge: 'AI' },
     { id: 'about', label: t.navAbout || '關於我們', icon: Info },
   ];
 
@@ -225,12 +224,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                         : announcement.text}
                     </span>
                     {announcement.linkUrl && (
-                      <a
-                        href={announcement.linkUrl}
-                        className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
-                      >
-                        {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
-                      </a>
+                      announcement.linkUrl.startsWith('/') ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(announcement.linkUrl!)}
+                          className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1 cursor-pointer"
+                        >
+                          {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
+                        </button>
+                      ) : (
+                        <a
+                          href={announcement.linkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
+                        >
+                          {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
+                        </a>
+                      )
                     )}
                   </div>
                   <span className="text-slate-600 font-black px-2">•</span>
@@ -279,12 +290,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                         : announcement.text}
                     </span>
                     {announcement.linkUrl && (
-                      <a
-                        href={announcement.linkUrl}
-                        className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
-                      >
-                        {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
-                      </a>
+                      announcement.linkUrl.startsWith('/') ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(announcement.linkUrl!)}
+                          className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1 cursor-pointer"
+                        >
+                          {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
+                        </button>
+                      ) : (
+                        <a
+                          href={announcement.linkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sky-300 hover:text-sky-200 underline font-bold text-[10px] ml-1"
+                        >
+                          {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '前往查看'}
+                        </a>
+                      )
                     )}
                   </div>
                   <span className="text-slate-600 font-black px-2">•</span>
@@ -351,12 +374,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-3">
           {/* Brand Logo */}
           <div 
-            className="flex items-center gap-1.5 sm:gap-2.5 cursor-pointer min-w-0 flex-1 lg:flex-initial" 
+            className="flex items-center gap-2 sm:gap-2.5 cursor-pointer min-w-0 flex-1 lg:flex-initial shrink-0" 
             onClick={() => handleNavClick('store')}
             title={lang === 'en' ? 'Back to Home' : lang === 'ja' ? 'ホームに戻る' : '返回首頁'}
             data-no-auto-translate="true"
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-md shadow-sky-500/20 shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-900 flex items-center justify-center">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden shadow-sm shadow-sky-500/20 shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-900 flex items-center justify-center">
               <img 
                 src="/wolf-logo.jpg" 
                 alt={t.brandName || "神狗勾耗材商城 Logo"} 
@@ -370,25 +393,19 @@ export const Navbar: React.FC<NavbarProps> = ({
               />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-1 sm:gap-1.5 whitespace-nowrap">
-                <span className="font-extrabold text-[15px] sm:text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap truncate sm:hidden">
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="font-extrabold text-[15px] sm:text-base xl:text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap truncate sm:hidden">
                   {lang === 'en' ? 'GodDog 3D' : lang === 'ja' ? '神狗勾 3D' : '神狗勾耗材'}
                 </span>
-                <span className="hidden sm:inline font-extrabold text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
+                <span className="hidden sm:inline font-extrabold text-base xl:text-lg text-slate-900 dark:text-white tracking-tight whitespace-nowrap">
                   {lang === 'en' ? 'GodDog 3D' : lang === 'ja' ? '神狗勾 3D' : (t.brandName || '神狗勾耗材')}
                 </span>
-                <span className="hidden md:inline-block text-[10px] font-mono bg-sky-100 dark:bg-sky-900/50 text-sky-800 dark:text-sky-300 px-1.5 py-0.5 rounded font-bold whitespace-nowrap shrink-0">
-                  {lang === 'en' ? 'Official' : lang === 'ja' ? '公式' : (t.flagshipStore || '旗艦館')}
-                </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden lg:block font-medium whitespace-nowrap">
-                {t.brandSub || '高速 3D 列印線材專營'}
-              </p>
             </div>
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center space-x-1 shrink-0">
+          <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1 shrink-0">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
@@ -408,31 +425,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                       handleNavClick(item.id);
                     }
                   }}
-                  className={`relative flex items-center space-x-1.5 px-2.5 xl:px-3 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`relative flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
-                      ? 'bg-slate-900 dark:bg-sky-500 text-white shadow-sm'
+                      ? 'bg-slate-900 dark:bg-sky-500 text-white shadow-xs'
                       : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-400 dark:text-white' : 'text-slate-500 dark:text-slate-400'}`} />
+                  <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-sky-400 dark:text-white' : 'text-slate-400 dark:text-slate-400'}`} />
                   <span className="whitespace-nowrap">{item.label}</span>
-                  {item.badge && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold whitespace-nowrap shrink-0 ${
-                      item.badge === 'AI' 
-                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white' 
-                        : 'bg-rose-500 text-white'
-                    }`}>
-                      {item.badge}
-                    </span>
-                  )}
                 </button>
               );
             })}
           </nav>
 
-          {/* Desktop Header Search Autocomplete */}
+          {/* Desktop Header Search Autocomplete (Visible from lg 1024px+ so desktop users always have header search) */}
           {setSearchQuery && (
-            <div className="hidden xl:block flex-1 max-w-xs 2xl:max-w-sm mx-2 shrink">
+            <div className="hidden lg:block flex-1 max-w-[210px] xl:max-w-xs 2xl:max-w-sm mx-1 xl:mx-2 shrink min-w-[160px]">
               <SearchAutocomplete
                 id="header-nav-search"
                 searchQuery={searchQuery || ''}
@@ -450,26 +458,26 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          {/* Right Action Area - Fully Proportioned for Mobile & Desktop */}
-          <div className="flex items-center gap-1 sm:gap-1.5 md:gap-2 shrink-0">
-            {/* Language & Currency Switcher (Compact on mobile, full on desktop) */}
+          {/* Right Action Area - Clean & Proportional for Mobile & Desktop */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            {/* Language & Currency Switcher */}
             <div className="relative shrink-0">
               <button
                 id="btn-lang-dropdown"
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-                className="flex items-center gap-0.5 sm:gap-1 text-[11px] sm:text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 px-1.5 sm:px-2 py-1.5 rounded-xl transition-colors cursor-pointer whitespace-nowrap border border-slate-200/60"
+                className="flex items-center gap-1 h-8.5 sm:h-9 text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-2 rounded-xl transition-colors cursor-pointer whitespace-nowrap border border-slate-200/70 dark:border-slate-700"
                 title={t.langCurrency || "切換語言與幣別"}
               >
-                <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span className="hidden sm:inline whitespace-nowrap">{lang === 'zh-TW' ? '繁中' : lang === 'en' ? 'EN' : '日'}</span>
-                <span className="hidden sm:inline text-slate-400 font-normal">/</span>
-                <span className="text-slate-900 font-mono font-bold text-[11px] sm:text-xs">{currency}</span>
+                <Globe className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
+                <span className="hidden xl:inline whitespace-nowrap">{lang === 'zh-TW' ? '繁中' : lang === 'en' ? 'EN' : '日'}</span>
+                <span className="hidden xl:inline text-slate-400 dark:text-slate-500 font-normal">/</span>
+                <span className="text-slate-900 dark:text-white font-mono font-bold text-[11px] sm:text-xs">{currency}</span>
                 <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-slate-400 shrink-0" />
               </button>
 
               {langDropdownOpen && (
                 <div 
-                  className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150"
+                  className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 duration-150"
                   onClick={() => setLangDropdownOpen(false)}
                 >
                   <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
@@ -480,8 +488,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setLang('zh-TW');
                       try { localStorage.setItem('printcore_lang', 'zh-TW'); } catch(e){}
                     }}
-                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-50 cursor-pointer ${
-                      lang === 'zh-TW' ? 'text-sky-600 font-bold bg-sky-50/50' : 'text-slate-700'
+                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
+                      lang === 'zh-TW' ? 'text-sky-600 dark:text-sky-400 font-bold bg-sky-50/50 dark:bg-sky-950/40' : 'text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <span>繁體中文 (台灣)</span>
@@ -492,8 +500,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setLang('en');
                       try { localStorage.setItem('printcore_lang', 'en'); } catch(e){}
                     }}
-                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-50 cursor-pointer ${
-                      lang === 'en' ? 'text-sky-600 font-bold bg-sky-50/50' : 'text-slate-700'
+                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
+                      lang === 'en' ? 'text-sky-600 dark:text-sky-400 font-bold bg-sky-50/50 dark:bg-sky-950/40' : 'text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <span>English (US)</span>
@@ -504,15 +512,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setLang('ja');
                       try { localStorage.setItem('printcore_lang', 'ja'); } catch(e){}
                     }}
-                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-50 cursor-pointer ${
-                      lang === 'ja' ? 'text-sky-600 font-bold bg-sky-50/50' : 'text-slate-700'
+                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${
+                      lang === 'ja' ? 'text-sky-600 dark:text-sky-400 font-bold bg-sky-50/50 dark:bg-sky-950/40' : 'text-slate-700 dark:text-slate-300'
                     }`}
                   >
                     <span>日本語 (JP)</span>
                     {lang === 'ja' && <span>✓</span>}
                   </button>
 
-                  <div className="border-t border-slate-100 my-1.5"></div>
+                  <div className="border-t border-slate-100 dark:border-slate-800 my-1.5"></div>
                   <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                     {t.currency || '幣別'} / Currency
                   </div>
@@ -526,8 +534,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                         }}
                         className={`text-center py-1 text-xs rounded font-mono font-semibold transition-colors cursor-pointer ${
                           currency === curr
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            ? 'bg-slate-900 dark:bg-sky-500 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                         }`}
                       >
                         {curr}
@@ -543,10 +551,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-nav-admin"
                 onClick={() => handleNavClick('admin')}
-                className={`hidden md:flex items-center space-x-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`hidden md:flex items-center gap-1 h-9 px-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   effectiveActiveTab === 'admin'
                     ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-indigo-700 hover:bg-indigo-50 border border-indigo-200/70'
+                    : 'text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-indigo-200/70 dark:border-indigo-800'
                 }`}
                 title={lang === 'en' ? 'Admin Portal' : lang === 'ja' ? '管理パネル' : '進入後台管理：訂單、庫存、廣告與營運報表'}
               >
@@ -560,20 +568,20 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-member-profile"
                 onClick={effectiveMemberOpen}
-                className="hidden md:flex items-center space-x-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                className="hidden md:flex items-center gap-1.5 h-9 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/80 px-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 title={lang === 'en' ? 'View Perks & Points' : lang === 'ja' ? '会員ランク・ポイント確認' : '查看會員等級與積分明細'}
               >
-                <Award className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="bg-amber-500 text-white text-[10px] px-1 py-0.2 rounded font-bold">
+                <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded font-bold leading-none">
                   {(member?.tier || "Silver")}
                 </span>
-                <span className="font-mono">{(member?.points || 0)}{t.navPointsSuffix || 'pt'}</span>
+                <span className="font-mono tabular-nums">{(member?.points || 0)}{t.navPointsSuffix || 'pt'}</span>
               </button>
             ) : (
               <button
                 id="btn-open-auth-modal"
                 onClick={onOpenAuth}
-                className="hidden md:flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0"
+                className="hidden md:flex items-center gap-1.5 h-9 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 px-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0"
                 title={t.loginWithGoogle || "登入會員 / Google 連結"}
               >
                 <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
@@ -586,32 +594,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* AI Advisor Button (Desktop Prominent) */}
-            {onOpenAIAdvisor && (
-              <button
-                id="btn-nav-ai-advisor"
-                onClick={onOpenAIAdvisor}
-                className="hidden lg:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-98"
-                title={t.aiAdvisorSubtitle || "開啟 AI 耗材顧問：依 3D 機型精準配對推薦"}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-                <span>{t.aiAdvisor || 'AI 顧問'}</span>
-              </button>
-            )}
-
-            {/* AI Technical Advisor / Chat Button (Desktop Prominent) */}
+            {/* AI Technical Advisor / Chat Button (Desktop Single Clean Action) */}
             {onOpenSupport && (
               <button
                 id="btn-nav-ai-chat"
                 onClick={onOpenSupport}
-                className="hidden lg:flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white text-xs font-bold shadow-sm shadow-indigo-500/20 transition-all cursor-pointer whitespace-nowrap shrink-0 active:scale-98"
+                className="hidden lg:flex items-center gap-1.5 h-9 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
                 title={t.supportTitle || "開啟 AI 智能客服與 3D 技術排查視窗"}
               >
-                <Bot className="w-4 h-4 text-sky-200 shrink-0 animate-pulse" />
-                <span>{t.aiSupport || 'AI 智能客服'}</span>
-                <span className="bg-sky-400 text-slate-950 text-[10px] px-1 py-0.2 rounded font-extrabold ml-0.5">
-                  LIVE
-                </span>
+                <Bot className="w-4 h-4 text-sky-200 shrink-0" />
+                <span>{t.aiSupport || 'AI 客服'}</span>
               </button>
             )}
 
@@ -620,23 +612,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-compare"
                 onClick={onOpenCompare}
-                className="relative hidden sm:flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 transition-colors cursor-pointer shrink-0"
+                className="relative hidden sm:flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer shrink-0"
                 title={t.specCompare || "耗材規格橫向對比"}
               >
                 <Scale className="w-4 h-4" />
                 {compareCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white">
+                  <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white dark:border-slate-900 tabular-nums">
                     {compareCount}
                   </span>
                 )}
               </button>
             )}
 
-            {/* Wishlist Launch Button */}
+            {/* Dark Mode Toggle Button */}
             {toggleDarkMode && (
               <button
                 onClick={toggleDarkMode}
-                className="relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer shrink-0"
+                className="relative flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer shrink-0"
                 title={lang === 'en' ? 'Toggle Dark Mode' : lang === 'ja' ? 'ダークモード切替' : '切換日夜間模式'}
               >
                 {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -647,12 +639,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-wishlist"
                 onClick={onOpenWishlist}
-                className="relative hidden xs:flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 transition-colors cursor-pointer shrink-0"
+                className="relative hidden xs:flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer shrink-0"
                 title={t.wishlist || "我的願望清單 / 收藏庫"}
               >
                 <Heart className={`w-4 h-4 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
                 {wishlistCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white">
+                  <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white dark:border-slate-900 tabular-nums">
                     {wishlistCount}
                   </span>
                 )}
@@ -664,23 +656,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-history"
                 onClick={onOpenHistory}
-                className="relative hidden md:flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/60 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer shrink-0"
+                className="relative hidden md:flex items-center justify-center w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/60 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer shrink-0"
                 title={t.navHistory || (lang === 'en' ? 'Recently Viewed' : '最近瀏覽記錄')}
               >
                 <Clock className="w-4 h-4" />
                 {historyCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-[9px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white">
+                  <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-[9px] font-bold h-4 min-w-4 px-1 rounded-full flex items-center justify-center border border-white dark:border-slate-900 tabular-nums">
                     {historyCount}
                   </span>
                 )}
               </button>
             )}
 
-            {/* Shopping Cart Button - Strictly locked width/height so adding items or badge updates never push adjacent icons */}
+            {/* Shopping Cart Button */}
             <button
               id="btn-open-cart"
               onClick={effectiveCartOpen}
-              className="relative flex items-center justify-center w-9 h-9 sm:w-[92px] sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors duration-200 shadow-xs cursor-pointer shrink-0 overflow-visible"
+              className="relative flex items-center justify-center w-9 h-9 sm:w-[90px] sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 dark:bg-sky-500 text-white hover:bg-slate-800 dark:hover:bg-sky-400 transition-colors duration-200 shadow-xs cursor-pointer shrink-0 overflow-visible"
               aria-label={t.cart || "購物車"}
               title={t.cart || "購物車"}
             >

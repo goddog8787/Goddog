@@ -124,14 +124,39 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
 
+    const matchedLocalOrder = (orders || []).find(
+      (o) =>
+        !isMockOrder(o) &&
+        (o.trackingNumber === trimmed || o.orderNumber === trimmed || o.tradeNo === trimmed)
+    );
+
     try {
-      const res = await fetch(`/api/logistics/track/${encodeURIComponent(trimmed)}?carrier=${car}`);
+      let res: Response;
+      if (matchedLocalOrder) {
+        res = await fetch('/api/logistics/track-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            trackingNumber: matchedLocalOrder.trackingNumber || trimmed,
+            orderNumber: matchedLocalOrder.orderNumber,
+            shippingMethod: matchedLocalOrder.shippingMethod,
+            storeOrAddress: matchedLocalOrder.storeOrAddress,
+            orderStatus: matchedLocalOrder.orderStatus,
+            paymentStatus: matchedLocalOrder.paymentStatus,
+            createdAt: matchedLocalOrder.createdAt,
+            carrier: car,
+            tradeNo: matchedLocalOrder.tradeNo,
+          }),
+        });
+      } else {
+        res = await fetch(`/api/logistics/track/${encodeURIComponent(trimmed)}?carrier=${encodeURIComponent(car)}`);
+      }
       const data = await res.json();
       if (res.ok && data.success) {
         setTrackingData(data.tracking);
-        // Automatically save to customer's tracking numbers if valid
-        if (trimmed && !savedNumbers.includes(trimmed)) {
-          const updated = [trimmed, ...savedNumbers].slice(0, 15);
+        const savedKey = matchedLocalOrder?.trackingNumber || trimmed;
+        if (savedKey && !savedNumbers.includes(savedKey)) {
+          const updated = [savedKey, ...savedNumbers].slice(0, 15);
           setSavedNumbers(updated);
           saveCustomerTrackingNumbers(userId, updated);
         }
@@ -242,7 +267,13 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                   type="text"
                   value={inputCode}
                   onChange={(e) => setInputCode(e.target.value)}
-                  placeholder={lang === 'en' ? 'Enter tracking number (e.g., 773... / 882...)' : lang === 'ja' ? '追跡番号を入力 (例: 773... / 882...)' : '輸入包裹託運單號 (如 773... / 882... / 903...)'}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      fetchTracking(inputCode, carrier);
+                    }
+                  }}
+                  placeholder={lang === 'en' ? 'Enter tracking or order number...' : lang === 'ja' ? '追跡番号または注文番号を入力...' : '輸入包裹託運單號或訂單編號 (按 Enter 查詢)'}
                   className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                 />
               </div>

@@ -367,7 +367,16 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
   };
 
   const handleAdd = (p: FilamentProduct) => {
-    onAddToCart(p, p.colors?.[0]?.name, p.diameter || '1.75mm', 1);
+    const rawProduct = products.find((item) => item.id === p.id) || p;
+    const defaultColor = rawProduct.colors?.find((c) => (c.stock ?? 0) > 0) || rawProduct.colors?.[0] || {
+      name: '經典黑',
+      hex: '#1e293b',
+      stock: rawProduct.stock ?? 0,
+    };
+    if ((rawProduct.stock ?? 0) <= 0 || (defaultColor.stock ?? rawProduct.stock ?? 0) <= 0) {
+      return;
+    }
+    onAddToCart(rawProduct, defaultColor, rawProduct.diameter || '1.75mm', 1);
   };
 
   const activeLang: LanguageCode = (lang as LanguageCode) || ((typeof window !== 'undefined' ? localStorage.getItem('printcore_lang') : null) as LanguageCode) || 'zh-TW';
@@ -1373,11 +1382,16 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                               </div>
                               <button
                                 type="button"
+                                disabled={(p.stock ?? 0) <= 0}
                                 onClick={() => handleAdd(p)}
-                                className="mt-2.5 w-full min-h-[36px] py-1.5 px-3 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-98 touch-manipulation"
+                                className={`mt-2.5 w-full min-h-[36px] py-1.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs touch-manipulation ${
+                                  (p.stock ?? 0) <= 0
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                    : 'bg-slate-900 hover:bg-indigo-600 text-white cursor-pointer active:scale-98'
+                                }`}
                               >
                                 <ShoppingCart className="w-3.5 h-3.5" />
-                                <span>加入購物車</span>
+                                <span>{(p.stock ?? 0) <= 0 ? '補貨中' : '加入購物車'}</span>
                               </button>
                             </div>
                           </th>

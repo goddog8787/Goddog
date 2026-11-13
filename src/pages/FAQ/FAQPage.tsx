@@ -128,7 +128,7 @@ const FAQS_DATA: Record<LanguageCode, {
       {
         category: 'shipping_payment',
         q: '下單後多久可以收到耗材？有免運門檻嗎？',
-        a: '全館常態備有現貨。平日週一至週五下午 15:00 前完成之訂單，當日即由嘉義倉儲打包出貨。超商取貨通常在寄出後 2 天送達指定門市；宅配通常隔天抵達。全館消費滿 NT$999 即享超商免運優惠！'
+        a: '全館常態備有現貨。平日週一至週五下午 15:00 前完成之訂單，當日即由台灣現貨倉儲打包出貨。超商取貨通常在寄出後 2 天送達指定門市；宅配通常隔天抵達。全館消費滿 NT$999 即享超商免運優惠！'
       },
       {
         category: 'shipping_payment',
@@ -226,7 +226,7 @@ const FAQS_DATA: Record<LanguageCode, {
       {
         category: 'shipping_payment',
         q: 'How fast is order dispatch? What is the free shipping threshold?',
-        a: 'All inventory listed is stocked locally in Taiwan. Orders confirmed before 15:00 on business days ship the same day from our Chiayi fulfillment hub. Store pickup takes 2 days; home delivery arrives next day. Orders over NT$999 enjoy free store shipping!'
+        a: 'All inventory listed is stocked locally in Taiwan. Orders confirmed before 15:00 on business days ship the same day from our Taiwan fulfillment hub. Store pickup takes 2 days; home delivery arrives next day. Orders over NT$999 enjoy free store shipping!'
       },
       {
         category: 'shipping_payment',
@@ -369,7 +369,7 @@ export const FAQPage: React.FC<FAQPageProps> = ({ lang: propLang }) => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 sm:py-12 mt-2">
+    <div className="max-w-5xl mx-auto px-4 py-8 sm:py-12 mt-2">
       <SEO 
         title={c.seoTitle} 
         description={c.seoDesc} 

@@ -12,8 +12,8 @@ export const DEFAULT_ANNOUNCEMENT_CONFIG: StoreAnnouncementConfig = {
   contactLineId: '@printcore3d',
   contactEmail: 'support@goddog.space',
   contactPhone: '02-2788-9918',
-  storeAddress: '台北市南港區軟體園區二期創客研發中心 B 棟 4F',
-  businessHours: '週一至週五 09:30 - 18:30 (國定假日除外)',
+  storeAddress: '全台灣線上訂購與宅配/超商配送服務',
+  businessHours: '週一至週五 09:00 - 18:00 (國定假日除外)',
   taxIdNumber: '91823746',
   taxCompanyName: '神狗勾數位科技股份有限公司',
   updatedAt: new Date().toISOString(),
@@ -25,6 +25,9 @@ export function getStoreAnnouncementConfig(): StoreAnnouncementConfig {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.storeAddress === 'string' && (parsed.storeAddress.includes('軟體園區') || parsed.storeAddress.includes('1-50') || parsed.storeAddress.includes('福樂村'))) {
+          parsed.storeAddress = DEFAULT_ANNOUNCEMENT_CONFIG.storeAddress;
+        }
         return { ...DEFAULT_ANNOUNCEMENT_CONFIG, ...parsed };
       }
     }

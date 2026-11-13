@@ -56,7 +56,9 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
     newebpayLogisticsTestMode: settings.newebpayLogisticsTestMode ?? false,
     senderName: settings.senderName || '神狗勾 3D 台灣官方旗艦店',
     senderPhone: settings.senderPhone || '0911-331-772',
-    senderAddress: settings.senderAddress || '嘉義縣民雄鄉福樂村埤角1-50號',
+    senderAddress: settings.senderAddress && !settings.senderAddress.includes('1-50') && !settings.senderAddress.includes('福樂村')
+      ? settings.senderAddress
+      : '台灣線上物流集貨中心',
   });
 
   const [showSavedToast, setShowSavedToast] = useState(false);
@@ -99,7 +101,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
       newebpayLogisticsTestMode: false,
       senderName: '神狗勾 3D 台灣官方旗艦店',
       senderPhone: '0911-331-772',
-      senderAddress: '嘉義縣民雄鄉福樂村埤角1-50號',
+      senderAddress: '台灣線上物流集貨中心',
     };
     setFormData(defaults);
     onSaveSettings(defaults);
@@ -708,7 +710,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
 
             <div className="sm:col-span-3">
               <label className="font-bold text-slate-800 block mb-1">
-                發貨倉庫完整地址 / 逆物流退貨點
+                發貨集貨中心名稱 / 逆物流資訊
               </label>
               <input
                 type="text"

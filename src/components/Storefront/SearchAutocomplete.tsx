@@ -177,6 +177,24 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Global '/' keyboard shortcut to focus the main storefront search bar
+  useEffect(() => {
+    if (id !== 'storefront-product-search') return;
+    const handleGlobalShortcut = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const active = document.activeElement as HTMLElement | null;
+      const tag = active?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || active?.isContentEditable) return;
+      if (inputRef.current) {
+        e.preventDefault();
+        inputRef.current.focus();
+        setIsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcut);
+    return () => window.removeEventListener('keydown', handleGlobalShortcut);
+  }, [id]);
+
   const trimmedQuery = searchQuery.trim().toLowerCase();
 
   // Compute Matched Materials (including deep associative keywords)
@@ -402,7 +420,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           }`}
         />
 
-        {searchQuery && (
+        {searchQuery ? (
           <button
             type="button"
             onClick={() => {
@@ -414,7 +432,14 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           >
             <X className="w-3.5 h-3.5" />
           </button>
-        )}
+        ) : id === 'storefront-product-search' ? (
+          <kbd
+            className="hidden sm:inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-mono font-bold text-slate-400 bg-white border border-slate-200 rounded-md absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none select-none shadow-2xs"
+            title="按 / 鍵快速搜尋"
+          >
+            /
+          </kbd>
+        ) : null}
       </div>
 
       {/* Autocomplete Suggestions Dropdown Panel */}

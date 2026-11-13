@@ -21,53 +21,6 @@ interface ProductCardProps {
   onReviewSubmitted?: (updatedProduct: FilamentProduct, review: ProductReview) => void;
 }
 
-// 提取商品核心功能特色特點（自動過濾掉任何跟顏色有關的字眼，聚焦純性能與工藝優勢）
-function getProductFeatureHighlights(product: FilamentProduct, lang: LanguageCode): { primary: string; secondary?: string } {
-  const isColorOrStoreWord = (text: string) => {
-    if (lang !== 'zh-TW') return false;
-    return /色|莫蘭迪|黑|白|紅|藍|綠|灰|黃|橙|金|銀|紫|粉|透明|神狗勾|多色/i.test(text);
-  };
-
-  if (product.features && product.features.length > 0) {
-    const cleanList = product.features
-      .map((f) =>
-        f
-          .replace(/神狗勾\s*/g, '')
-          .replace(/^[✓✔・-]\s*/, '')
-          .replace(/，.*$/, '')
-          .replace(/、.*$/, '')
-          .trim()
-      )
-      .filter((f) => f.length > 0 && !isColorOrStoreWord(f));
-
-    if (cleanList.length > 0) {
-      return {
-        primary: cleanList[0],
-        secondary: cleanList[1] && cleanList[1] !== cleanList[0] ? cleanList[1] : undefined,
-      };
-    }
-  }
-
-  // Fallback 核心性能參數（絕不顯示顏色）
-  const speedPrefix = lang === 'en' ? 'Speed ' : lang === 'ja' ? '造形速度 ' : '列印速度 ';
-  const tempPrefix = lang === 'en' ? 'Nozzle ' : lang === 'ja' ? 'ノズル温度 ' : '噴嘴溫度 ';
-  const defaultPrimary = lang === 'en' ? 'High-Precision Extrusion' : lang === 'ja' ? '高精度・安定吐出' : '高精度穩定出料';
-  const defaultSecondary = lang === 'en' ? 'Quality Assured' : lang === 'ja' ? '品質保証' : '品質保證';
-
-  const primary = product.maxSpeed
-    ? `${speedPrefix}${product.maxSpeed}`
-    : product.nozzleTemp
-    ? `${tempPrefix}${product.nozzleTemp}`
-    : defaultPrimary;
-
-  const secondary =
-    product.spoolType && !product.spoolType.includes('色')
-      ? product.spoolType
-      : product.weight || defaultSecondary;
-
-  return { primary, secondary };
-}
-
 export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   currency,
@@ -167,7 +120,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setTimeout(() => setIsAddedAnimation(false), 1200);
   };
 
-  const featureHighlights = useMemo(() => getProductFeatureHighlights(liveProduct, lang), [liveProduct, lang]);
   const activeImageUrl = useMemo(() => {
     return getSafeProductImageUrl(liveProduct.imageUrl, product.material, product.name);
   }, [liveProduct.imageUrl, product.material, product.name]);
@@ -192,7 +144,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       <div className="relative aspect-square w-full bg-slate-50 dark:bg-slate-800/40 overflow-hidden flex items-center justify-center cursor-pointer">
         {/* 右上角懸浮小巧功能鈕（查看詳情、比較、收藏） */}
         <div
-          className="absolute top-2 right-2 z-10 flex items-center gap-1"
+          className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1 lg:opacity-85 lg:group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -201,7 +153,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               e.stopPropagation();
               onViewDetail(liveProduct);
             }}
-            className="w-7 h-7 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
             title={lang === 'en' ? 'Quick View' : lang === 'ja' ? '詳細を見る' : '查看詳情'}
           >
             <Eye className="w-3.5 h-3.5" />
@@ -211,7 +163,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <button
               type="button"
               onClick={() => onToggleCompare(product.id)}
-              className={`w-7 h-7 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
                 isCompared
                   ? 'bg-indigo-600 text-white'
                   : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600'
@@ -238,7 +190,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <button
               type="button"
               onClick={() => onToggleWishlist(product.id)}
-              className={`w-7 h-7 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
                 isWishlisted
                   ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-600'
                   : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-500 dark:text-slate-400 hover:text-rose-500'
@@ -282,7 +234,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       {/* 簡潔有力的商品資訊內容（完整顯示品牌不截斷、標題不重複品牌名稱） */}
-      <div className="p-2.5 sm:p-3.5 flex-1 flex flex-col justify-between space-y-2">
+      <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between space-y-2.5">
         <div className="space-y-1.5">
           {/* 第 1 列：品牌標籤（絕不截斷成 ...）與 線徑規格 */}
           <div className="flex items-center justify-between gap-1 text-[10px] sm:text-xs">
@@ -291,7 +243,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 {cleanBrand}
               </span>
               {showDiameter && (
-                <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px] shrink-0 whitespace-nowrap">
+                <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px] shrink-0 whitespace-nowrap tabular-nums">
                   {liveProduct.diameter}
                 </span>
               )}
@@ -305,31 +257,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug text-balance line-clamp-2 min-h-[2.6em] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
             {cleanTitle}
           </h3>
-
-          {/* 商品精選描述（平衡排版並限制兩行防止長文字溢出與單字孤行） */}
-          {liveProduct.description && (
-            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed text-pretty line-clamp-2 min-h-[2.8em]">
-              {liveProduct.description.replace(/神狗勾\s*/g, '').replace(/莫蘭迪\s*/g, '').trim()}
-            </p>
-          )}
-
-          {/* 第 3 列：商品核心特色特點（俐落標籤與寬度適應） */}
-          <div className="flex flex-wrap items-center gap-1 pt-0.5">
-            <span className="inline-flex items-center text-[10px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded leading-tight line-clamp-1 max-w-full">
-              ✦ {featureHighlights.primary}
-            </span>
-            {featureHighlights.secondary && (
-              <span className="hidden sm:inline-flex items-center text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/60 px-1.5 py-0.5 rounded leading-tight whitespace-nowrap">
-                {featureHighlights.secondary}
-              </span>
-            )}
-          </div>
         </div>
 
         {/* 第 4 列：價格與快速加入購物車（固定按鈕寬度，防止動畫改變文字長度而推擠旁邊價格） */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1.5 mt-auto">
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1.5 mt-auto">
           <div className="flex items-baseline gap-1 min-w-0 flex-wrap">
-            <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white font-mono tracking-tight">
+            <span className="text-sm sm:text-base lg:text-lg font-extrabold text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
               {formatPrice(liveProduct.price, currency)}
             </span>
           </div>
@@ -339,7 +272,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             type="button"
             onClick={handleOpenColorSheet}
             disabled={liveProduct.stock <= 0}
-            className={`h-8 min-w-[36px] xs:min-w-[68px] sm:min-w-[74px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-colors duration-200 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-colors duration-200 cursor-pointer whitespace-nowrap shrink-0 ${
               liveProduct.stock <= 0
                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                 : isAddedAnimation

@@ -80,7 +80,7 @@ export const TermsOfService: React.FC<TermsOfServiceProps> = ({ lang: propLang }
   const c = contentByLang[activeLang] || contentByLang['zh-TW'];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12 bg-white dark:bg-slate-900 rounded-2xl shadow-sm mt-8 border border-slate-100 dark:border-slate-800 transition-colors">
+    <div className="max-w-5xl mx-auto px-5 sm:px-8 py-8 sm:py-12 bg-white dark:bg-slate-900 rounded-3xl shadow-sm mt-4 sm:mt-8 border border-slate-200/80 dark:border-slate-800 transition-colors">
       <div className="flex items-center gap-3 mb-8 pb-6 border-b border-slate-100 dark:border-slate-800">
         <div className="w-12 h-12 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex items-center justify-center">
           <FileText className="w-6 h-6" />

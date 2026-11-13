@@ -94,16 +94,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     }
   }, [displayProduct]);
 
-  // Close on Escape key
+  // Close on Escape key (only when WriteReviewModal sub-modal isn't open)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !isWriteReviewOpen) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, isWriteReviewOpen]);
 
   
   useEffect(() => {
@@ -171,14 +171,24 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
     setTimeout(() => setCopiedParams(false), 2000);
   };
 
+  const isFilamentMaterial = displayProduct.material !== 'Accessories' && displayProduct.material !== 'Resin';
+  const colorStock = Math.max(0, selectedColor?.stock ?? displayProduct.stock ?? 0);
+  const isOutOfStock = colorStock <= 0 || (displayProduct.stock ?? 0) <= 0;
+  const effectiveReviewsCount = liveReviews.length > 0 ? liveReviews.length : (displayProduct.reviewsCount || 0);
+  const effectiveRating = liveReviews.length > 0
+    ? Number((liveReviews.reduce((acc, r) => acc + Number(r.rating || 5), 0) / liveReviews.length).toFixed(1))
+    : displayProduct.rating;
+
   const handleAdd = () => {
-    onAddToCart(displayProduct, selectedColor, selectedDiameter, quantity);
+    if (isOutOfStock) return;
+    onAddToCart(displayProduct, selectedColor, selectedDiameter, Math.min(colorStock, quantity));
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1500);
   };
 
   const handleBuyNow = () => {
-    onQuickCheckout(displayProduct, selectedColor, selectedDiameter, quantity);
+    if (isOutOfStock) return;
+    onQuickCheckout(displayProduct, selectedColor, selectedDiameter, Math.min(colorStock, quantity));
   };
 
   return (
@@ -277,13 +287,13 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
 
               {/* Rating & reviews */}
               <div className="flex items-center gap-2 mt-2 text-xs text-slate-600 dark:text-slate-400 flex-wrap">
-                {displayProduct.reviewsCount > 0 ? (
+                {effectiveReviewsCount > 0 ? (
                   <>
                     <div className="flex items-center text-amber-500 font-bold whitespace-nowrap">
                       <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                      <span className="ml-1 text-slate-900 dark:text-slate-100 font-mono">{displayProduct.rating}</span>
+                      <span className="ml-1 text-slate-900 dark:text-slate-100 font-mono">{effectiveRating}</span>
                     </div>
-                    <span className="whitespace-nowrap">({displayProduct.reviewsCount} {lang === 'en' ? 'Reviews' : lang === 'ja' ? '件の評価' : '則顧客評價'})</span>
+                    <span className="whitespace-nowrap">({effectiveReviewsCount} {lang === 'en' ? 'Reviews' : lang === 'ja' ? '件の評価' : '則顧客評價'})</span>
                   </>
                 ) : (
                   <span className="text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">
@@ -326,7 +336,10 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                     <button
                       key={c.name}
                       type="button"
-                      onClick={() => setSelectedColor(c)}
+                      onClick={() => {
+                        setSelectedColor(c);
+                        setQuantity((prev) => Math.max(1, Math.min(prev, Math.max(1, c.stock ?? 1))));
+                      }}
                       className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
                         selectedColor.name === c.name
                           ? 'border-indigo-600 bg-indigo-50/50 text-indigo-950 ring-2 ring-indigo-500/20 shadow-xs'
@@ -343,47 +356,55 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 </div>
               </div>
 
-              {/* Diameter Picker */}
-              <div className="mt-4">
-                <label className="text-xs font-bold text-slate-700 block mb-2">
-                  {lang === 'en' ? '2. Diameter:' : lang === 'ja' ? '2. フィラメント径：' : '2. 線徑規格：'}
-                </label>
-                <div className="flex gap-2">
-                  {(['1.75mm', '2.85mm'] as const).map((dia) => (
-                    <button
-                      key={dia}
-                      type="button"
-                      onClick={() => setSelectedDiameter(dia)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold font-mono transition-all cursor-pointer ${
-                        selectedDiameter === dia
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {dia} {dia === '1.75mm' && (lang === 'en' ? '(Standard)' : lang === 'ja' ? '(標準規格)' : '(主流通用)')}
-                    </button>
-                  ))}
+              {/* Diameter Picker (Only for filament spools, not Accessories/Resin) */}
+              {isFilamentMaterial && (
+                <div className="mt-4">
+                  <label className="text-xs font-bold text-slate-700 block mb-2">
+                    {lang === 'en' ? '2. Diameter:' : lang === 'ja' ? '2. フィラメント径：' : '2. 線徑規格：'}
+                  </label>
+                  <div className="flex gap-2">
+                    {(['1.75mm', '2.85mm'] as const).map((dia) => (
+                      <button
+                        key={dia}
+                        type="button"
+                        onClick={() => setSelectedDiameter(dia)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold font-mono transition-all cursor-pointer ${
+                          selectedDiameter === dia
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {dia} {dia === '1.75mm' && (lang === 'en' ? '(Standard)' : lang === 'ja' ? '(標準規格)' : '(主流通用)')}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Quantity */}
               <div className="mt-4 flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700">
-                  {lang === 'en' ? '3. Quantity (Spools):' : lang === 'ja' ? '3. 数量 (巻)：' : '3. 購買數量 (卷)：'}
+                  {isFilamentMaterial
+                    ? (lang === 'en' ? '3. Quantity (Spools):' : lang === 'ja' ? '3. 数量 (巻)：' : '3. 購買數量 (卷)：')
+                    : (lang === 'en' ? '2. Quantity:' : lang === 'ja' ? '2. 数量：' : '2. 購買數量：')}
                 </label>
                 <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                   <button
+                    type="button"
+                    disabled={isOutOfStock || quantity <= 1}
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors"
+                    className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     -
                   </button>
                   <span className="w-10 text-center font-mono font-bold text-xs text-slate-900">
-                    {quantity}
+                    {isOutOfStock ? 0 : quantity}
                   </span>
                   <button
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors"
+                    type="button"
+                    disabled={isOutOfStock || quantity >= colorStock}
+                    onClick={() => setQuantity(Math.min(colorStock, quantity + 1))}
+                    className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     +
                   </button>
@@ -436,7 +457,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    {lang === 'en' ? `Reviews (${displayProduct.reviewsCount})` : lang === 'ja' ? `評価 (${displayProduct.reviewsCount})` : `創客評價 (${displayProduct.reviewsCount})`}
+                    {lang === 'en' ? `Reviews (${effectiveReviewsCount})` : lang === 'ja' ? `評価 (${effectiveReviewsCount})` : `創客評價 (${effectiveReviewsCount})`}
                   </button>
                 </div>
 
@@ -541,9 +562,13 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         </span>
                       </div>
                       <div className="bg-white p-2 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block">{lang === 'en' ? 'Spool Length' : lang === 'ja' ? '総フィラメント長' : '整卷線材長度'}</span>
+                        <span className="text-[10px] text-slate-400 block">
+                          {isFilamentMaterial
+                            ? (lang === 'en' ? 'Spool Length' : lang === 'ja' ? '総フィラメント長' : '整卷線材長度')
+                            : (lang === 'en' ? 'Net Spec' : lang === 'ja' ? '製品容量' : '規格淨重')}
+                        </span>
                         <span className="text-sm font-bold text-slate-800 font-mono">
-                          ~{totalLengthMeters}m
+                          {isFilamentMaterial ? `~${totalLengthMeters}m` : displayProduct.weight}
                         </span>
                       </div>
                     </div>
@@ -644,14 +669,19 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
               <button
                 id="modal-add-to-cart-btn"
                 type="button"
+                disabled={isOutOfStock}
                 onClick={handleAdd}
-                className={`w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 cursor-pointer whitespace-nowrap ${
-                  isAdded
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-900'
+                className={`w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                  isOutOfStock
+                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    : isAdded
+                    ? 'bg-emerald-600 text-white cursor-pointer'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-900 cursor-pointer'
                 }`}
               >
-                {isAdded ? (
+                {isOutOfStock ? (
+                  <span>{lang === 'en' ? 'Out of Stock' : lang === 'ja' ? '在庫切れ' : '目前補貨中'}</span>
+                ) : isAdded ? (
                   <>
                     <Check className="w-4 h-4 shrink-0" />
                     <span>{t.addedToCart}</span>
@@ -667,11 +697,16 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
               <button
                 id="modal-buy-now-btn"
                 type="button"
+                disabled={isOutOfStock}
                 onClick={handleBuyNow}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 transition-colors duration-200 cursor-pointer whitespace-nowrap"
+                className={`w-full py-3 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                  isOutOfStock
+                    ? 'bg-slate-300 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 shadow-md shadow-indigo-500/20 cursor-pointer'
+                }`}
               >
-                <span>{lang === 'zh-TW' ? '立即結帳付款' : lang === 'ja' ? '今すぐ購入' : 'Buy Now'}</span>
-                <ArrowRight className="w-4 h-4 shrink-0" />
+                <span>{isOutOfStock ? (lang === 'en' ? 'Unavailable' : lang === 'ja' ? '入荷待ち' : '暫時缺貨') : (lang === 'zh-TW' ? '立即結帳付款' : lang === 'ja' ? '今すぐ購入' : 'Buy Now')}</span>
+                {!isOutOfStock && <ArrowRight className="w-4 h-4 shrink-0" />}
               </button>
             </div>
 

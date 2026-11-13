@@ -66,7 +66,6 @@ export const Footer: React.FC<FooterProps> = ({ lang: propLang }) => {
             <ul className="space-y-3 text-sm">
               <li>{activeLang === 'en' ? `Hotline: ${t.contactHotlineVal || '+886 911331772'}` : activeLang === 'ja' ? `電話: ${t.contactHotlineVal || '+886 911331772'}` : `客服專線：${t.contactHotlineVal || '+886 911331772'}`}</li>
               <li>{activeLang === 'en' ? `Email: ${t.contactEmailVal || 'babe0615@gmail.com'}` : activeLang === 'ja' ? `メール: ${t.contactEmailVal || 'babe0615@gmail.com'}` : `信箱：${t.contactEmailVal || 'babe0615@gmail.com'}`}</li>
-              <li>{activeLang === 'en' ? `Address: ${t.contactAddressVal || 'No. 1-50, Pijiao, Minxiong Township, Chiayi County 621, Taiwan'}` : activeLang === 'ja' ? `住所: ${t.contactAddressVal || '台湾 嘉義県民雄郷福楽村埤角1-50号'}` : `地址：${t.contactAddressVal || '嘉義縣民雄鄉福樂村埤角1-50號'}`}</li>
               <li>{activeLang === 'en' ? `Hours: ${t.contactHoursVal || 'Mon - Fri 09:00 - 18:00'}` : activeLang === 'ja' ? `営業時間: ${t.contactHoursVal || '月〜金 09:00 - 18:00'}` : `服務時間：${t.contactHoursVal || '週一至週五 09:00 - 18:00'}`}</li>
             </ul>
           </div>

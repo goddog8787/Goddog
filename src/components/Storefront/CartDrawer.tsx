@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -101,6 +101,35 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       setCouponMsg(res.errorMessage || '此折扣碼無效或尚未達使用門檻');
     }
   };
+
+  // Re-validate applied coupon whenever cart subtotal, VIP status, or item count changes
+  useEffect(() => {
+    if (!appliedCoupon) return;
+    if (cartItems.length === 0) {
+      setAppliedCoupon(null);
+      setCouponMsg('');
+      return;
+    }
+    const res = validateCoupon(appliedCoupon.code, subtotal, isVip, member?.coupons || []);
+    if (!res.isValid || !res.coupon) {
+      setAppliedCoupon(null);
+      setCouponMsg(res.errorMessage || `商品金額變動，已自動取消「${appliedCoupon.code}」（未達使用門檻）`);
+    } else if (
+      res.discountAmount !== appliedCoupon.discount ||
+      res.freeShipping !== appliedCoupon.freeShipping
+    ) {
+      setAppliedCoupon({
+        code: appliedCoupon.code,
+        discount: res.discountAmount,
+        freeShipping: res.freeShipping,
+        label: res.label,
+      });
+      const parts: string[] = [];
+      if (res.discountAmount > 0) parts.push(`折抵 NT$${res.discountAmount}`);
+      if (res.freeShipping) parts.push('免運費');
+      setCouponMsg(`已套用「${appliedCoupon.code}」${parts.length > 0 ? `（${parts.join(' + ')}）` : ''}`);
+    }
+  }, [subtotal, isVip, cartItems.length]);
 
   // Quick booster sample accessories for free shipping threshold
   const quickAddOns = [
@@ -296,25 +325,33 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       </div>
 
                       <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden shadow-2xs">
-                          <button
-                            type="button"
-                            onClick={() => onUpdateQuantity(idx, Math.max(1, item.quantity - 1))}
-                            className="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="w-8 text-center text-xs font-mono font-bold text-slate-800">
-                            {item.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onUpdateQuantity(idx, item.quantity + 1)}
-                            className="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
+                        {(() => {
+                          const maxStock = Math.max(1, item.selectedColor?.stock ?? item.product?.stock ?? 99);
+                          const atStockCap = item.quantity >= maxStock;
+                          return (
+                            <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden shadow-2xs">
+                              <button
+                                type="button"
+                                onClick={() => onUpdateQuantity(idx, Math.max(1, item.quantity - 1))}
+                                className="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <span className="w-8 text-center text-xs font-mono font-bold text-slate-800">
+                                {item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                disabled={atStockCap}
+                                onClick={() => onUpdateQuantity(idx, Math.min(maxStock, item.quantity + 1))}
+                                title={atStockCap ? `已達現貨上限 (${maxStock})` : '增加數量'}
+                                className="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          );
+                        })()}
 
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold text-xs text-slate-900">
@@ -603,7 +640,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400">
               <span>NewebPay 藍新 256-bit</span>
               <span>•</span>
-              <span>LINE Pay 直連</span>
+              <span>{lang === 'en' ? 'Cards / Apple Pay / ATM' : lang === 'ja' ? 'カード・Apple Pay・ATM' : '信用卡 / Apple Pay / ATM'}</span>
               <span>•</span>
               <span>{lang === 'en' ? 'E-Invoice' : lang === 'ja' ? '電子領収書' : '電子發票'}</span>
             </div>

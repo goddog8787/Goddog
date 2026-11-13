@@ -32,7 +32,7 @@ export const createSampleOrderForTesting = (brand: '7-11' | 'familymart' | 'hili
     'familymart': { name: '全家 民雄金世界門市 (018234)', method: 'FAMIC2C' },
     'hilife': { name: '萊爾富 嘉義民雄門市 (HL9921)', method: 'HILIFEC2C' },
     'okmart': { name: 'OK·MART 民雄興國門市 (OK8832)', method: 'OKMARTC2C' },
-    'delivery': { name: '嘉義縣民雄鄉福樂村埤角1-50號 (神狗勾3D創客基地)', method: 'HOME' },
+    'delivery': { name: '台灣本島宅配配送測試地址', method: 'HOME' },
   };
 
   const selected = storeMap[brand] || storeMap['7-11'];
@@ -268,7 +268,7 @@ export const NewebPayShippingLabelModal: React.FC<NewebPayShippingLabelModalProp
 收件人電話：${currentOrder.customerPhone}
 代收貨款金額：${currentOrder.paymentGateway === 'cod' ? `NT$ ${currentOrder.total.toLocaleString()} 元` : '0 元 (藍新線上已付款，請核對身分證件)'}
 寄件人：${logisticsSettings.senderName} (${logisticsSettings.senderPhone})
-寄件地址：${logisticsSettings.senderAddress}
+發貨方式：${logisticsSettings.senderAddress || '台灣線上物流集貨中心'}
 耗材明細：
 ${(currentOrder.items || []).map((i, idx) => `  ${idx + 1}. ${i.name} x${i.quantity || 1}`).join('\n')}
 ------------------------------------------------------
@@ -489,7 +489,7 @@ ${(currentOrder.items || []).map((i, idx) => `  ${idx + 1}. ${i.name} x${i.quant
                 <span className="font-mono">{logisticsSettings.senderPhone}</span>
               </div>
               <div className="truncate text-slate-500">
-                發貨地：{logisticsSettings.senderAddress}
+                發貨中心：{logisticsSettings.senderAddress || '台灣線上物流集貨中心'}
               </div>
             </div>
 
