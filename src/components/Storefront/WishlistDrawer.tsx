@@ -95,7 +95,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
             </div>
           ) : (
             savedProducts.map((p) => {
-              const displayName = translateProductName(p.name, p.brand, p.material, p.weight, lang);
+              const displayName = translateProductName(p.name, lang, p.brand, p.material, p.weight);
               const displayMat = translateMaterial(p.material, lang);
               return (
                 <div

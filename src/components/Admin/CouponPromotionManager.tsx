@@ -37,6 +37,8 @@ export const CouponPromotionManager: React.FC = () => {
   // New / Edit Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<StoreCoupon | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Form states
   const [formCode, setFormCode] = useState('');
@@ -85,15 +87,16 @@ export const CouponPromotionManager: React.FC = () => {
   };
 
   const handleDeleteCoupon = (id: string) => {
-    if (!window.confirm('確定要刪除這張優惠券嗎？此動作無法復原。')) return;
     const updated = coupons.filter((c) => c.id !== id);
     setCoupons(updated);
     saveStoreCoupons(updated);
+    setConfirmDeleteId(null);
     showToast('優惠券已刪除');
   };
 
   const openCreateModal = () => {
     setEditingCoupon(null);
+    setFormError(null);
     setFormCode('');
     setFormTitle('');
     setFormType('percentage');
@@ -109,6 +112,7 @@ export const CouponPromotionManager: React.FC = () => {
 
   const openEditModal = (coupon: StoreCoupon) => {
     setEditingCoupon(coupon);
+    setFormError(null);
     setFormCode(coupon.code);
     setFormTitle(coupon.title);
     setFormType(coupon.discountType);
@@ -154,13 +158,18 @@ export const CouponPromotionManager: React.FC = () => {
 
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     const cleanCode = formCode.trim().toUpperCase();
     if (!cleanCode) {
-      alert('請填寫優惠代碼');
+      setFormError('請填寫優惠代碼');
       return;
     }
 
     if (editingCoupon) {
+      if (coupons.some((c) => c.id !== editingCoupon.id && c.code.toUpperCase() === cleanCode)) {
+        setFormError(`代碼「${cleanCode}」已存在，請使用不同的代碼。`);
+        return;
+      }
       const updated = coupons.map((c) => {
         if (c.id === editingCoupon.id) {
           return {
@@ -184,7 +193,7 @@ export const CouponPromotionManager: React.FC = () => {
       showToast('✅ 優惠券已成功儲存！');
     } else {
       if (coupons.some((c) => c.code.toUpperCase() === cleanCode)) {
-        alert(`代碼「${cleanCode}」已存在，請使用不同的代碼。`);
+        setFormError(`代碼「${cleanCode}」已存在，請使用不同的代碼。`);
         return;
       }
       const newCoupon: StoreCoupon = {
@@ -522,22 +531,41 @@ export const CouponPromotionManager: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEditModal(coupon)}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                          title="編輯優惠券"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCoupon(coupon.id)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                          title="刪除優惠券"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      {confirmDeleteId === coupon.id ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCoupon(coupon.id)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold cursor-pointer"
+                          >
+                            確認刪除
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold cursor-pointer"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => openEditModal(coupon)}
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                            title="編輯優惠券"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(coupon.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                            title="刪除優惠券"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -604,6 +632,12 @@ export const CouponPromotionManager: React.FC = () => {
             )}
 
             <form onSubmit={handleSaveForm} className="mt-4 space-y-4">
+              {formError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                  <span>{formError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">

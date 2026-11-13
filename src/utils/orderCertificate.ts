@@ -270,13 +270,6 @@ export function downloadOrderProofJSON(order: any): void {
 export function downloadOrderProofPDF(order: any): void {
   try {
     const cert = generateOrderCertificate(order);
-    const printWindow = window.open('', '_blank', 'width=850,height=950');
-    if (!printWindow) {
-      // Fallback to JSON download if popups are blocked
-      downloadOrderProofJSON(order);
-      return;
-    }
-
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -535,8 +528,49 @@ export function downloadOrderProofPDF(order: any): void {
 </html>
     `;
 
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
+    // Render printable certificate inside an isolated hidden iframe (zero window.open)
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(iframe);
+
+    const frameDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (frameDoc && iframe.contentWindow) {
+      frameDoc.open();
+      frameDoc.write(htmlContent);
+      frameDoc.close();
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          // Download standalone printable HTML file as fallback
+          const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `PrintCore_OrderCertificate_${cert.orderSummary.orderNumber}.html`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } finally {
+          setTimeout(() => {
+            if (iframe.parentNode) {
+              iframe.parentNode.removeChild(iframe);
+            }
+          }, 1500);
+        }
+      }, 250);
+    } else {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+      downloadOrderProofJSON(order);
+    }
   } catch (error) {
     console.error('Failed to open PDF print preview:', error);
   }

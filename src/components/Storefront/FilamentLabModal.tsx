@@ -125,6 +125,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
   products,
   currency,
   lang,
+  onAddToCart,
   onSelectProductToCart,
 }) => {
   const [activeTab, setActiveTab] = useState<'estimator' | 'cost' | 'ams' | 'slicer' | 'drying'>('estimator');
@@ -516,7 +517,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                     </div>
                   </div>
 
-                  <div className="text-xs text-slate-400 border-t border-slate-800 pt-3">
+                  <div className="text-xs text-slate-400 border-t border-slate-800 pt-3 space-y-2.5">
                     {netWeight < 100 ? (
                       <div className="text-rose-400 font-bold flex items-center gap-1.5">
                         <Flame className="w-4 h-4 text-rose-500" />
@@ -528,6 +529,29 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                         <span>存量充裕，足以完成中大型模型列印任務！</span>
                       </div>
                     )}
+                    {products.length > 0 && (onAddToCart || onSelectProductToCart) && (() => {
+                      const matched =
+                        products.find((p) =>
+                          p.material.toLowerCase().includes(selectedMaterial.toLowerCase())
+                        ) || products[0];
+                      const firstColor = matched.colors?.[0] || { name: '預設', hex: '#0f172a', stock: 10 };
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onAddToCart) {
+                              onAddToCart(matched, firstColor, matched.diameter || '1.75mm', 1);
+                            } else if (onSelectProductToCart) {
+                              onSelectProductToCart(matched);
+                            }
+                          }}
+                          className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                        >
+                          <span className="truncate">一鍵補貨推薦：{matched.name}</span>
+                          <span className="font-mono shrink-0">{formatPrice(matched.price, currency)} +</span>
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -855,27 +879,52 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleCopyPreset}
-                    className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      copiedPreset
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-purple-600 hover:bg-purple-500 text-white shadow-md'
-                    }`}
-                  >
-                    {copiedPreset ? (
-                      <>
-                        <Check className="w-4 h-4" />
-                        <span>已複製切片參數！</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        <span>複製此組切片參數</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyPreset}
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        copiedPreset
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-purple-600 hover:bg-purple-500 text-white shadow-md'
+                      }`}
+                    >
+                      {copiedPreset ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>已複製切片參數！</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          <span>複製此組切片參數</span>
+                        </>
+                      )}
+                    </button>
+                    {products.length > 0 && (onAddToCart || onSelectProductToCart) && (() => {
+                      const matched =
+                        products.find((p) =>
+                          p.material.toLowerCase().includes(slicerMaterial.toLowerCase())
+                        ) || products[0];
+                      const firstColor = matched.colors?.[0] || { name: '預設', hex: '#0f172a', stock: 10 };
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onAddToCart) {
+                              onAddToCart(matched, firstColor, matched.diameter || '1.75mm', 1);
+                            } else if (onSelectProductToCart) {
+                              onSelectProductToCart(matched);
+                            }
+                          }}
+                          className="w-full py-2 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-amber-300 font-bold text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                        >
+                          <span className="truncate">選購對應線材：{matched.name}</span>
+                          <span className="font-mono shrink-0">{formatPrice(matched.price, currency)} +</span>
+                        </button>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             </div>

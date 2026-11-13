@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
+  deleteUser,
   onAuthStateChanged,
   User,
   Auth,
@@ -21,6 +22,8 @@ import {
   setDoc,
   addDoc,
   updateDoc,
+  deleteDoc,
+  writeBatch,
   getDoc,
   getDocs,
   query,
@@ -1125,3 +1128,92 @@ export async function requestGeminiViaFirestoreBridge(params: {
     );
   });
 }
+
+// Complete Account & Customer Data Deletion Helper (Cloud Firestore + Auth + Scoped LocalStorage)
+export async function deleteCustomerAccountAndData(userId?: string | null): Promise<{
+  ok: boolean;
+  requiresRecentLogin?: boolean;
+  error?: string;
+}> {
+  const cleanUid = (userId || auth.currentUser?.uid || '').trim();
+  let requiresRecentLogin = false;
+
+  // 1. Delete user subcollections & user profile document in Firestore
+  if (cleanUid) {
+    for (const subName of ['userData', 'notifications']) {
+      try {
+        const subSnap = await getDocs(collection(db, 'users', cleanUid, subName));
+        if (!subSnap.empty) {
+          const batch = writeBatch(db);
+          subSnap.docs.forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+        }
+      } catch (subErr) {
+        console.warn(`Firestore ${subName} cleanup warning:`, subErr);
+      }
+    }
+
+    try {
+      await deleteDoc(doc(db, 'users', cleanUid));
+    } catch (docErr) {
+      console.warn('Firestore user profile deletion warning:', docErr);
+    }
+  }
+
+  // 2. Delete Firebase Auth user if signed into Firebase Auth
+  const currentUser = auth.currentUser;
+  if (currentUser) {
+    try {
+      await deleteUser(currentUser);
+    } catch (authErr: any) {
+      if (authErr?.code === 'auth/requires-recent-login') {
+        requiresRecentLogin = true;
+      } else {
+        console.warn('Firebase Auth deleteUser warning:', authErr);
+      }
+    }
+  }
+
+  // 3. Remove matching entries from local registered accounts & all printcore_*_<uid> keys
+  try {
+    const emailLower = (currentUser?.email || '').trim().toLowerCase();
+    const rawAccounts = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
+    if (rawAccounts) {
+      const parsed = JSON.parse(rawAccounts);
+      if (Array.isArray(parsed)) {
+        const remaining = parsed.filter(
+          (acc: any) =>
+            acc?.uid !== cleanUid &&
+            (!emailLower || String(acc?.email || '').trim().toLowerCase() !== emailLower)
+        );
+        localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(remaining));
+      }
+    }
+
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (
+        (cleanUid && k.startsWith('printcore_') && k.includes(cleanUid)) ||
+        k === 'printcore_member' ||
+        k === 'printcore_active_customer_session' ||
+        k === 'printcore_active_customer' ||
+        k === 'printcore_pending_subscription'
+      ) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch (storageErr) {
+    console.warn('LocalStorage account cleanup warning:', storageErr);
+  }
+
+  // 4. Ensure session is signed out cleanly
+  try {
+    await logOut();
+  } catch {}
+
+  return { ok: true, requiresRecentLogin };
+}
+

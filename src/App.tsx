@@ -580,6 +580,7 @@ export default function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutPointsToUse, setCheckoutPointsToUse] = useState(0);
+  const [checkoutCouponCode, setCheckoutCouponCode] = useState('');
   const [viewingProduct, setViewingProduct] = useState<FilamentProduct | null>(null);
 
   const handleOpenProductDetail = (p: FilamentProduct) => {
@@ -996,22 +997,36 @@ export default function App() {
             return;
           }
 
+          const nowIso = new Date().toISOString();
           const newExpiry = new Date();
           newExpiry.setDate(newExpiry.getDate() + days);
+
+          let pendingSub: { price?: number; planName?: string; planType?: string } | null = null;
+          try {
+            const rawPending = localStorage.getItem('printcore_pending_subscription');
+            if (rawPending) {
+              pendingSub = JSON.parse(rawPending);
+              localStorage.removeItem('printcore_pending_subscription');
+            }
+          } catch {}
 
           setMember((prev: MemberProfile) => {
             const updated: MemberProfile = sanitizeCustomerProfile({
               ...prev,
               tier: 'Gold',
-              subscriptionPlan: planType,
+              subscriptionPlan: pendingSub?.planType || planType,
               subscriptionStatus: 'active',
               autoRenew: true,
+              subscriptionStartDate: nowIso,
               subscriptionExpiry: newExpiry.toISOString(),
+              subscriptionNextBillingDate: newExpiry.toISOString(),
+              subscriptionAmount: typeof pendingSub?.price === 'number' ? pendingSub.price : prev?.subscriptionAmount,
               points: (prev?.points || 0) + Math.floor(days * 2),
             });
             localStorage.setItem('printcore_member', JSON.stringify(updated));
             if (updated.id) {
               saveCustomerUserData(updated.id, 'profile', updated).catch(console.warn);
+              saveCustomerProfileDoc(updated.id, updated).catch(console.warn);
             }
             return updated;
           });
@@ -1370,8 +1385,9 @@ export default function App() {
     saveCustomerCart(activeUid, updated, { explicitClear: updated.length === 0 }).catch(console.warn);
   };
 
-  const handleProceedCheckout = (pointsUsed: number) => {
+  const handleProceedCheckout = (pointsUsed: number, couponCode?: string) => {
     setCheckoutPointsToUse(pointsUsed);
+    setCheckoutCouponCode(couponCode || '');
     recordRealCheckoutStart();
     setIsCheckoutOpen(true);
   };
@@ -1385,6 +1401,7 @@ export default function App() {
     handleAddToCart(product, color, diameter, quantity);
     setViewingProduct(null);
     setCheckoutPointsToUse(0);
+    setCheckoutCouponCode('');
     recordRealCheckoutStart();
     setIsCheckoutOpen(true);
   };
@@ -2249,6 +2266,7 @@ export default function App() {
           lang={lang}
           member={member}
           pointsToUse={checkoutPointsToUse}
+          initialCouponCode={checkoutCouponCode}
           onOrderCompleted={handleOrderCompleted}
           onOpenTracking={(trk) => {
             setTrackingNumberInput(trk);

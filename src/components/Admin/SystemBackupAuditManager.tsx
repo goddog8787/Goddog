@@ -43,6 +43,8 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
 }) => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [statusBanner, setStatusBanner] = useState<{ type: 'error' | 'info'; message: string } | null>(null);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [storageUsageKB, setStorageUsageKB] = useState<number>(0);
 
@@ -117,10 +119,11 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
       downloadAnchor.click();
       downloadAnchor.remove();
 
+      setStatusBanner(null);
       showToast('📦 全店資料快照 (JSON) 已完整匯出下載！');
     } catch (e) {
       console.error(e);
-      alert('匯出備份失敗');
+      setStatusBanner({ type: 'error', message: '匯出備份失敗，請稍後再試。' });
     } finally {
       setIsExporting(false);
     }
@@ -149,21 +152,24 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
         if (data && data.announcement) {
           saveStoreAnnouncementConfig(data.announcement);
         }
+        setStatusBanner(null);
         showToast('✅ 備份資料已成功匯入並寫入網站核心代碼與雲端資料庫！');
         setTimeout(() => window.location.reload(), 1500);
       } catch (err) {
-        alert('解析備份 JSON 失敗，請確認檔案格式是否正確。');
+        setStatusBanner({ type: 'error', message: '解析備份 JSON 失敗，請確認檔案格式是否正確。' });
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleClearCache = () => {
-    if (!window.confirm('確定要清理臨時瀏覽快取嗎？（不會刪除商品與訂單核心資料）')) return;
     try {
       localStorage.removeItem('printcore_filter_state');
       localStorage.removeItem('printcore_temp_cart');
       calcStorage();
+      setConfirmClearOpen(false);
+      setStatusBanner(null);
       showToast('🧹 快取已成功清理！');
     } catch {}
   };
@@ -175,6 +181,22 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
         <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 flex items-center gap-2 text-xs font-semibold animate-fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {statusBanner && (
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+            <span>{statusBanner.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStatusBanner(null)}
+            className="text-rose-500 hover:text-rose-700 font-bold px-2 py-0.5 rounded cursor-pointer"
+          >
+            關閉
+          </button>
         </div>
       )}
 
@@ -251,13 +273,38 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
             <RefreshCw className="w-4 h-4 text-slate-400" />
           </div>
           <div className="mt-2">
-            <button
-              onClick={handleClearCache}
-              className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
-            >
-              清理臨時狀態快取
-            </button>
-            <p className="text-[11px] text-slate-400 mt-0.5">釋放不必要暫存記憶體</p>
+            {confirmClearOpen ? (
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-bold text-amber-700">確認清理臨時快取？（不影響訂單）</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleClearCache}
+                    className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold cursor-pointer"
+                  >
+                    確定清理
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClearOpen(false)}
+                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-bold cursor-pointer"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearOpen(true)}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+                >
+                  清理臨時狀態快取
+                </button>
+                <p className="text-[11px] text-slate-400 mt-0.5">釋放不必要暫存記憶體</p>
+              </>
+            )}
           </div>
         </div>
       </div>

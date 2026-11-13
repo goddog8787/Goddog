@@ -11,6 +11,7 @@ import {
 import { LanguageCode, CurrencyCode } from '../../types';
 import { formatPrice } from '../../utils/i18n';
 import { createClientNewebPayPeriodCheckout } from '../../lib/newebpayClient';
+import { isMemberVipActive } from '../../lib/customerPersistence';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -151,6 +152,17 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         type: selectedPlan.type
       };
 
+      try {
+        localStorage.setItem(
+          'printcore_pending_subscription',
+          JSON.stringify({
+            ...payload,
+            userId: member?.id && !String(member.id).startsWith('guest') ? member.id : '',
+            createdAt: new Date().toISOString(),
+          })
+        );
+      } catch {}
+
       let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
 
       try {
@@ -216,7 +228,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
     }
   };
 
-  const isSubscribed = member?.subscriptionPlan && member?.subscriptionPlan !== 'None';
+  const isSubscribed = isMemberVipActive(member);
   let expiryText = '';
   if (isSubscribed && member?.subscriptionExpiry) {
     const expDate = new Date(member.subscriptionExpiry);

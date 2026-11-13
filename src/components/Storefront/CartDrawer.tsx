@@ -16,9 +16,11 @@ import {
   ChevronUp,
   Check
 } from 'lucide-react';
-import { CartItem, ColorOption, CurrencyCode, LanguageCode, MemberProfile } from '../../types';
+import { CartItem, ColorOption, CurrencyCode, LanguageCode, MemberProfile, FilamentProduct } from '../../types';
 import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { validateCoupon } from '../../utils/couponManager';
+import { isMemberVipActive } from '../../lib/customerPersistence';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -27,9 +29,9 @@ interface CartDrawerProps {
   onUpdateQuantity: (index: number, newQty: number) => void;
   onUpdateColor?: (index: number, newColor: ColorOption) => void;
   onRemoveItem: (index: number) => void;
-  onProceedCheckout: (pointsUsed: number) => void;
+  onProceedCheckout: (pointsUsed: number, couponCode?: string) => void;
   onClearCart?: () => void;
-  onAddQuickItem?: (product: any, color: any, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
+  onAddQuickItem?: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
   currency: CurrencyCode;
   lang: LanguageCode;
   member: MemberProfile;
@@ -53,13 +55,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number; label: string } | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number; freeShipping: boolean; label: string } | null>(null);
   const [couponMsg, setCouponMsg] = useState('');
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(false);
   const [editingColorItemIdx, setEditingColorItemIdx] = useState<number | null>(null);
 
   const rawSubtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-  const isVip = member?.subscriptionPlan && member.subscriptionPlan !== 'None';
+  const isVip = isMemberVipActive(member);
   const vipDiscount = isVip ? Math.floor(rawSubtotal * 0.05) : 0;
   const subtotal = rawSubtotal - vipDiscount; // actual subtotal after VIP discount
   const freeShippingThreshold = 999;
@@ -74,25 +76,29 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [usePoints, setUsePoints] = useState(false);
   const pointsUsed = usePoints ? maxRedeemablePoints : 0;
   const couponDiscount = appliedCoupon ? appliedCoupon.discount : 0;
-  const shippingFee = isFreeShipping || (appliedCoupon && appliedCoupon.code === 'FREE99') ? 0 : 60;
+  const shippingFee = isFreeShipping || Boolean(appliedCoupon?.freeShipping) ? 0 : 60;
   const finalTotal = Math.max(0, subtotal - pointsUsed - couponDiscount) + shippingFee;
   const totalSavings = vipDiscount + pointsUsed + couponDiscount;
 
   const handleApplyCoupon = (codeToApply?: string) => {
     const code = (codeToApply || couponCode).trim().toUpperCase();
     if (!code) return;
-    if (code === 'GODDOG') {
-      const disc = Math.round(subtotal * 0.1);
-      setAppliedCoupon({ code, discount: disc, label: '神狗勾 9 折專屬優惠' });
-      setCouponMsg('已套用 9 折！');
-    } else if (code === 'MAKER100') {
-      setAppliedCoupon({ code, discount: 100, label: '創客折抵 NT$100' });
-      setCouponMsg('已折抵 NT$100！');
-    } else if (code === 'FREE99') {
-      setAppliedCoupon({ code, discount: 0, label: '全館超商免運優惠' });
-      setCouponMsg('已套用超商免運！');
+    const res = validateCoupon(code, subtotal, isVip, member?.coupons || []);
+    if (res.isValid && res.coupon) {
+      setAppliedCoupon({
+        code,
+        discount: res.discountAmount,
+        freeShipping: res.freeShipping,
+        label: res.label,
+      });
+      setCouponCode(code);
+      const parts: string[] = [];
+      if (res.discountAmount > 0) parts.push(`折抵 NT$${res.discountAmount}`);
+      if (res.freeShipping) parts.push('免運費');
+      setCouponMsg(`已套用「${code}」${parts.length > 0 ? `（${parts.join(' + ')}）` : ''}`);
     } else {
-      setCouponMsg('此折扣碼無效或已過期');
+      setAppliedCoupon(null);
+      setCouponMsg(res.errorMessage || '此折扣碼無效或尚未達使用門檻');
     }
   };
 
@@ -356,26 +362,30 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            const addonProduct = {
+                            const addonProduct: FilamentProduct = {
                               id: addon.id,
+                              brand: '神狗勾',
                               name: addon.name,
+                              material: 'Accessories',
+                              diameter: addon.diameter,
+                              weight: '50g',
                               price: addon.price,
                               originalPrice: addon.price + 50,
-                              material: 'Accessories',
-                              inStock: true,
-                              stockQuantity: 99,
-                              imageUrl: '',
-                              colors: [addon.color],
-                              diameters: [addon.diameter],
-                              spoolWeight: '50g',
-                              netWeight: '50g',
+                              stock: 99,
+                              sku: addon.id.toUpperCase(),
+                              spoolType: 'Refill 裸裝補充包',
+                              nozzleTemp: 'N/A',
+                              bedTemp: 'N/A',
+                              maxSpeed: 'N/A',
                               rating: 5.0,
-                              reviewCount: 0,
+                              reviewsCount: 0,
+                              colors: [{ ...addon.color, stock: 99 }],
                               features: ['便攜防潮', '即開即印'],
+                              imageUrl: '',
                               customShippingFee: 0,
                               description: '快速湊單高 CP 值優質周邊',
                             };
-                            onAddQuickItem(addonProduct, addon.color, addon.diameter, 1);
+                            onAddQuickItem(addonProduct, { ...addon.color, stock: 99 }, addon.diameter, 1);
                           }}
                           className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg shrink-0 flex items-center gap-0.5 transition-colors cursor-pointer shadow-2xs"
                         >
@@ -413,7 +423,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       {lang === 'en' ? 'Apply' : lang === 'ja' ? '適用' : '套用'}
                     </button>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                  <div className="flex items-center flex-wrap gap-1.5 text-[10px] text-slate-500">
                     <span>{lang === 'en' ? 'Popular: ' : lang === 'ja' ? '人気コード：' : '常用碼：'}</span>
                     <button
                       type="button"
@@ -435,11 +445,39 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     >
                       MAKER100 (-$100)
                     </button>
+                    {Array.isArray(member?.coupons) && member.coupons.filter((mc: any) => mc?.code).map((mc: any) => (
+                      <button
+                        key={mc.id || mc.code}
+                        type="button"
+                        onClick={() => {
+                          setCouponCode(mc.code);
+                          handleApplyCoupon(mc.code);
+                        }}
+                        className="px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 rounded font-mono font-bold cursor-pointer transition-colors"
+                      >
+                        {mc.code}
+                      </button>
+                    ))}
                   </div>
                   {couponMsg && (
-                    <p className={`text-[10px] font-medium ${appliedCoupon ? 'text-emerald-600' : 'text-rose-500'}`}>
-                      {couponMsg}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className={`text-[10px] font-medium ${appliedCoupon ? 'text-emerald-600' : 'text-rose-500'}`}>
+                        {couponMsg}
+                      </p>
+                      {appliedCoupon && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAppliedCoupon(null);
+                            setCouponCode('');
+                            setCouponMsg('');
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-rose-600 underline cursor-pointer shrink-0"
+                        >
+                          移除
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -552,7 +590,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 id="proceed-to-checkout-btn"
                 onClick={() => {
                   onClose();
-                  onProceedCheckout(pointsUsed);
+                  onProceedCheckout(pointsUsed, appliedCoupon?.code);
                 }}
                 className="flex-1 max-w-[210px] py-2.5 sm:py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 active:scale-98 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10 transition-all cursor-pointer"
               >

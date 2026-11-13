@@ -35,6 +35,7 @@ export const ReviewModerationManager: React.FC<ReviewModerationManagerProps> = (
   // Reply modal / drawer state
   const [replyingReviewId, setReplyingReviewId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   // Initial load
   useEffect(() => {
@@ -102,9 +103,9 @@ export const ReviewModerationManager: React.FC<ReviewModerationManagerProps> = (
   };
 
   const handleDeleteReview = (id: string) => {
-    if (!window.confirm('確定要刪除這筆評價嗎？此動作無法復原。')) return;
     const updated = reviews.filter((r) => r.id !== id);
     saveReviews(updated);
+    setConfirmDeleteId(null);
     showToast('評價已成功刪除');
   };
 
@@ -408,13 +409,33 @@ export const ReviewModerationManager: React.FC<ReviewModerationManagerProps> = (
                       <span>{review.isHidden ? '取消隱藏' : '隱藏評價'}</span>
                     </button>
 
-                    <button
-                      onClick={() => handleDeleteReview(review.id)}
-                      className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-medium flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      <span>刪除</span>
-                    </button>
+                    {confirmDeleteId === review.id ? (
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReview(review.id)}
+                          className="px-2.5 py-1 text-xs rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer"
+                        >
+                          確認刪除
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="px-2.5 py-1 text-xs rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold cursor-pointer"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDeleteId(review.id)}
+                        className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 hover:border-rose-300 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>刪除</span>
+                      </button>
+                    )}
                   </div>
 
                   <button

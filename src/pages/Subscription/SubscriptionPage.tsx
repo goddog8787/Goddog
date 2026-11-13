@@ -206,7 +206,13 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
     message: string;
   } | null>(null);
 
-  const hasPlan = Boolean(member?.subscriptionPlan && member.subscriptionPlan !== 'None' && member?.subscriptionStatus === 'active');
+  const hasPlan = Boolean(
+    member?.subscriptionPlan &&
+      member.subscriptionPlan !== 'None' &&
+      member?.subscriptionStatus !== 'expired' &&
+      member?.subscriptionStatus !== 'inactive' &&
+      (!member?.subscriptionExpiry || new Date(member.subscriptionExpiry).getTime() > Date.now())
+  );
   const isCancelled = hasPlan && (member?.subscriptionStatus === 'cancelled' || member?.autoRenew === false);
   
   const now = new Date();

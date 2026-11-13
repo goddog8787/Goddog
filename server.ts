@@ -3782,6 +3782,47 @@ app.get('/api/payment/verified-orders', (req, res) => {
   });
 });
 
+// =============================================================
+// 藍新金流：單筆訂單 / VIP 扣款驗證端點 (verify-paid-order)
+// =============================================================
+app.get('/api/payment/verify-paid-order', (req, res) => {
+  const orderId = String(req.query.orderId || '').trim();
+  if (!orderId) {
+    return res.status(400).json({ verified: false, message: '缺少訂單單號' });
+  }
+
+  const paidOrder = verifiedPaidOrdersStore[orderId];
+  if (paidOrder && paidOrder.status === 'paid' && paidOrder.isVerifiedByNewebPay) {
+    return res.json({
+      verified: true,
+      orderId,
+      tradeNo: paidOrder.tradeNo,
+      amt: paidOrder.amt,
+      payTime: paidOrder.payTime,
+      source: 'verified_paid_orders_store'
+    });
+  }
+
+  const recurringSub = Object.values(recurringSubscriptionsStore).find(
+    (s: any) => s.orderId === orderId && s.status === 'active'
+  ) as any;
+  if (recurringSub) {
+    return res.json({
+      verified: true,
+      orderId,
+      periodNo: recurringSub.periodNo,
+      amt: recurringSub.price,
+      source: 'recurring_subscriptions_store'
+    });
+  }
+
+  return res.json({
+    verified: false,
+    orderId,
+    message: '未查得該筆訂單之金流成功入帳紀錄'
+  });
+});
+
 // -------------------------------------------------------------
 // 8.6. 藍新物流 (NewebPay Logistics) 超商店到店地圖 API
 // -------------------------------------------------------------
@@ -3824,6 +3865,7 @@ app.get('/api/payment/logistics/map', (req, res) => {
 
         <!-- Content -->
         <div class="p-5 space-y-4">
+          <div id="mapFeedbackBanner" class="hidden p-3 rounded-xl text-xs font-bold border"></div>
           <div class="bg-slate-900/80 p-3.5 rounded-2xl border border-slate-700/80 text-xs text-slate-300">
             請點選以下門市或輸入店號/店名，系統將自動將門市資訊帶入您的結帳訂單中。
           </div>
@@ -3962,6 +4004,15 @@ app.get('/api/payment/logistics/map', (req, res) => {
           renderStores(filtered);
         }
 
+        function showMapBanner(msg, isError) {
+          var banner = document.getElementById('mapFeedbackBanner');
+          if (!banner) return;
+          banner.textContent = msg;
+          banner.className = isError
+            ? 'p-3 rounded-xl text-xs font-bold border bg-rose-950/70 border-rose-500/60 text-rose-200'
+            : 'p-3 rounded-xl text-xs font-bold border bg-emerald-950/70 border-emerald-500/60 text-emerald-200';
+        }
+
         function selectStore(storeName, storeCode, storeAddr) {
           const brand = '${brandCode}';
           const fullFormatted = brand + ' ' + storeName + ' (' + storeCode + ') - ' + storeAddr;
@@ -3986,8 +4037,10 @@ app.get('/api/payment/logistics/map', (req, res) => {
               storeAddr: storeAddr,
               fullFormatted: fullFormatted
             }));
-            alert('已選取門市：' + fullFormatted + '，即將返回結帳畫面！');
-            window.location.href = '/';
+            showMapBanner('已選取門市：' + fullFormatted + '，即將返回結帳畫面！', false);
+            setTimeout(function() {
+              window.location.href = '/';
+            }, 800);
           }
         }
 
@@ -3996,7 +4049,7 @@ app.get('/api/payment/logistics/map', (req, res) => {
           const code = document.getElementById('customCode').value.trim() || '自訂門市';
           const addr = document.getElementById('customAddr').value.trim() || '';
           if (!name) {
-            alert('請至少填寫門市名稱！');
+            showMapBanner('請至少填寫門市名稱！', true);
             return;
           }
           selectStore(name, code, addr);

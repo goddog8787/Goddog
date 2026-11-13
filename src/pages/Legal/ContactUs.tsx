@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Phone, MapPin, Clock, Check, Loader2 } from 'lucide-react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { LanguageCode } from '../../types';
 import { translations } from '../../utils/i18n';
 
@@ -120,12 +120,12 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
               <p className="text-slate-600 leading-relaxed mb-6 whitespace-pre-line">
                 {t.contactSuccessDesc || '我們已經收到您的訊息，神狗勾客服團隊會盡量在 24 小時內回覆您，謝謝您的支持！'}
               </p>
-              <a 
-                href="/contact" 
+              <Link 
+                to="/contact" 
                 className="inline-block px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors"
               >
                 {t.contactBackBtn || '返回'}
-              </a>
+              </Link>
             </div>
           ) : (
             <>

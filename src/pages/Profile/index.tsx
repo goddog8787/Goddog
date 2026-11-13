@@ -5,11 +5,11 @@ import { User, Sparkles, MapPin, Share2, CreditCard, Gift,
   HelpCircle, Bell, History, Printer, Medal, HeadphonesIcon,
   CheckCircle2
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { auth, logOut, signInWithGoogle } from '../../lib/firebase';
 import { isMockOrder, confirmOrderReceipt, getGenuineUserOrders } from '../../lib/orderVerification';
 import { OrderModal, NotificationModal, PrinterModal, AddressModal, ReferralModal, AchievementModal, SettingsModal, HistoryModal, CouponModal, FAQModal, classifyOrderStatusLabel } from './ProfileModals';
-import { getStoredRecentlyViewedSync, loadCustomerUserData } from '../../lib/customerPersistence';
+import { getStoredRecentlyViewedSync, loadCustomerUserData, isMemberVipActive } from '../../lib/customerPersistence';
 import { LanguageCode } from '../../types';
 
 export interface ProfilePageProps {
@@ -99,12 +99,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const ordersCount = genuineMemberOrders.length;
   const totalSpent = genuineMemberOrders.reduce((sum, o) => sum + (Number(o.totalAmount || o.total) || 0), 0);
 
-  const isVipActive = Boolean(
-    member?.subscriptionPlan && 
-    member.subscriptionPlan !== 'None' && 
-    member.subscriptionExpiry && 
-    new Date(member.subscriptionExpiry).getTime() > Date.now()
-  );
+  const isVipActive = isMemberVipActive(member);
 
   let makerTitle = lang === 'en' ? 'Novice Maker' : lang === 'ja' ? '新人メイカー' : '新手創客';
   let TitleIcon = User;
@@ -324,11 +319,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
           <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-5">
             {lang === 'en' ? (
-              <>By signing in, you agree to GodDog 3D’s <a href="/terms" className="underline hover:text-indigo-400">Terms of Service</a> and <a href="/privacy-policy" className="underline hover:text-indigo-400">Privacy Policy</a></>
+              <>By signing in, you agree to GodDog 3D’s <Link to="/terms" className="underline hover:text-indigo-400">Terms of Service</Link> and <Link to="/privacy-policy" className="underline hover:text-indigo-400">Privacy Policy</Link></>
             ) : lang === 'ja' ? (
-              <>ログインすることで、神狗勾3Dの<a href="/terms" className="underline hover:text-indigo-400">利用規約</a>および<a href="/privacy-policy" className="underline hover:text-indigo-400">プライバシーポリシー</a>に同意したものとみなされます</>
+              <>ログインすることで、神狗勾3Dの<Link to="/terms" className="underline hover:text-indigo-400">利用規約</Link>および<Link to="/privacy-policy" className="underline hover:text-indigo-400">プライバシーポリシー</Link>に同意したものとみなされます</>
             ) : (
-              <>登入即表示您同意神狗勾商城的 <a href="/terms" className="underline hover:text-indigo-400">服務條款</a> 與 <a href="/privacy-policy" className="underline hover:text-indigo-400">隱私權政策</a></>
+              <>登入即表示您同意神狗勾商城的 <Link to="/terms" className="underline hover:text-indigo-400">服務條款</Link> 與 <Link to="/privacy-policy" className="underline hover:text-indigo-400">隱私權政策</Link></>
             )}
           </p>
         </div>
@@ -383,7 +378,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div 
           onClick={() => navigate('/subscription')}
           className={`rounded-3xl p-5 sm:p-6 shadow-lg flex items-center justify-between cursor-pointer hover:scale-[1.02] transition-transform active:scale-95 text-white overflow-hidden relative ${
-            member?.subscriptionPlan && member.subscriptionPlan !== 'None' 
+            isVipActive
               ? 'bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-indigo-500/20 border border-indigo-400'
               : 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-amber-500/20'
           }`}
@@ -537,7 +532,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 action: () => openModal('history') 
               },
             ].map((item, i) => (
-              <button key={i} onClick={item.action || (() => showToast(lang === 'en' ? `${item.label} coming soon!` : lang === 'ja' ? `${item.label} は近日公開！` : `${item.label} 即將開放！`))} className="w-full flex items-center p-4 hover:bg-slate-50 transition-colors text-left group cursor-pointer">
+              <button key={i} onClick={item.action} className="w-full flex items-center p-4 hover:bg-slate-50 transition-colors text-left group cursor-pointer">
                 <div className={`w-12 h-12 rounded-2xl ${item.bg} ${item.color} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}>
                   <item.icon className="w-6 h-6" />
                 </div>
@@ -578,7 +573,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             ].map((item, i) => (
               <button 
                 key={i} 
-                onClick={item.action || (() => showToast(lang === 'en' ? `${item.label} coming soon!` : lang === 'ja' ? `${item.label} は近日公開！` : `${item.label} 即將開放！`))}
+                onClick={item.action}
                 className="w-full flex items-center p-4 hover:bg-slate-50 transition-colors text-left group cursor-pointer"
               >
                 <item.icon className="w-5 h-5 text-slate-400 shrink-0" />
@@ -630,10 +625,25 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           }}
         />
         <PrinterModal isOpen={activeModal === 'printers'} onClose={() => setActiveModal(null)} member={member} />
-        <AddressModal isOpen={activeModal === 'address'} onClose={() => setActiveModal(null)} member={member} />
+        <AddressModal isOpen={activeModal === 'address'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
         <ReferralModal isOpen={activeModal === 'referral'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
         <AchievementModal isOpen={activeModal === 'achievements'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} orders={genuineMemberOrders} />
-        <SettingsModal isOpen={activeModal === 'settings'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
+        <SettingsModal
+          isOpen={activeModal === 'settings'}
+          onClose={() => setActiveModal(null)}
+          member={member}
+          setMember={setMember}
+          onAccountDeleted={async () => {
+            setActiveModal(null);
+            if (onLogout) {
+              await onLogout();
+            } else {
+              setMember(null);
+            }
+            showToast(lang === 'en' ? 'Account deleted.' : lang === 'ja' ? 'アカウントを削除しました。' : '帳號與雲端資料已刪除，並已安全登出。');
+            navigate('/', { replace: true });
+          }}
+        />
         <FAQModal isOpen={activeModal === 'faq'} onClose={() => setActiveModal(null)} />
         <NotificationModal isOpen={activeModal === 'notifications'} onClose={() => setActiveModal(null)} member={member} />
         <HistoryModal 

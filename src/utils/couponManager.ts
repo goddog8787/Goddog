@@ -130,10 +130,70 @@ export interface CouponApplyResult {
   label: string;
 }
 
+export const BUILTIN_MEMBER_COUPONS: StoreCoupon[] = [
+  {
+    id: 'c-goddog2026',
+    code: 'GODDOG2026',
+    title: '新會員專屬首購折抵 NT$ 100',
+    discountType: 'fixed',
+    discountValue: 100,
+    minSpend: 0,
+    usedCount: 0,
+    expiryDate: '2026-12-31',
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
+  {
+    id: 'c-achieve50',
+    code: 'ACHIEVE50',
+    title: '新手創客里程碑 $50 優惠券',
+    discountType: 'fixed',
+    discountValue: 50,
+    minSpend: 0,
+    usedCount: 0,
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
+  {
+    id: 'c-achieve100',
+    code: 'ACHIEVE100',
+    title: '列印老手里程碑 $100 優惠券',
+    discountType: 'fixed',
+    discountValue: 100,
+    minSpend: 0,
+    usedCount: 0,
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
+  {
+    id: 'c-achieve200',
+    code: 'ACHIEVE200',
+    title: '神狗勾大使里程碑 $200 優惠券',
+    discountType: 'fixed',
+    discountValue: 200,
+    minSpend: 0,
+    usedCount: 0,
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
+  {
+    id: 'c-achievefree',
+    code: 'ACHIEVEFREE',
+    title: '列印大神滿級 $300 免運神券',
+    discountType: 'fixed',
+    discountValue: 300,
+    minSpend: 0,
+    usedCount: 0,
+    isActive: true,
+    createdAt: '2026-01-01',
+  },
+];
+
 export function validateCoupon(
   inputCode: string,
   subtotal: number,
-  isVipMember: boolean = false
+  isVipMember: boolean = false,
+  memberCoupons: any[] = []
 ): CouponApplyResult {
   const code = inputCode.trim().toUpperCase();
   if (!code) {
@@ -141,7 +201,43 @@ export function validateCoupon(
   }
 
   const coupons = getStoreCoupons();
-  const coupon = coupons.find((c) => c.code.toUpperCase() === code);
+  let coupon = coupons.find((c) => c.code.toUpperCase() === code);
+  let forceFreeShipping = false;
+
+  // Fallback to built-in welcome / achievement codes
+  if (!coupon) {
+    const builtin = BUILTIN_MEMBER_COUPONS.find((c) => c.code.toUpperCase() === code);
+    if (builtin) {
+      coupon = builtin;
+      if (builtin.code === 'ACHIEVEFREE') {
+        forceFreeShipping = true;
+      }
+    }
+  }
+
+  // Fallback to personal saved coupons on member profile
+  if (!coupon && Array.isArray(memberCoupons)) {
+    const personal = memberCoupons.find((mc) => String(mc?.code || '').trim().toUpperCase() === code);
+    if (personal) {
+      const inferredType: StoreCoupon['discountType'] =
+        personal.discountType || (personal.freeShipping ? 'free_shipping' : 'fixed');
+      coupon = {
+        id: personal.id || `personal-${code}`,
+        code,
+        title: personal.name || personal.title || `專屬優惠券 (${code})`,
+        discountType: inferredType,
+        discountValue: Number(personal.discount ?? personal.discountValue ?? 0),
+        minSpend: Number(personal.minSpend || 0),
+        usedCount: 0,
+        expiryDate: personal.expiry && personal.expiry !== '永久有效' ? personal.expiry : undefined,
+        isActive: true,
+        createdAt: '2026-01-01',
+      };
+      if (personal.freeShipping || code === 'ACHIEVEFREE') {
+        forceFreeShipping = true;
+      }
+    }
+  }
 
   if (!coupon) {
     return {
@@ -163,17 +259,20 @@ export function validateCoupon(
     };
   }
 
-  if (coupon.expiryDate) {
+  if (coupon.expiryDate && coupon.expiryDate !== '永久有效') {
     const expiry = new Date(coupon.expiryDate);
-    const now = new Date();
-    if (now > expiry) {
-      return {
-        isValid: false,
-        errorMessage: `優惠代碼「${code}」已於 ${coupon.expiryDate} 過期。`,
-        discountAmount: 0,
-        freeShipping: false,
-        label: '',
-      };
+    if (!Number.isNaN(expiry.getTime())) {
+      expiry.setHours(23, 59, 59, 999);
+      const now = new Date();
+      if (now > expiry) {
+        return {
+          isValid: false,
+          errorMessage: `優惠代碼「${code}」已於 ${coupon.expiryDate} 過期。`,
+          discountAmount: 0,
+          freeShipping: false,
+          label: '',
+        };
+      }
     }
   }
 
@@ -208,7 +307,7 @@ export function validateCoupon(
   }
 
   let discountAmount = 0;
-  let freeShipping = false;
+  let freeShipping = forceFreeShipping || code === 'ACHIEVEFREE';
 
   if (coupon.discountType === 'free_shipping') {
     freeShipping = true;

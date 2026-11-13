@@ -7,6 +7,7 @@ import {
   deleteSingleCustomerRecentlyViewed,
   getStoredRecentlyViewedSync,
   saveCustomerOrderRecord,
+  isMemberVipActive,
 } from '../../lib/customerPersistence';
 import { isMockOrder, getGenuineUserOrders } from '../../lib/orderVerification';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
@@ -26,7 +27,10 @@ import {
   saveUserProfileToFirestore,
   bindReferralCodeForUser,
   processReferralOrderReward,
+  deleteCustomerAccountAndData,
 } from '../../lib/firebase';
+import { TaiwanAddressInput } from '../../components/Storefront/TaiwanAddressInput';
+import { getStoreCoupons, validateCoupon } from '../../utils/couponManager';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -323,7 +327,7 @@ export const OrderModal: React.FC<{
       );
     }
     if (member?.id && member.id !== 'guest') {
-      saveCustomerOrderRecord(member.id, updatedOrder).catch(() => {});
+      saveCustomerOrderRecord(updatedOrder, member.id).catch(() => {});
     }
     try {
       await setDoc(
@@ -1075,80 +1079,295 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
 };
 
 
-export const AddressModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any }> = ({ isOpen, onClose, member }) => {
+export const AddressModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  member?: any;
+  setMember?: (m: any) => void;
+}> = ({ isOpen, onClose, member, setMember }) => {
   const [addresses, setAddresses] = useState<any[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
+  const [isEditingForm, setIsEditingForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | string | null>(null);
   const [form, setForm] = useState({ name: '', phone: '', addr: '' });
+  const [formError, setFormError] = useState('');
+  const [statusNotice, setStatusNotice] = useState('');
+
+  const showNotice = (msg: string) => {
+    setStatusNotice(msg);
+    setTimeout(() => setStatusNotice(''), 3000);
+  };
 
   useEffect(() => {
     if (isOpen) {
-      loadCustomerUserData(member?.id, 'addresses').then(data => {
-        if (data && data.length > 0) setAddresses(data);
-        else setAddresses([]);
+      setIsEditingForm(false);
+      setEditingId(null);
+      setFormError('');
+      loadCustomerUserData(member?.id, 'addresses').then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const hasDefault = data.some((a: any) => a?.isDefault);
+          const normalized = hasDefault ? data : data.map((a: any, i: number) => ({ ...a, isDefault: i === 0 }));
+          setAddresses(normalized);
+        } else if (member?.address && member.address.trim()) {
+          const migrated = [
+            {
+              id: Date.now(),
+              name: member?.name || '會員本人',
+              phone: member?.phone || '',
+              addr: member.address.trim(),
+              isDefault: true,
+            },
+          ];
+          setAddresses(migrated);
+          saveCustomerUserData(member?.id, 'addresses', migrated).catch(() => {});
+        } else {
+          setAddresses([]);
+        }
       });
     }
   }, [isOpen, member?.id]);
 
+  const syncDefaultAddressToMember = (nextAddrs: any[]) => {
+    const defaultAddr = nextAddrs.find((a) => a.isDefault) || nextAddrs[0] || null;
+    if (setMember && member) {
+      const updated = {
+        ...member,
+        address: defaultAddr?.addr || '',
+        phone: defaultAddr?.phone || member.phone || '',
+      };
+      setMember(updated);
+      try {
+        localStorage.setItem('printcore_member', JSON.stringify(updated));
+      } catch {}
+      saveUserProfileToFirestore(updated).catch(() => {});
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('printcore:addresses-updated', { detail: nextAddrs }));
+    }
+  };
+
   const saveToDb = (newAddrs: any[]) => {
-    setAddresses(newAddrs);
-    saveCustomerUserData(member?.id, 'addresses', newAddrs);
+    // Guarantee exactly one default address if list is non-empty
+    let normalized = newAddrs;
+    if (newAddrs.length > 0 && !newAddrs.some((a) => a.isDefault)) {
+      normalized = newAddrs.map((a, idx) => ({ ...a, isDefault: idx === 0 }));
+    }
+    setAddresses(normalized);
+    saveCustomerUserData(member?.id, 'addresses', normalized).catch(() => {});
+    syncDefaultAddressToMember(normalized);
   };
 
-  const handleAdd = () => {
-    if (!form.name || !form.addr) return;
-    saveToDb([...addresses, { id: Date.now(), ...form, isDefault: addresses.length === 0 }]);
+  const openAddForm = () => {
+    setEditingId(null);
+    setForm({
+      name: member?.name && member.name !== '創客訪客' ? member.name : '',
+      phone: member?.phone || '',
+      addr: '',
+    });
+    setFormError('');
+    setIsEditingForm(true);
+  };
+
+  const openEditForm = (addrItem: any) => {
+    setEditingId(addrItem.id);
+    setForm({
+      name: addrItem.name || '',
+      phone: addrItem.phone || '',
+      addr: addrItem.addr || '',
+    });
+    setFormError('');
+    setIsEditingForm(true);
+  };
+
+  const handleSave = () => {
+    const cleanName = form.name.trim();
+    const cleanPhone = form.phone.trim();
+    const cleanAddr = form.addr.trim();
+
+    if (!cleanName) {
+      setFormError('請輸入收件人姓名');
+      return;
+    }
+    if (!cleanPhone) {
+      setFormError('請輸入聯絡電話');
+      return;
+    }
+    if (!cleanAddr || cleanAddr.length < 4) {
+      setFormError('請選擇縣市鄉鎮並輸入完整收件地址');
+      return;
+    }
+
+    setFormError('');
+    if (editingId !== null) {
+      const updatedList = addresses.map((a) =>
+        a.id === editingId ? { ...a, name: cleanName, phone: cleanPhone, addr: cleanAddr } : a
+      );
+      saveToDb(updatedList);
+      showNotice('已更新收件地址，結帳時將自動帶入預設地址');
+    } else {
+      const newEntry = {
+        id: Date.now(),
+        name: cleanName,
+        phone: cleanPhone,
+        addr: cleanAddr,
+        isDefault: addresses.length === 0,
+      };
+      saveToDb([...addresses, newEntry]);
+      showNotice(
+        newEntry.isDefault
+          ? '已儲存並設為預設收件地址，宅配結帳將自動帶入！'
+          : '已新增常用收件地址！'
+      );
+    }
     setForm({ name: '', phone: '', addr: '' });
-    setIsAdding(false);
+    setEditingId(null);
+    setIsEditingForm(false);
   };
 
-  const handleDelete = (id: number) => {
-    saveToDb(addresses.filter(a => a.id !== id));
+  const handleDelete = (id: number | string) => {
+    const next = addresses.filter((a) => a.id !== id);
+    saveToDb(next);
+    showNotice('已刪除收件地址');
   };
 
-  const handleSetDefault = (id: number) => {
-    saveToDb(addresses.map(a => ({ ...a, isDefault: a.id === id })));
+  const handleSetDefault = (id: number | string) => {
+    saveToDb(addresses.map((a) => ({ ...a, isDefault: a.id === id })));
+    showNotice('已設為預設收件地址，商品宅配結帳將自動套用！');
   };
-return (
+
+  return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="地址資訊管理">
+      {statusNotice && (
+        <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-2">
+          <Check className="w-4 h-4 shrink-0" />
+          <span>{statusNotice}</span>
+        </div>
+      )}
+
+      <div className="mb-4 p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 text-indigo-800 text-xs flex items-start gap-2">
+        <MapPin className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+        <span>設定「預設收件」後，於購物車選擇宅配到府結帳時將自動帶入姓名、電話與完整地址。</span>
+      </div>
+
       <div className="space-y-4 mb-6">
-        {addresses.map(a => (
-          <div key={a.id} className={`bg-white p-5 rounded-2xl border-2 relative overflow-hidden transition-all ${a.isDefault ? 'border-indigo-500 shadow-md shadow-indigo-100' : 'border-slate-100 shadow-sm'}`}>
-            {a.isDefault && <div className="absolute top-0 right-0 bg-indigo-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg">預設收件</div>}
-            
+        {addresses.map((a) => (
+          <div
+            key={a.id}
+            className={`bg-white p-5 rounded-2xl border-2 relative overflow-hidden transition-all ${
+              a.isDefault ? 'border-indigo-500 shadow-md shadow-indigo-100' : 'border-slate-100 shadow-sm'
+            }`}
+          >
+            {a.isDefault && (
+              <div className="absolute top-0 right-0 bg-indigo-500 text-white text-[10px] font-bold px-3 py-1 rounded-bl-lg">
+                預設收件
+              </div>
+            )}
+
             <div className="flex items-start gap-3">
-              <MapPin className={`w-5 h-5 mt-0.5 ${a.isDefault ? 'text-indigo-500' : 'text-slate-400'}`} />
-              <div>
-                <h4 className="font-bold text-slate-900 flex items-center gap-2">{a.name} <span className="text-xs font-medium text-slate-500">{a.phone}</span></h4>
-                <p className="text-sm text-slate-600 mt-2 leading-relaxed">{a.addr}</p>
+              <MapPin className={`w-5 h-5 mt-0.5 shrink-0 ${a.isDefault ? 'text-indigo-500' : 'text-slate-400'}`} />
+              <div className="min-w-0 flex-1 pr-14">
+                <h4 className="font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                  <span>{a.name}</span>
+                  <span className="text-xs font-medium text-slate-500">{a.phone}</span>
+                </h4>
+                <p className="text-sm text-slate-600 mt-1.5 leading-relaxed break-words">{a.addr}</p>
               </div>
             </div>
-            <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50">
+            <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
               {!a.isDefault && (
-                <button onClick={() => handleSetDefault(a.id)} className="flex-1 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 cursor-pointer">設為預設</button>
+                <button
+                  type="button"
+                  onClick={() => handleSetDefault(a.id)}
+                  className="flex-1 py-2 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 cursor-pointer transition-colors"
+                >
+                  設為預設
+                </button>
               )}
-              <button onClick={() => handleDelete(a.id)} className="flex-1 py-2 text-xs font-bold text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 flex items-center justify-center gap-1 cursor-pointer">
+              <button
+                type="button"
+                onClick={() => openEditForm(a)}
+                className="flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+              >
+                <Edit2 className="w-3 h-3" /> 編輯
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDelete(a.id)}
+                className="flex-1 py-2 text-xs font-bold text-rose-600 bg-rose-50 rounded-lg hover:bg-rose-100 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+              >
                 <Trash2 className="w-3 h-3" /> 刪除
               </button>
             </div>
           </div>
         ))}
-        {addresses.length === 0 && !isAdding && (
-          <div className="text-center py-8 text-slate-400 font-bold bg-slate-50 rounded-2xl border border-slate-100">目前沒有設定任何地址</div>
+        {addresses.length === 0 && !isEditingForm && (
+          <div className="text-center py-8 text-slate-400 font-bold bg-slate-50 rounded-2xl border border-slate-100">
+            目前沒有設定任何收件地址
+          </div>
         )}
       </div>
 
-      {isAdding ? (
-        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
-          <input type="text" placeholder="收件人姓名" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500" />
-          <input type="text" placeholder="聯絡電話" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500" />
-          <textarea placeholder="詳細地址" value={form.addr} onChange={e => setForm({...form, addr: e.target.value})} rows={3} className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500 resize-none" />
+      {isEditingForm ? (
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+          <h4 className="text-sm font-black text-slate-900">
+            {editingId !== null ? '編輯收件地址' : '新增收件地址'}
+          </h4>
+          {formError && (
+            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold">
+              {formError}
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">收件人姓名 *</label>
+            <input
+              type="text"
+              placeholder="請輸入真實姓名"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1">聯絡手機 *</label>
+            <input
+              type="tel"
+              placeholder="0912345678"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <TaiwanAddressInput
+            value={form.addr}
+            onChange={(val) => setForm({ ...form, addr: val })}
+            label="台灣詳細收件地址 *"
+          />
           <div className="flex gap-2 pt-2">
-            <button onClick={() => setIsAdding(false)} className="flex-1 py-3 text-slate-500 font-bold bg-white border border-slate-300 rounded-xl cursor-pointer">取消</button>
-            <button onClick={handleAdd} className="flex-1 py-3 text-white font-bold bg-slate-900 rounded-xl hover:bg-slate-800 cursor-pointer">儲存地址</button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditingForm(false);
+                setEditingId(null);
+                setFormError('');
+              }}
+              className="flex-1 py-3 text-slate-600 font-bold bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer text-sm"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              className="flex-1 py-3 text-white font-bold bg-slate-900 rounded-xl hover:bg-indigo-600 transition-colors cursor-pointer text-sm"
+            >
+              {editingId !== null ? '儲存修改' : '儲存地址'}
+            </button>
           </div>
         </div>
       ) : (
-        <button onClick={() => setIsAdding(true)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 cursor-pointer">
+        <button
+          type="button"
+          onClick={openAddForm}
+          className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 cursor-pointer"
+        >
           <Plus className="w-5 h-5" /> 新增收件地址
         </button>
       )}
@@ -1502,74 +1721,174 @@ export const ReferralModal: React.FC<{
   );
 };
 
-export const CouponModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any; setMember?: (m:any)=>void }> = ({ isOpen, onClose, member, setMember }) => {
+export const CouponModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any; setMember?: (m: any) => void }> = ({ isOpen, onClose, member, setMember }) => {
   const [code, setCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const coupons = member?.coupons || [];
+  const coupons = Array.isArray(member?.coupons) ? member.coupons : [];
+  const isVip = isMemberVipActive(member);
+
+  const handleCopyCode = (cCode: string) => {
+    if (!cCode) return;
+    navigator.clipboard?.writeText(cCode).catch(() => {});
+    setCopiedCode(cCode);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
 
   const handleRedeem = () => {
-    if(!code.trim()) return;
+    const cleanCode = code.trim().toUpperCase();
+    if (!cleanCode) return;
     setRedeeming(true);
-    setTimeout(() => {
-      if(code === 'GODDOG2026') {
-        const newCoupon = { id: Date.now(), name: '新客專屬 $100 折價券', discount: 100, expiry: '2026-12-31' };
-        if(setMember) {
-          const updated = {...member, coupons: [...(member?.coupons||[]), newCoupon]};
-          setMember(updated);
-          import('../../lib/firebase').then(({ saveUserProfileToFirestore }) => saveUserProfileToFirestore(updated));
-        }
-        setMsg('兌換成功！');
-      } else {
-        setMsg('無效的優惠碼或已過期');
+
+    try {
+      // Check duplicate claim
+      if (coupons.some((c: any) => String(c.code || '').toUpperCase() === cleanCode)) {
+        setMsg({ ok: false, text: `優惠券「${cleanCode}」已在您的錢包中，無需重複領取。` });
+        setRedeeming(false);
+        setTimeout(() => setMsg(null), 3200);
+        return;
       }
-      setRedeeming(false);
+
+      // Check coupon validity against unified coupon manager (pass high subtotal so minSpend doesn't block claiming)
+      const checkRes = validateCoupon(cleanCode, 999999, isVip);
+      if (!checkRes.isValid || !checkRes.coupon) {
+        setMsg({ ok: false, text: checkRes.errorMessage || '無效的優惠碼或已過期' });
+        setRedeeming(false);
+        setTimeout(() => setMsg(null), 3500);
+        return;
+      }
+
+      const sc = checkRes.coupon;
+      const newCoupon = {
+        id: Date.now(),
+        code: sc.code,
+        name: sc.title,
+        discount: sc.discountType === 'free_shipping' ? 60 : sc.discountValue,
+        discountType: sc.discountType,
+        freeShipping: sc.discountType === 'free_shipping' || sc.code === 'ACHIEVEFREE',
+        minSpend: sc.minSpend || 0,
+        expiry: sc.expiryDate || '2027-12-31',
+      };
+
+      if (setMember && member) {
+        const updated = { ...member, coupons: [...coupons, newCoupon] };
+        setMember(updated);
+        try {
+          localStorage.setItem('printcore_member', JSON.stringify(updated));
+        } catch {}
+        saveUserProfileToFirestore(updated).catch(() => {});
+        if (updated.id && updated.id !== 'guest') {
+          saveCustomerUserData(updated.id, 'coupons', updated.coupons).catch(() => {});
+        }
+      }
+      setMsg({ ok: true, text: `成功兌換優惠券「${sc.code}」！結帳時可一鍵套用。` });
       setCode('');
-      setTimeout(()=>setMsg(''), 3000);
-    }, 800);
+    } finally {
+      setRedeeming(false);
+      setTimeout(() => setMsg(null), 3500);
+    }
   };
+
+  // Suggest claimable active store coupons not yet owned
+  const claimableSuggestions = getStoreCoupons()
+    .filter((sc) => sc.isActive && (!sc.targetTier || sc.targetTier !== 'vip' || isVip))
+    .filter((sc) => !coupons.some((mc: any) => String(mc.code || '').toUpperCase() === sc.code.toUpperCase()))
+    .slice(0, 4);
 
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="我的優惠券">
-      <div className="bg-slate-50 p-4 rounded-2xl mb-6 border border-slate-200">
-        <h4 className="font-bold text-slate-900 text-sm mb-2">輸入優惠代碼</h4>
+      <div className="bg-slate-50 p-4 rounded-2xl mb-5 border border-slate-200">
+        <h4 className="font-bold text-slate-900 text-sm mb-2">輸入優惠代碼領取</h4>
         <div className="flex gap-2">
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="輸入序號兌換" 
-            className="flex-1 px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500 font-mono uppercase"
+            placeholder="例如 GODDOG2026 / MAKER100"
+            className="flex-1 px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500 font-mono uppercase text-sm"
           />
-          <button 
+          <button
+            type="button"
             onClick={handleRedeem}
-            disabled={redeeming || !code}
-            className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+            disabled={redeeming || !code.trim()}
+            className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 disabled:opacity-50 cursor-pointer text-sm shrink-0"
           >
             {redeeming ? '兌換中...' : '兌換'}
           </button>
         </div>
-        {msg && <p className={`text-xs font-bold mt-2 ${msg.includes('成功') ? 'text-emerald-600' : 'text-rose-500'}`}>{msg}</p>}
+        {msg && (
+          <p className={`text-xs font-bold mt-2 ${msg.ok ? 'text-emerald-600' : 'text-rose-500'}`}>
+            {msg.text}
+          </p>
+        )}
+        {claimableSuggestions.length > 0 && (
+          <div className="mt-3 pt-2.5 border-t border-slate-200/80 flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-slate-500">可領取代碼：</span>
+            {claimableSuggestions.map((sc) => (
+              <button
+                key={sc.id}
+                type="button"
+                onClick={() => setCode(sc.code)}
+                className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 cursor-pointer"
+              >
+                {sc.code}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <h4 className="font-bold text-slate-900 mb-3 px-1">可使用的優惠券 ({coupons.length})</h4>
       <div className="space-y-3">
-        {coupons.length > 0 ? coupons.map((c:any) => (
-          <div key={c.id} className="bg-white p-4 rounded-2xl border-2 border-indigo-100 shadow-sm flex items-center justify-between relative overflow-hidden">
-            <div className="absolute left-0 top-0 bottom-0 w-2 bg-indigo-500"></div>
-            <div className="pl-3">
-              <h5 className="font-black text-slate-900">{c.name}</h5>
-              <p className="text-xs text-slate-500 mt-1">有效期限: {c.expiry}</p>
+        {coupons.length > 0 ? coupons.map((c: any) => {
+          const isFreeShip = c.freeShipping || c.discountType === 'free_shipping';
+          const isPercent = c.discountType === 'percentage';
+          const codeLabel = c.code || '';
+          return (
+            <div key={c.id} className="bg-white p-4 rounded-2xl border-2 border-indigo-100 shadow-sm flex items-center justify-between gap-3 relative overflow-hidden">
+              <div className="absolute left-0 top-0 bottom-0 w-2 bg-indigo-500"></div>
+              <div className="pl-3 min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h5 className="font-black text-slate-900 text-sm">{c.name}</h5>
+                  {codeLabel && (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCode(codeLabel)}
+                      className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 cursor-pointer"
+                      title="複製優惠碼於結帳套用"
+                    >
+                      <span>{codeLabel}</span>
+                      {copiedCode === codeLabel ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  有效期限: {c.expiry || '2027-12-31'}
+                  {c.minSpend > 0 ? ` ・ 滿 NT$${c.minSpend} 可用` : ''}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                {isFreeShip && (!c.discount || c.discountType === 'free_shipping') ? (
+                  <p className="text-base font-black text-emerald-600">全館免運</p>
+                ) : isPercent ? (
+                  <p className="text-xl font-black text-indigo-600">{Math.round((100 - Number(c.discount || 0)) / 10)} 折</p>
+                ) : (
+                  <p className="text-2xl font-black text-indigo-600">
+                    <span className="text-sm">$</span>{c.discount}
+                  </p>
+                )}
+                {codeLabel === 'ACHIEVEFREE' && (
+                  <span className="text-[10px] font-bold text-emerald-600 block">含超商/宅配免運</span>
+                )}
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-black text-indigo-600"><span className="text-sm">$</span>{c.discount}</p>
-            </div>
-          </div>
-        )) : (
+          );
+        }) : (
           <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
-             <Ticket className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-             <p className="text-slate-400 font-bold">目前沒有可用的優惠券</p>
+            <Ticket className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+            <p className="text-slate-400 font-bold">目前沒有可用的優惠券</p>
           </div>
         )}
       </div>
@@ -2010,7 +2329,7 @@ export const AchievementModal: React.FC<{
     const bigSpenderProgress = Math.min(5000, Math.max(maxSingleOrder, totalSpend));
 
     // Loyal fan: VIP active OR >= 3 orders OR garage >= 2 printers + >= 2 orders
-    const isVip = member?.subscriptionStatus === 'active' && member?.subscriptionPlan !== 'None';
+    const isVip = isMemberVipActive(member);
     const loyalCount = isVip ? 3 : Math.min(3, ordersCount + (userPrinters.length >= 2 ? 1 : 0));
 
     // Slicer parameter wizard
@@ -2467,107 +2786,243 @@ export const AchievementModal: React.FC<{
     </ModalWrapper>
   );
 };
-export const SettingsModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any; setMember?: (m:any)=>void }> = ({ isOpen, onClose, member, setMember }) => {
-  const [toast, setToast] = useState('');
+export const SettingsModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  member?: any;
+  setMember?: (m: any) => void;
+  onAccountDeleted?: () => Promise<void> | void;
+}> = ({ isOpen, onClose, member, setMember, onAccountDeleted }) => {
+  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const orderNotif = member?.settings?.orderNotif ?? true;
   const promoNotif = member?.settings?.promoNotif ?? false;
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 3000);
+  useEffect(() => {
+    if (isOpen) {
+      setConfirmDeleteOpen(false);
+      setIsDeleting(false);
+    }
+  }, [isOpen]);
+
+  const showToast = (text: string, ok: boolean = true) => {
+    setToast({ ok, text });
+    setTimeout(() => setToast(null), 4000);
   };
 
-  const toggleSetting = (key: string) => {
-    if (setMember) {
-      setMember((prev: any) => {
-        const currentSettings = prev.settings || {};
-        const currentValue = currentSettings[key] !== undefined 
-            ? currentSettings[key] 
-            : (key === 'orderNotif' ? true : false);
-            
-        return {
-          ...prev,
-          settings: {
-            ...currentSettings,
-            [key]: !currentValue
-          }
-        };
-      });
+  const toggleSetting = async (key: string) => {
+    if (!setMember || !member) return;
+    const currentSettings = member.settings || {};
+    const currentValue =
+      currentSettings[key] !== undefined ? currentSettings[key] : key === 'orderNotif';
+    const nextSettings = {
+      ...currentSettings,
+      [key]: !currentValue,
+    };
+    const updated = {
+      ...member,
+      settings: nextSettings,
+    };
+    setMember(updated);
+    try {
+      localStorage.setItem('printcore_member', JSON.stringify(updated));
+    } catch {}
+    if (updated.id && updated.id !== 'guest') {
+      saveCustomerUserData(updated.id, 'settings', nextSettings).catch(() => {});
+      saveUserProfileToFirestore(updated).catch(() => {});
     }
+    showToast(
+      `已${!currentValue ? '開啟' : '關閉'}「${key === 'orderNotif' ? '訂單狀態通知' : '最新優惠與活動'}」並同步至雲端`,
+      true
+    );
   };
 
   const handlePasswordReset = async () => {
     if (isResetting) return;
-    
-    // Fallback email if member.email isn't available
-    const targetEmail = member?.email || auth?.currentUser?.email;
-    
+
+    const currentUser = auth?.currentUser;
+    const targetEmail = (currentUser?.email || member?.email || '').trim();
+
     if (!targetEmail) {
-       showToast('無法取得您的信箱，請重新登入後再試。');
-       return;
+      showToast('無法取得您的註冊信箱，請重新登入後再試。', false);
+      return;
     }
-    
+
+    // Check if logged in strictly via Google OAuth (no password provider attached)
+    const providers = currentUser?.providerData || [];
+    const isGoogleOnlyUser =
+      providers.length > 0 && providers.every((p) => p.providerId === 'google.com');
+
+    if (isGoogleOnlyUser) {
+      showToast(
+        '此帳號為 Google 快速登入（無獨立密碼），如需修改密碼請直接前往您的 Google 帳戶安全性設定變更。',
+        true
+      );
+      return;
+    }
+
     setIsResetting(true);
     try {
       await sendPasswordResetEmail(auth, targetEmail);
-      showToast('密碼重置信已成功發送至：' + targetEmail);
+      showToast(`密碼重設信已發送至 ${targetEmail}，請至收件匣（含垃圾郵件匣）查收！`, true);
     } catch (error: any) {
-      console.error('Password reset error:', error);
-      showToast('發送失敗，請稍後再試或聯繫客服。');
+      console.warn('Password reset info:', error?.code, error?.message);
+      if (error?.code === 'auth/too-many-requests') {
+        showToast('發送次數過於頻繁，請稍候幾分鐘再試。', false);
+      } else if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-email') {
+        showToast(
+          '此測試／本機帳號尚未註冊於 Firebase 密碼系統，請改用信箱重新註冊或使用 Google 帳號登入。',
+          false
+        );
+      } else {
+        showToast('發送密碼重設連結失敗，請確認信箱正確或稍後再試。', false);
+      }
     } finally {
       setIsResetting(false);
     }
   };
 
+  const handleConfirmDeleteAccount = async () => {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const res = await deleteCustomerAccountAndData(member?.id);
+      if (res.requiresRecentLogin) {
+        showToast('雲端會員檔案已清除；若要徹底註銷 Google 驗證憑證，下次登入後可再次執行。', true);
+      } else {
+        showToast('帳號與所有個人資料已成功清除。', true);
+      }
+      if (onAccountDeleted) {
+        await onAccountDeleted();
+      } else {
+        onClose();
+      }
+    } catch (err) {
+      console.error('Delete account failed:', err);
+      showToast('刪除帳號時發生異常，請稍後再試。', false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="系統設定">
-      <div className="space-y-6 relative">
+      <div className="space-y-6">
         <AnimatePresence>
           {toast && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="absolute -top-10 left-0 right-0 flex justify-center z-50">
-              <div className="bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
-                <Check className="w-3 h-3" /> {toast}
-              </div>
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className={`p-3.5 rounded-2xl text-xs font-bold flex items-start gap-2 border shadow-sm ${
+                toast.ok
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-700'
+              }`}
+            >
+              <Check className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{toast.text}</span>
             </motion.div>
           )}
         </AnimatePresence>
-        
+
         <div>
           <h4 className="font-bold text-slate-900 text-sm mb-3 px-1">通知偏好</h4>
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-            <div className="p-4 flex items-center justify-between">
+            <div className="p-4 flex items-center justify-between gap-3">
               <div>
                 <p className="font-bold text-slate-900 text-sm">訂單狀態通知</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">出貨與到貨時發送 Email</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">出貨與到貨時發送 Email</p>
               </div>
-              <button onClick={() => toggleSetting('orderNotif')} className={`w-12 h-7 rounded-full flex items-center px-1 cursor-pointer transition-colors ${orderNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 justify-start'}`}>
-                <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm"></motion.div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={orderNotif}
+                onClick={() => toggleSetting('orderNotif')}
+                className={`w-12 h-7 rounded-full flex items-center px-1 cursor-pointer transition-colors shrink-0 ${
+                  orderNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 justify-start'
+                }`}
+              >
+                <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm" />
               </button>
             </div>
-            <div className="p-4 flex items-center justify-between">
+            <div className="p-4 flex items-center justify-between gap-3">
               <div>
                 <p className="font-bold text-slate-900 text-sm">最新優惠與活動</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">接收限時特價與折價券資訊</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">接收限時特價與折價券資訊</p>
               </div>
-              <button onClick={() => toggleSetting('promoNotif')} className={`w-12 h-7 rounded-full flex items-center px-1 cursor-pointer transition-colors ${promoNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 justify-start'}`}>
-                <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm"></motion.div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={promoNotif}
+                onClick={() => toggleSetting('promoNotif')}
+                className={`w-12 h-7 rounded-full flex items-center px-1 cursor-pointer transition-colors shrink-0 ${
+                  promoNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 justify-start'
+                }`}
+              >
+                <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm" />
               </button>
             </div>
           </div>
         </div>
+
         <div>
           <h4 className="font-bold text-slate-900 text-sm mb-3 px-1">帳號安全</h4>
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-            <button onClick={handlePasswordReset} disabled={isResetting} className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left group disabled:opacity-50">
-              <span className="font-bold text-slate-900 text-sm">{isResetting ? '發送中...' : '寄送更改密碼連結'}</span>
-              <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+            <button
+              type="button"
+              onClick={handlePasswordReset}
+              disabled={isResetting}
+              className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left group disabled:opacity-50 cursor-pointer"
+            >
+              <div>
+                <span className="font-bold text-slate-900 text-sm block">
+                  {isResetting ? '正在發送重設連結...' : '寄送更改密碼連結'}
+                </span>
+                {member?.email && (
+                  <span className="text-[11px] text-slate-400">將寄送至 {member.email}</span>
+                )}
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors shrink-0" />
             </button>
-            <button onClick={() => showToast('為保護帳戶安全，請聯繫客服進行刪除程序')} className="w-full p-4 flex items-center justify-between hover:bg-rose-50 transition-colors text-left group">
-              <span className="font-bold text-rose-600 text-sm">刪除帳號</span>
-              <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 transition-colors" />
-            </button>
+
+            {!confirmDeleteOpen ? (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteOpen(true)}
+                className="w-full p-4 flex items-center justify-between hover:bg-rose-50 transition-colors text-left group cursor-pointer"
+              >
+                <span className="font-bold text-rose-600 text-sm">刪除帳號</span>
+                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-rose-500 transition-colors shrink-0" />
+              </button>
+            ) : (
+              <div className="p-4 bg-rose-50/90 space-y-3">
+                <p className="text-xs font-bold text-rose-800 leading-relaxed">
+                  確定要永久刪除帳號嗎？此動作將清除您的會員檔案、常用地址、購物車與通知紀錄，且無法復原。
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteOpen(false)}
+                    disabled={isDeleting}
+                    className="flex-1 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
+                  >
+                    取消保留
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDeleteAccount}
+                    disabled={isDeleting}
+                    className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl disabled:opacity-50 cursor-pointer"
+                  >
+                    {isDeleting ? '正在清除資料...' : '確認永久刪除'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -2640,51 +3095,65 @@ export const NotificationModal: React.FC<{ isOpen: boolean; onClose: () => void;
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!isOpen) return;
+    if (!member?.id || member.id === 'guest') {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     let unsubscribe: any = null;
     const fetchNotifications = async () => {
-      if (isOpen && member?.id) {
-        try {
-          const { db } = await import('../../lib/firebase');
-          const { collection, query, orderBy, onSnapshot } = await import('firebase/firestore');
-          const q = query(collection(db, 'users', member.id, 'notifications'), orderBy('createdAt', 'desc'));
-          unsubscribe = onSnapshot(q, (snapshot) => {
-             const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-             setNotifications(notifs);
-             setLoading(false);
-          });
-        } catch(e) {
-          console.warn(e);
-          setLoading(false);
-        }
+      try {
+        const { db } = await import('../../lib/firebase');
+        const { collection, query, orderBy, onSnapshot } = await import('firebase/firestore');
+        const q = query(collection(db, 'users', member.id, 'notifications'), orderBy('createdAt', 'desc'));
+        unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const notifs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setNotifications(notifs);
+            setLoading(false);
+          },
+          (err) => {
+            console.warn('Notifications snapshot fallback:', err);
+            setLoading(false);
+          }
+        );
+      } catch (e) {
+        console.warn(e);
+        setLoading(false);
       }
     };
     fetchNotifications();
     return () => {
-       if(unsubscribe) unsubscribe();
+      if (unsubscribe) unsubscribe();
     };
   }, [isOpen, member?.id]);
 
   const markAllAsRead = async () => {
-    if (!member?.id) return;
+    if (!member?.id || member.id === 'guest') return;
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
     try {
       const { db } = await import('../../lib/firebase');
       const { writeBatch, doc } = await import('firebase/firestore');
       const batch = writeBatch(db);
-      notifications.forEach(n => {
-        if (!n.read) {
-          batch.update(doc(db, 'users', member.id, 'notifications', n.id), { read: true });
-        }
+      unread.forEach((n) => {
+        batch.update(doc(db, 'users', member.id, 'notifications', n.id), { read: true });
       });
       await batch.commit();
-    } catch(e) { console.warn(e); }
+    } catch (e) {
+      console.warn(e);
+    }
   };
 
   useEffect(() => {
-    if (isOpen) {
-       // Mark all as read when opening
-       markAllAsRead();
+    if (isOpen && notifications.some((n) => !n.read)) {
+      markAllAsRead();
     }
-  }, [isOpen, notifications.length]);
+  }, [isOpen, notifications]);
 
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="系統通知">

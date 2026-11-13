@@ -926,6 +926,24 @@ export async function loadCustomerUserData(
 }
 
 /**
+ * Unified VIP validity check across storefront, cart, checkout, subscription, profile & achievements
+ */
+export function isMemberVipActive(member: any): boolean {
+  if (!member || typeof member !== 'object') return false;
+  const plan = member.subscriptionPlan;
+  if (!plan || plan === 'None') return false;
+  const status = member.subscriptionStatus;
+  if (status === 'expired' || status === 'inactive') return false;
+  if (member.subscriptionExpiry) {
+    const expiryMs = new Date(member.subscriptionExpiry).getTime();
+    if (!Number.isNaN(expiryMs) && expiryMs <= Date.now()) {
+      return false;
+    }
+  }
+  return status === 'active' || status === 'cancelled';
+}
+
+/**
  * Strictly sanitizes customer profiles to purge any legacy mock/simulated subscription and delegation data
  */
 export function sanitizeCustomerProfile(profile: any): any {
@@ -933,10 +951,14 @@ export function sanitizeCustomerProfile(profile: any): any {
 
   const cleaned = { ...profile };
 
+  const expiryMs = cleaned.subscriptionExpiry ? new Date(cleaned.subscriptionExpiry).getTime() : NaN;
+  const isUnexpiredCancelled =
+    cleaned.subscriptionStatus === 'cancelled' && !Number.isNaN(expiryMs) && expiryMs > Date.now();
+
   const hasGenuinePlan = Boolean(
     cleaned.subscriptionPlan &&
       cleaned.subscriptionPlan !== 'None' &&
-      cleaned.subscriptionStatus === 'active'
+      (cleaned.subscriptionStatus === 'active' || isUnexpiredCancelled)
   );
 
   if (!hasGenuinePlan) {

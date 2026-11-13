@@ -36,6 +36,7 @@ import { TrustCertModal } from './TrustCertModal';
 import { validateCoupon } from '../../utils/couponManager';
 import { createClientNewebPayCheckout } from '../../lib/newebpayClient';
 import { TaiwanAddressInput } from './TaiwanAddressInput';
+import { loadCustomerUserData, isMemberVipActive } from '../../lib/customerPersistence';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -45,6 +46,7 @@ interface CheckoutModalProps {
   lang: LanguageCode;
   member: MemberProfile;
   pointsToUse: number;
+  initialCouponCode?: string;
   onOrderCompleted: (newOrder: Order) => void;
   onOpenTracking: (trackingNumber: string) => void;
 }
@@ -57,6 +59,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   lang,
   member,
   pointsToUse,
+  initialCouponCode = '',
   onOpenTracking,
 }) => {
   const t = translations[lang];
@@ -90,6 +93,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setCustomerPhone(member?.phone && isValidPhone(member.phone) ? member.phone : '');
   }, [member?.id, member?.name, member?.email, member?.phone]);
 
+  // Saved addresses from AddressModal / member profile
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [showManualCvsInput, setShowManualCvsInput] = useState(false);
+
   // Invoice
   const [invoiceType, setInvoiceType] = useState<'cloud' | 'mobile_barcode' | 'tax_id'>('cloud');
   const [invoiceCarrierValue, setInvoiceCarrierValue] = useState('');
@@ -120,11 +127,112 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [couponError, setCouponError] = useState('');
   const [showTrustCertModal, setShowTrustCertModal] = useState(false);
 
+  // Load saved addresses whenever modal opens or AddressModal dispatches update
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+
+    const hydrateAddresses = (list: any[]) => {
+      if (!active) return;
+      const validList = Array.isArray(list) ? list.filter((a) => a && (a.addr || a.address)) : [];
+      if (validList.length > 0) {
+        setSavedAddresses(validList);
+      } else if (member?.address && member.address.trim()) {
+        setSavedAddresses([
+          {
+            id: 'member-profile-default',
+            name: member?.name && isValidCustomerName(member.name) ? member.name : '',
+            phone: member?.phone && isValidPhone(member.phone) ? member.phone : '',
+            addr: member.address.trim(),
+            isDefault: true,
+          },
+        ]);
+      } else {
+        setSavedAddresses([]);
+      }
+    };
+
+    const uid = member?.id && !member.id.startsWith('guest') ? member.id : auth.currentUser?.uid;
+    loadCustomerUserData(uid, 'addresses')
+      .then((data) => hydrateAddresses(data || []))
+      .catch(() => hydrateAddresses([]));
+
+    const onAddressesUpdated = (e: any) => {
+      if (Array.isArray(e?.detail)) {
+        hydrateAddresses(e.detail);
+      }
+    };
+    window.addEventListener('printcore:addresses-updated', onAddressesUpdated);
+    return () => {
+      active = false;
+      window.removeEventListener('printcore:addresses-updated', onAddressesUpdated);
+    };
+  }, [isOpen, member?.id, member?.address, member?.name, member?.phone]);
+
+  // Auto-apply default address when already in HOME delivery and shippingAddress is empty
+  const getDefaultSavedAddress = (list: any[] = savedAddresses) => {
+    const def = list.find((a) => a.isDefault) || list[0];
+    if (def) return def;
+    if (member?.address && member.address.trim()) {
+      return {
+        id: 'member-default',
+        name: member?.name && isValidCustomerName(member.name) ? member.name : '',
+        phone: member?.phone && isValidPhone(member.phone) ? member.phone : '',
+        addr: member.address.trim(),
+        isDefault: true,
+      };
+    }
+    return null;
+  };
+
+  const applySavedAddressEntry = (entry: any) => {
+    if (!entry) return;
+    setShippingAddress(entry.addr || entry.address || '');
+    if (entry.name && isValidCustomerName(entry.name)) {
+      setCustomerName(entry.name);
+    }
+    if (entry.phone && isValidPhone(entry.phone)) {
+      setCustomerPhone(entry.phone);
+    }
+    if (formError) setFormError(null);
+  };
+
+  useEffect(() => {
+    if (isOpen && shippingMethod === 'HOME' && !shippingAddress.trim()) {
+      const def = getDefaultSavedAddress();
+      if (def) {
+        applySavedAddressEntry(def);
+      }
+    }
+  }, [isOpen, shippingMethod, savedAddresses]);
+
   // Price calculations
   const rawSubtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
-  const isVip = Boolean(member?.subscriptionPlan && member.subscriptionPlan !== 'None');
+  const isVip = isMemberVipActive(member);
   const vipDiscountAmount = isVip ? Math.floor(rawSubtotal * 0.05) : 0;
   const subtotal = rawSubtotal - vipDiscountAmount;
+
+  // Auto-apply initialCouponCode forwarded from CartDrawer when CheckoutModal opens
+  useEffect(() => {
+    if (!isOpen) {
+      setFormError(null);
+      return;
+    }
+    if (initialCouponCode && initialCouponCode.trim()) {
+      const upper = initialCouponCode.trim().toUpperCase();
+      setCouponCode(upper);
+      const res = validateCoupon(upper, subtotal, isVip, member?.coupons || []);
+      if (res.isValid && res.coupon) {
+        setAppliedCoupon({
+          code: upper,
+          discountAmount: res.discountAmount,
+          freeShipping: res.freeShipping,
+          label: res.label,
+        });
+        setCouponError('');
+      }
+    }
+  }, [isOpen, initialCouponCode]);
 
   // Free shipping thresholds matching screenshot style:
   // Home delivery threshold: NT$ 1,500 (Fee: NT$ 100)
@@ -157,7 +265,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setCouponError('');
     if (!code) return;
 
-    const result = validateCoupon(code, subtotal, isVip);
+    const result = validateCoupon(code, subtotal, isVip, member?.coupons || []);
     if (result.isValid && result.coupon) {
       setAppliedCoupon({
         code,
@@ -195,8 +303,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const handleShippingMethodChange = (m: ShippingMethod) => {
     setShippingMethod(m);
+    setShowManualCvsInput(false);
     if (m === 'HOME') {
-      setShippingAddress('');
+      const def = getDefaultSavedAddress();
+      if (def && def.addr) {
+        applySavedAddressEntry(def);
+      } else {
+        setShippingAddress('');
+      }
     } else {
       let brand: '7-11' | 'familymart' | 'hilife' | 'okmart' = '7-11';
       if (m === 'FAMIC2C') brand = 'familymart';
@@ -685,14 +799,65 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       )}
                     </div>
                   ) : (
-                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+                      {savedAddresses.length > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                              <MapPin className="w-3.5 h-3.5" />
+                              從常用地址一鍵帶入：
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                            {savedAddresses.map((entry: any) => {
+                              const entryAddr = entry.addr || entry.address || '';
+                              const isSelected = shippingAddress.trim() === entryAddr.trim();
+                              return (
+                                <button
+                                  key={entry.id || entryAddr}
+                                  type="button"
+                                  onClick={() => applySavedAddressEntry(entry)}
+                                  className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-2 ${
+                                    isSelected
+                                      ? 'border-indigo-500 bg-indigo-50/70 dark:bg-indigo-950/40 ring-1 ring-indigo-500/40'
+                                      : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 bg-slate-50/70 dark:bg-slate-800/50'
+                                  }`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap text-xs font-bold text-slate-900 dark:text-slate-100">
+                                      <span>{entry.name || '常用收件人'}</span>
+                                      {entry.phone && (
+                                        <span className="text-[11px] font-mono font-medium text-slate-500 dark:text-slate-400">
+                                          {entry.phone}
+                                        </span>
+                                      )}
+                                      {entry.isDefault && (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-600 text-white">
+                                          預設收件
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 break-words">
+                                      {entryAddr}
+                                    </p>
+                                  </div>
+                                  {isSelected && (
+                                    <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
                       <TaiwanAddressInput
                         value={shippingAddress}
                         onChange={(addr) => {
                           setShippingAddress(addr);
                           if (formError) setFormError(null);
                         }}
-                        memberAddress={member?.address}
+                        memberAddress={getDefaultSavedAddress()?.addr || member?.address}
                         label="宅配收件地址"
                         placeholder="請輸入路名街巷、門牌號碼與樓層"
                       />
@@ -742,21 +907,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     />
                   </div>
 
-                  {shippingMethod !== 'HOME' && !shippingAddress && (
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          超商取件門市名稱與代號
-                        </label>
-                        <span className="text-[10px] text-rose-500 font-medium">* 必填</span>
-                      </div>
-                      <input
-                        type="text"
-                        value={shippingAddress}
-                        onChange={(e) => setShippingAddress(e.target.value)}
-                        placeholder={`點選上方按鈕選店，或手動輸入 (${cvsBrandInfo.shortName} 門市名稱)`}
-                        className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500"
-                      />
+                  {shippingMethod !== 'HOME' && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowManualCvsInput(!showManualCvsInput)}
+                        className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        {showManualCvsInput ? '隱藏手動輸入門市欄位' : '找不到門市？手動輸入門市名稱與代號'}
+                      </button>
+                      {showManualCvsInput && (
+                        <div className="mt-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                              手動填寫 {cvsBrandInfo.shortName} 取件門市名稱 / 代號
+                            </label>
+                            <span className="text-[10px] text-rose-500 font-medium">* 必填</span>
+                          </div>
+                          <input
+                            type="text"
+                            value={shippingAddress}
+                            onChange={(e) => {
+                              setShippingAddress(e.target.value);
+                              if (formError) setFormError(null);
+                            }}
+                            placeholder={`例：${cvsBrandInfo.shortName} 民雄門市 (154821)`}
+                            className="w-full px-3 py-2.5 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -941,6 +1120,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </button>
                     </div>
 
+                    {Array.isArray(member?.coupons) && member.coupons.filter((mc: any) => mc?.code).length > 0 && (
+                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">我的優惠券：</span>
+                        {member.coupons
+                          .filter((mc: any) => mc?.code)
+                          .map((mc: any) => (
+                            <button
+                              key={mc.id || mc.code}
+                              type="button"
+                              onClick={() => handleApplyCoupon(mc.code)}
+                              className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-[10px] font-mono font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer"
+                            >
+                              {mc.code}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+
                     {couponError && (
                       <p className="text-[11px] text-rose-600 dark:text-rose-400 mt-1">{couponError}</p>
                     )}
@@ -1064,6 +1261,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onSelectStore={({ fullFormatted, shippingMethod: chosenMethod }) => {
           setShippingAddress(fullFormatted);
           setShippingMethod(chosenMethod);
+          setShowManualCvsInput(false);
         }}
       />
     </div>

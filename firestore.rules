@@ -88,7 +88,7 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
       allow update: if isValidId(userId) && (isOwner(userId) || isAdmin()) && isValidUser(incoming());
-      allow delete: if isValidId(userId) && isAdmin();
+      allow delete: if isValidId(userId) && (isOwner(userId) || isAdmin());
 
       // Persistent customer data subcollection (cart, wishlist, comparison, coupons, chat, tracking, profile)
       match /userData/{dataId} {
