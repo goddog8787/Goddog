@@ -655,9 +655,9 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
           <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
             <Percent className="w-4 h-4" />
           </div>
-          <div>
-            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">全館 95 折</h4>
-            <p className="text-[11px] text-slate-500">結帳自動折抵</p>
+          <div className="min-w-0 flex-1">
+            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">全館 95 折</h4>
+            <p className="text-[11px] text-slate-500 text-pretty line-clamp-1">結帳自動折抵</p>
           </div>
         </div>
 
@@ -665,9 +665,9 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
           <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
             <Coins className="w-4 h-4" />
           </div>
-          <div>
-            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">雙倍狗勾幣</h4>
-            <p className="text-[11px] text-slate-500">2x 點數回饋</p>
+          <div className="min-w-0 flex-1">
+            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">雙倍狗勾幣</h4>
+            <p className="text-[11px] text-slate-500 text-pretty line-clamp-1">2x 點數回饋</p>
           </div>
         </div>
 
@@ -675,9 +675,9 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
           <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
             <Zap className="w-4 h-4" />
           </div>
-          <div>
-            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">優先出貨</h4>
-            <p className="text-[11px] text-slate-500">專屬快速揀貨</p>
+          <div className="min-w-0 flex-1">
+            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">優先出貨</h4>
+            <p className="text-[11px] text-slate-500 text-pretty line-clamp-1">專屬快速揀貨</p>
           </div>
         </div>
 
@@ -685,9 +685,9 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
           <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/70 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
             <Sparkles className="w-4 h-4" />
           </div>
-          <div>
-            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">金星徽章</h4>
-            <p className="text-[11px] text-slate-500">尊榮身份標記</p>
+          <div className="min-w-0 flex-1">
+            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">金星徽章</h4>
+            <p className="text-[11px] text-slate-500 text-pretty line-clamp-1">尊榮身份標記</p>
           </div>
         </div>
       </div>
@@ -744,16 +744,16 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
                     ) : null}
                   </div>
 
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white">
+                  <h3 className="text-lg font-black text-slate-900 dark:text-white text-balance">
                     {plan.name}
                   </h3>
 
                   <div className="flex items-baseline gap-2 mt-2 mb-1">
-                    <span className="text-2xl sm:text-3xl font-black text-indigo-600 dark:text-indigo-400 font-mono">
+                    <span className="text-2xl sm:text-3xl font-black text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">
                       NT$ {plan.price}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500 mb-4">{plan.tagline}</p>
+                  <p className="text-[11px] text-slate-500 mb-4 text-pretty line-clamp-2 min-h-[2.4em]">{plan.tagline}</p>
 
                   <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 mb-5 border-t border-slate-200/60 dark:border-slate-800 pt-3">
                     {plan.perks.map((perk, i) => (

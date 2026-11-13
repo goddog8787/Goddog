@@ -249,13 +249,13 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-5 bg-slate-900/60 dark:bg-slate-950/85 backdrop-blur-xs animate-in fade-in duration-200">
       <div
         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col h-[92vh] sm:h-[86vh] overflow-hidden text-slate-900 dark:text-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 1. Clean Non-Wrapping Modal Header */}
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-white dark:bg-slate-900 shrink-0">
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-white dark:bg-slate-900 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/20 border border-indigo-100 dark:border-indigo-500/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 shrink-0">
               <Store className="w-4 h-4" />
@@ -270,7 +270,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
                   全台 22 縣市・368 鄉鎮
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug truncate">
                 藍新物流 (NewebPay) 電子地圖連動・支援全台 7,000+ 門市檢索與新增
               </p>
             </div>
@@ -278,7 +278,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            className="w-9 h-9 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors cursor-pointer shrink-0"
             aria-label="關閉"
           >
             <X className="w-5 h-5" />
@@ -481,7 +481,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
         </div>
 
         {/* 3. Main Scrollable Store List / Manual Entry Area */}
-        <div className="flex-1 overflow-y-auto overscroll-contain bg-white dark:bg-slate-900 p-3 sm:p-4">
+        <div className="flex-1 overflow-y-auto overscroll-contain bg-white dark:bg-slate-900 p-4 sm:p-5">
           {activeTab === 'browse' ? (
             <div className="space-y-2.5">
               {/* Compact Action & Count Bar */}

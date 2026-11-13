@@ -13,6 +13,7 @@ import {
 import { FilamentProduct } from '../../types';
 import { INITIAL_PRODUCTS } from '../../data/mockData';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { evaluateProductDeepSearch, expandAssociativeKeywords } from '../../utils/productSearch';
 
 export interface SearchAutocompleteProps {
   searchQuery: string;
@@ -178,51 +179,81 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 
   const trimmedQuery = searchQuery.trim().toLowerCase();
 
-  // Compute Matched Materials
+  // Compute Matched Materials (including deep associative keywords)
   const matchedMaterials = useMemo(() => {
     if (!trimmedQuery) return [];
+    const expandedTokens = expandAssociativeKeywords(trimmedQuery);
     return MATERIAL_METAS.filter((mat) => {
       const matchKey = mat.key.toLowerCase().includes(trimmedQuery);
       const matchName = mat.name.toLowerCase().includes(trimmedQuery);
       const matchChinese = mat.chineseName.toLowerCase().includes(trimmedQuery);
-      const matchAlias = mat.aliases.some((a) => a.includes(trimmedQuery));
-      return matchKey || matchName || matchChinese || matchAlias;
+      const matchDesc = mat.description.toLowerCase().includes(trimmedQuery);
+      const matchAlias = mat.aliases.some(
+        (a) => a.includes(trimmedQuery) || expandedTokens.includes(a.toLowerCase())
+      );
+      const matchExpanded = expandedTokens.some(
+        (t) =>
+          mat.key.toLowerCase().includes(t) ||
+          mat.chineseName.toLowerCase().includes(t) ||
+          mat.description.toLowerCase().includes(t)
+      );
+      return matchKey || matchName || matchChinese || matchDesc || matchAlias || matchExpanded;
     }).map((mat) => {
       const count = products.filter((p) => p.material === mat.key).length;
       return { ...mat, count };
     });
   }, [trimmedQuery, products]);
 
-  // Compute Matched Brands
+  // Compute Matched Brands (including deep associative keywords)
   const matchedBrands = useMemo(() => {
     if (!trimmedQuery) return [];
+    const expandedTokens = expandAssociativeKeywords(trimmedQuery);
     return BRAND_METAS.filter((b) => {
       const matchName = b.name.toLowerCase().includes(trimmedQuery);
-      const matchAlias = b.aliases.some((a) => a.includes(trimmedQuery));
+      const matchAlias = b.aliases.some(
+        (a) => a.includes(trimmedQuery) || expandedTokens.includes(a.toLowerCase())
+      );
       return matchName || matchAlias;
     }).map((b) => {
-      // Check count of products that have this brand or mention it
-      const count = products.filter((p) => 
-        p.brand.toLowerCase().includes(b.name.toLowerCase()) ||
-        p.name.toLowerCase().includes(b.name.toLowerCase()) ||
-        b.aliases.some(a => p.name.toLowerCase().includes(a) || p.description.toLowerCase().includes(a))
+      const count = products.filter(
+        (p) =>
+          p.brand.toLowerCase().includes(b.name.toLowerCase()) ||
+          p.name.toLowerCase().includes(b.name.toLowerCase()) ||
+          b.aliases.some(
+            (a) =>
+              p.name.toLowerCase().includes(a) ||
+              p.description.toLowerCase().includes(a) ||
+              (p.features || []).some((f) => f.toLowerCase().includes(a))
+          )
       ).length;
       return { ...b, count };
     });
   }, [trimmedQuery, products]);
 
-  // Compute Matched Products (Top 4)
+  // Compute Matched Products (Top 6) using Deep Features & Associative Keyword Search
   const matchedProducts = useMemo(() => {
     if (!trimmedQuery) return [];
-    return products.filter((p) => {
-      return (
-        p.name.toLowerCase().includes(trimmedQuery) ||
-        p.material.toLowerCase().includes(trimmedQuery) ||
-        p.brand.toLowerCase().includes(trimmedQuery) ||
-        p.description.toLowerCase().includes(trimmedQuery) ||
-        p.features.some((f) => f.toLowerCase().includes(trimmedQuery))
-      );
-    }).slice(0, 4);
+    return products
+      .map((p) => {
+        const evalRes = evaluateProductDeepSearch(p, trimmedQuery);
+        if (!evalRes.matched) return null;
+        return {
+          product: p,
+          score: evalRes.score,
+          matchedFeatures: evalRes.matchedFeatures,
+        };
+      })
+      .filter(
+        (
+          item
+        ): item is {
+          product: FilamentProduct;
+          score: number;
+          matchedFeatures: string[];
+        } => item !== null
+      )
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6);
   }, [trimmedQuery, products]);
 
   // Combine suggestions for keyboard navigation
@@ -235,7 +266,9 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 
     matchedMaterials.forEach((m) => list.push({ type: 'material', key: `mat-${m.key}`, item: m }));
     matchedBrands.forEach((b) => list.push({ type: 'brand', key: `brand-${b.name}`, item: b }));
-    matchedProducts.forEach((p) => list.push({ type: 'product', key: `prod-${p.id}`, item: p }));
+    matchedProducts.forEach((entry) =>
+      list.push({ type: 'product', key: `prod-${entry.product.id}`, item: entry.product })
+    );
 
     return list;
   }, [matchedMaterials, matchedBrands, matchedProducts]);
@@ -557,9 +590,11 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                     <span>相關熱門商品 (Matching Products)</span>
                   </div>
                   <div className="mt-1 space-y-1">
-                    {matchedProducts.map((p) => {
+                    {matchedProducts.map(({ product: p, matchedFeatures }) => {
                       const globalIdx = allSuggestions.findIndex((s) => s.key === `prod-${p.id}`);
                       const isSelected = globalIdx === selectedIndex;
+                      const primaryFeature =
+                        matchedFeatures[0] || (Array.isArray(p.features) && p.features[0]) || '';
                       return (
                         <button
                           key={p.id}
@@ -569,7 +604,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                             isSelected ? 'bg-indigo-50 text-indigo-900 ring-1 ring-indigo-300' : 'hover:bg-slate-50 text-slate-800'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
                             {p.imageUrl && p.imageUrl.trim() !== '' ? (
                               <img
                                 src={getSafeProductImageUrl(p.imageUrl, p.material, p.name)}
@@ -593,6 +628,14 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                                 <span>•</span>
                                 <span>現貨 {p.stock} 卷</span>
                               </div>
+                              {primaryFeature && (
+                                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-1.5 py-0.5 rounded-md w-fit max-w-[270px] sm:max-w-md truncate">
+                                  <Sparkles className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
+                                  <span className="truncate">
+                                    特點：{highlightMatch(primaryFeature, trimmedQuery)}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="text-right shrink-0 ml-2">

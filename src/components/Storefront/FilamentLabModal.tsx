@@ -283,7 +283,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可返回主頁面"
     >
@@ -292,7 +292,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
-        <div className="sticky top-0 z-20 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white pt-10 pb-4 px-5 sm:p-5 flex flex-row items-center justify-between gap-3 border-b border-indigo-500/20">
+        <div className="sticky top-0 z-20 bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex flex-row items-center justify-between gap-3 border-b border-indigo-500/20">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600/80 border border-indigo-400/40 text-amber-300 flex items-center justify-center shadow-lg shrink-0">
               <Calculator className="w-5 h-5" />
@@ -384,7 +384,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-5 sm:p-7">
+        <div className="p-4 sm:p-6">
           {/* TAB 1: ESTIMATOR */}
           {activeTab === 'estimator' && (
             <div className="space-y-6">

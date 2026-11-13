@@ -4618,10 +4618,7 @@ app.get('/api/logistics/track/:trackingNumber', (req, res) => {
 // -------------------------------------------------------------
 // X. 聯絡客服 (Contact API) via Resend
 // -------------------------------------------------------------
-import { Resend } from 'resend';
-// Instantiate only if key exists
 const resendKey = process.env.RESEND_API_KEY;
-const resend = resendKey ? new Resend(resendKey) : null;
 
 app.post('/api/contact', async (req, res) => {
   try {
@@ -4631,10 +4628,13 @@ app.post('/api/contact', async (req, res) => {
       return res.status(400).json({ error: '請填寫完整資訊。' });
     }
 
-    if (!resend) {
+    if (!resendKey) {
       console.log('Contact message received:', { name, email, messageSnippet: message.slice(0, 50) });
       return res.json({ success: true, message: '感謝您的來信，客服團隊已收到您的訊息！' });
     }
+
+    const { Resend } = await import('resend');
+    const resend = new Resend(resendKey);
 
     // 1. Send notification to the admin (you)
     const adminRes = await resend.emails.send({
@@ -4815,12 +4815,21 @@ async function startServer() {
     });
   } else {
     // Dynamic middleware that delegates to Vite once ready, or falls back to dist if available
+    const distStatic = express.static(distPath, staticOptions);
     app.use((req, res, next) => {
       if (viteMiddleware) {
         return viteMiddleware(req, res, next);
       }
       if (hasBuiltDist) {
-        return express.static(distPath)(req, res, next);
+        return distStatic(req, res, () => {
+          if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+            return res.sendFile(path.join(distPath, 'index.html'));
+          }
+          next();
+        });
+      }
+      if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+        return res.status(200).send('<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="1"></head><body>載入中...</body></html>');
       }
       next();
     });
@@ -4855,11 +4864,13 @@ async function startServer() {
 
   if (!useProdStatic && isDev) {
     try {
+      process.env.DISABLE_HMR = 'true';
       const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
         server: {
           middlewareMode: true,
           hmr: false,
+          ws: false,
           watch: null,
         },
         appType: 'spa',
@@ -4884,6 +4895,7 @@ process.on('uncaughtException', (err: any) => {
 process.on('SIGTERM', () => {
   console.log('[神狗勾 Server] SIGTERM received, exiting cleanly.');
   if (activeHttpServer) {
+    try { activeHttpServer.closeAllConnections?.(); } catch {}
     try { activeHttpServer.close(); } catch {}
   }
   process.exit(0);
@@ -4891,6 +4903,7 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   console.log('[神狗勾 Server] SIGINT received, exiting cleanly.');
   if (activeHttpServer) {
+    try { activeHttpServer.closeAllConnections?.(); } catch {}
     try { activeHttpServer.close(); } catch {}
   }
   process.exit(0);

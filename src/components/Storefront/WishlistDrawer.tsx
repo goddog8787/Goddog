@@ -48,16 +48,16 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/60">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+        <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50/70 dark:bg-slate-800/60 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
               <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
             </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                 {lang === 'en' ? 'My Wishlist / Saved Filaments' : lang === 'ja' ? 'お気に入り・保存済み' : '我的願望清單 / 收藏庫'}
               </h2>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 {lang === 'en' 
                   ? `${savedProducts.length} items saved` 
                   : lang === 'ja' 
@@ -69,14 +69,14 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Wishlist Items List */}
-        <div className="p-5 flex-1 overflow-y-auto space-y-3">
+        <div className="p-4 sm:p-5 flex-1 overflow-y-auto space-y-3">
           {savedProducts.length === 0 ? (
             <div className="py-16 text-center text-slate-500 space-y-3">
               <div className="w-14 h-14 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-400 flex items-center justify-center mx-auto">
@@ -129,7 +129,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{displayName}</h4>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 text-balance line-clamp-2 leading-snug">{displayName}</h4>
                       <div className="text-[10px] text-slate-400 mt-0.5">{p.weight} • {displayMat}</div>
                     </div>
 
@@ -158,7 +158,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
 
         {/* Footer Actions */}
         {savedProducts.length > 0 && (
-          <div className="p-5 pb-24 lg:pb-5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 space-y-2">
+          <div className="px-4 py-3.5 sm:px-5 sm:py-4 pb-24 lg:pb-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 space-y-2 shrink-0">
             <button
               onClick={() => {
                 onAddAllToCart(savedProducts);

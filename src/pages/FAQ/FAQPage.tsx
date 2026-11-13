@@ -498,7 +498,7 @@ export const FAQPage: React.FC<FAQPageProps> = ({ lang: propLang }) => {
                     <span className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">
                       Q
                     </span>
-                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm sm:text-base leading-snug">
+                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm sm:text-base leading-snug text-balance">
                       {faq.q}
                     </h3>
                   </div>
@@ -508,7 +508,7 @@ export const FAQPage: React.FC<FAQPageProps> = ({ lang: propLang }) => {
                 </button>
 
                 {isOpen && (
-                  <div className="px-4 sm:px-5 pb-5 pt-1 text-slate-600 dark:text-slate-300 text-xs sm:text-sm leading-relaxed border-t border-slate-100 dark:border-slate-700/60 mt-1 pl-13">
+                  <div className="px-4 sm:px-5 pb-5 pt-1 text-slate-600 dark:text-slate-300 text-xs sm:text-sm leading-relaxed border-t border-slate-100 dark:border-slate-700/60 mt-1 pl-13 text-pretty">
                     {faq.a}
                   </div>
                 )}

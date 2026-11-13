@@ -186,7 +186,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     <div
       id={`product-card-${product.id}`}
       onClick={() => onViewDetail(liveProduct)}
-      className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer relative"
+      className="group h-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer relative"
     >
       {/* 純淨無遮擋商品圖片區（1:1 比例完整呈現線盤與盒裝，不裁切上下資訊） */}
       <div className="relative aspect-square w-full bg-slate-50 dark:bg-slate-800/40 overflow-hidden flex items-center justify-center cursor-pointer">
@@ -301,14 +301,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </span>
           </div>
 
-          {/* 第 2 列：商品標題（去重品牌前綴、穩定雙行高度、不留第三行殘字） */}
-          <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug line-clamp-2 min-h-[2.6em] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+          {/* 第 2 列：商品標題（去重品牌前綴、平衡斷行、穩定雙行高度） */}
+          <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug text-balance line-clamp-2 min-h-[2.6em] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
             {cleanTitle}
           </h3>
 
-          {/* 第 3 列：商品核心特色特點（俐落單行標籤） */}
+          {/* 商品精選描述（平衡排版並限制兩行防止長文字溢出與單字孤行） */}
+          {liveProduct.description && (
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 leading-relaxed text-pretty line-clamp-2 min-h-[2.8em]">
+              {liveProduct.description.replace(/神狗勾\s*/g, '').replace(/莫蘭迪\s*/g, '').trim()}
+            </p>
+          )}
+
+          {/* 第 3 列：商品核心特色特點（俐落標籤與寬度適應） */}
           <div className="flex flex-wrap items-center gap-1 pt-0.5">
-            <span className="inline-flex items-center text-[10px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded leading-tight truncate max-w-full">
+            <span className="inline-flex items-center text-[10px] sm:text-[11px] font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded leading-tight line-clamp-1 max-w-full">
               ✦ {featureHighlights.primary}
             </span>
             {featureHighlights.secondary && (
@@ -381,7 +388,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <div className="w-10 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-2.5 shrink-0" />
 
               {/* 商品摘要頭部 */}
-              <div className="px-4 pt-3 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
+              <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
                   {activeImageUrl ? (
                     <img
@@ -404,7 +411,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                         {formatPrice(liveProduct.price, currency)}
                       </span>
                     </div>
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate mt-1">
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white text-balance line-clamp-2 leading-snug mt-1">
                       {cleanTitle}
                     </h4>
                     <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400">
@@ -426,14 +433,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     e.stopPropagation();
                     setIsColorSheetOpen(false);
                   }}
-                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer shrink-0"
+                  className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer shrink-0 transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               {/* 顏色選擇列表 */}
-              <div className="p-4 overflow-y-auto space-y-3 flex-1">
+              <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                     {lang === 'en'
@@ -481,7 +488,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </div>
 
               {/* 底部數量與確認加入購物車按鈕 */}
-              <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/90 flex items-center gap-3 shrink-0">
+              <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/90 flex items-center gap-3 shrink-0">
                 <div className="flex items-center border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 overflow-hidden shrink-0">
                   <button
                     type="button"

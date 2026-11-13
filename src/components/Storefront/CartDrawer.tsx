@@ -134,7 +134,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header (Slim & Crisp) */}
-        <div className="p-3 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/90 shrink-0">
+        <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50/90 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
               <ShoppingBag className="w-4 h-4" />
@@ -183,7 +183,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <button
               id="close-cart-drawer-btn"
               onClick={onClose}
-              className="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+              className="w-9 h-9 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer shrink-0"
               title={lang === 'en' ? 'Close' : lang === 'ja' ? '閉じる' : '關閉'}
             >
               <X className="w-5 h-5" />
@@ -213,7 +213,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         </div>
 
         {/* Scrollable Body: Contains Cart Items + Booster Accessories + Coupons/Discounts */}
-        <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 sm:p-4 space-y-3.5 touch-pan-y">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3.5 touch-pan-y">
           {cartItems.length === 0 ? (
             <div className="py-20 text-center text-slate-400 flex flex-col items-center">
               <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-300 mb-3">
@@ -250,7 +250,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
-                        <h4 className="font-bold text-slate-900 text-xs break-words leading-snug">
+                        <h4 className="font-bold text-slate-900 text-xs text-balance line-clamp-2 leading-snug">
                           {translateProduct(item.product, lang).name.replace(/莫蘭迪\s*/g, '')}
                         </h4>
                         <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
@@ -525,7 +525,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Compact Sticky Dock at Bottom (Takes < 95px on mobile, never blocking items!) */}
         {cartItems.length > 0 && (
-          <div className="p-3 sm:p-4 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-lg shrink-0 space-y-2">
+          <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-lg shrink-0 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-baseline gap-1.5">

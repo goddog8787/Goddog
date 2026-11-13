@@ -172,6 +172,7 @@ import { SubscriptionPage } from './pages/Subscription/SubscriptionPage';
 import { MaterialGuidePage } from './pages/MaterialGuide/MaterialGuidePage';
 import { Footer } from './components/Footer';
 import { SEO } from './components/SEO';
+import { evaluateProductDeepSearch } from './utils/productSearch';
 import { getStoreAnnouncementConfig } from './utils/announcementManager';
 import { StoreAnnouncementConfig } from './types';
 
@@ -333,6 +334,28 @@ export default function App() {
   useEffect(() => {
     const unsubCatalog = subscribeToCloudCatalog(INITIAL_PRODUCTS, (cloudMergedProducts) => {
       setProducts(cloudMergedProducts);
+      setViewingProduct((prev) => {
+        if (!prev) return null;
+        return cloudMergedProducts.find((p) => p.id === prev.id) || prev;
+      });
+      setCartItems((prevCart) => {
+        if (!Array.isArray(prevCart) || prevCart.length === 0) return prevCart;
+        let changed = false;
+        const nextCart = prevCart.map((item) => {
+          const latestProd = cloudMergedProducts.find((p) => p.id === item.product?.id);
+          if (
+            latestProd &&
+            (latestProd.price !== item.product.price ||
+              latestProd.name !== item.product.name ||
+              latestProd.imageUrl !== item.product.imageUrl)
+          ) {
+            changed = true;
+            return { ...item, product: latestProd };
+          }
+          return item;
+        });
+        return changed ? nextCart : prevCart;
+      });
     });
     return () => unsubCatalog();
   }, []);
@@ -1467,21 +1490,30 @@ export default function App() {
   // Filter and sort products
   const materials = ['All', 'High-Speed PLA', 'PLA Matte', 'PETG', 'PETG Matte', 'ABS', 'TPU', 'PLA-CF', 'Resin', 'Accessories'];
 
-  const filteredAndSortedProducts = products
-    .filter((p) => {
-      const matchesMat = selectedMaterial === 'All' ? true : p.material === selectedMaterial;
-      const matchesQuery =
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.material.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.brand.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesMat && matchesQuery;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'price_low') return a.price - b.price;
-      if (sortBy === 'price_high') return b.price - a.price;
-      if (sortBy === 'rating') return b.rating - a.rating;
-      return b.reviewsCount - a.reviewsCount; // popular
+  const filteredAndSortedProducts = useMemo(() => {
+    const hasActiveQuery = searchQuery.trim().length > 0;
+    const scored = products
+      .map((p) => {
+        const matchesMat = selectedMaterial === 'All' ? true : p.material === selectedMaterial;
+        if (!matchesMat) return null;
+        const evalRes = evaluateProductDeepSearch(p, searchQuery);
+        if (!evalRes.matched) return null;
+        return { product: p, score: evalRes.score };
+      })
+      .filter((item): item is { product: FilamentProduct; score: number } => item !== null);
+
+    scored.sort((a, b) => {
+      if (hasActiveQuery && b.score !== a.score) {
+        return b.score - a.score;
+      }
+      if (sortBy === 'price_low') return a.product.price - b.product.price;
+      if (sortBy === 'price_high') return b.product.price - a.product.price;
+      if (sortBy === 'rating') return b.product.rating - a.product.rating;
+      return b.product.reviewsCount - a.product.reviewsCount; // popular
     });
+
+    return scored.map((item) => item.product);
+  }, [products, selectedMaterial, searchQuery, sortBy]);
 
   const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
@@ -1583,7 +1615,7 @@ export default function App() {
           /></>} />
           <Route path="/subscription" element={<><SEO title={lang === 'en' ? 'Subscription Plans - GodDog 3D' : lang === 'ja' ? '定期便・サブスク管理 - 神狗勾 3D' : '我的訂閱管理 - 神狗勾 3D'} description={lang === 'en' ? 'Manage your 3D printing maker VIP subscription, check remaining billing cycles, G-coin points and plans.' : lang === 'ja' ? '3DプリントメーカーVIP定期便プランの管理、残存期間、G-Coin残高、プラン更新設定。' : '管理您的 3D 列印創客 VIP 訂閱方案、查詢剩餘週期、點數餘額與續約設定。'} url="/subscription" /><SubscriptionPage member={member} setMember={setMember} onLoginClick={() => setIsAuthOpen(true)} lang={lang} /></>} />
           <Route path="/my-subscription" element={<Navigate to="/subscription" replace />} />
-          <Route path="*" element={<><SEO title={lang === 'en' ? 'Home - GodDog 3D Filaments' : lang === 'ja' ? 'ホーム - 神狗勾 3D フィラメント' : '首頁 - 神狗勾耗材旗艦館'} description={lang === 'en' ? 'GodDog 3D is Taiwan leading 3D printing filament store, offering high-speed PLA, PETG, TPU, and Carbon Fiber.' : lang === 'ja' ? '神狗勾 3Dは最高峰の3Dプリント用フィラメント専門店。高速PLA、PETG、TPU、カーボン配合線材を豊富にお届け。' : '神狗勾耗材商城為台灣頂尖 3D 列印耗材專營商店，專為創客與專業人士提供高品質的高速 PLA、PETG 等線材。'} />
+          <Route path="*" element={<><SEO title={lang === 'en' ? 'Home - GodDog 3D Filaments' : lang === 'ja' ? 'ホーム - 神狗勾 3D フィラメント' : '首頁 - 神狗勾耗材旗艦館'} description={lang === 'en' ? 'GodDog 3D is Taiwan leading 3D printing filament store, offering high-speed PLA, PETG, TPU, and Carbon Fiber.' : lang === 'ja' ? '神狗勾 3Dは最高峰の3Dプリント用フィラメント専門店。高速PLA、PETG、TPU、カーボン配合線材を豊富にお届け。' : '神狗勾耗材商城為台灣頂尖 3D 列印耗材專營商店，專為創客與專業人士提供高品質的高速 PLA、PETG 等線材。'} url="/" product={viewingProduct} products={products} />
         {activeTab === 'store' ? (
           /* ================================================================= */
           /* CUSTOMER STOREFRONT VIEW                                          */
@@ -2022,6 +2054,7 @@ export default function App() {
                           initial={{ opacity: 0, scale: 0.96 }}
                           animate={{ opacity: 1, scale: 1 }}
                           transition={{ duration: 0.18, delay: Math.min(idx * 0.02, 0.14) }}
+                          className="h-full"
                         >
                           <ProductCard
                             product={product}

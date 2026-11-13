@@ -197,7 +197,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可返回主頁面"
     >
@@ -206,7 +206,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
               <Truck className="w-5 h-5" />
@@ -226,17 +226,17 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+            className="w-9 h-9 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-5 max-h-[75vh] overflow-y-auto">
           {/* Tracking Search Input & Carrier selector */}
           <div className="space-y-3">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1 min-w-0">
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
@@ -247,28 +247,30 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                 />
               </div>
 
-              <select
-                value={carrier}
-                onChange={(e) => {
-                  const val = e.target.value as any;
-                  setCarrier(val);
-                  fetchTracking(inputCode, val);
-                }}
-                className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium cursor-pointer"
-              >
-                <option value="7-11">7-ELEVEN {lang === 'en' ? 'Drop-off' : lang === 'ja' ? '受取便' : '交貨便'}</option>
-                <option value="familymart">FamilyMart {lang === 'en' ? 'Store-to-Store' : lang === 'ja' ? '店舗受取' : '店到店'}</option>
-                <option value="blackcat">{lang === 'en' ? 'T-Cat Express Courier' : lang === 'ja' ? 'クロネコヤマト宅急便' : '黑貓宅急便'}</option>
-              </select>
+              <div className="grid grid-cols-[1fr_auto] sm:flex gap-2 shrink-0">
+                <select
+                  value={carrier}
+                  onChange={(e) => {
+                    const val = e.target.value as any;
+                    setCarrier(val);
+                    fetchTracking(inputCode, val);
+                  }}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium cursor-pointer"
+                >
+                  <option value="7-11">7-ELEVEN {lang === 'en' ? 'Drop-off' : lang === 'ja' ? '受取便' : '交貨便'}</option>
+                  <option value="familymart">FamilyMart {lang === 'en' ? 'Store-to-Store' : lang === 'ja' ? '店舗受取' : '店到店'}</option>
+                  <option value="blackcat">{lang === 'en' ? 'T-Cat Express Courier' : lang === 'ja' ? 'クロネコヤマト宅急便' : '黑貓宅急便'}</option>
+                </select>
 
-              <button
-                onClick={() => fetchTracking(inputCode, carrier)}
-                disabled={isLoading}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-              >
-                {isLoading ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
-                <span>{lang === 'en' ? 'Search' : lang === 'ja' ? '追跡' : '查詢'}</span>
-              </button>
+                <button
+                  onClick={() => fetchTracking(inputCode, carrier)}
+                  disabled={isLoading}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap"
+                >
+                  {isLoading ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  <span>{lang === 'en' ? 'Search' : lang === 'ja' ? '追跡' : '查詢'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Quick recent orders chips - ONLY genuine verified orders */}

@@ -491,9 +491,47 @@ export const ProductImageStudioModal: React.FC<ProductImageStudioModalProps> = (
 
   // Final Save & Apply
   const handleConfirmSave = () => {
-    const finalUrl = editedPreviewUrl || currentImage;
-    onApplyImage(finalUrl);
-    showToast('✅ 商品圖片更新成功！', 'success');
+    const candidateUrl =
+      activeTab === 'ai' && aiGeneratedImage
+        ? aiGeneratedImage
+        : editedPreviewUrl || aiGeneratedImage || currentImage;
+
+    if (candidateUrl && candidateUrl.startsWith('data:image/') && candidateUrl.length > 420000) {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 720;
+        let w = img.width || 720;
+        let h = img.height || 720;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const off = document.createElement('canvas');
+        off.width = w;
+        off.height = h;
+        const ctx = off.getContext('2d');
+        const finalCompressed = ctx
+          ? (ctx.drawImage(img, 0, 0, w, h), off.toDataURL('image/jpeg', 0.82))
+          : candidateUrl;
+        onApplyImage(finalCompressed);
+        showToast('✅ 商品圖片已同步儲存至 Firestore 雲端資料庫！', 'success');
+        onClose();
+      };
+      img.onerror = () => {
+        onApplyImage(candidateUrl);
+        onClose();
+      };
+      img.src = candidateUrl;
+      return;
+    }
+
+    onApplyImage(candidateUrl);
+    showToast('✅ 商品圖片已同步儲存至 Firestore 雲端資料庫！', 'success');
     onClose();
   };
 

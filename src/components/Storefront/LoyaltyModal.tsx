@@ -79,7 +79,7 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
@@ -88,16 +88,9 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white p-5 sm:p-6 relative">
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center cursor-pointer transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-
-          <div className="flex items-center justify-between pr-9">
-            <div className="flex items-center gap-3 min-w-0">
+        <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white px-4 py-3.5 sm:px-6 sm:py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner shrink-0">
                 <Crown className="w-6 h-6 text-amber-200" />
               </div>
@@ -114,19 +107,27 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
               </div>
             </div>
 
-            {onLogout && (
+            <div className="flex items-center gap-2 shrink-0">
+              {onLogout && (
+                <button
+                  onClick={() => {
+                    onLogout();
+                    onClose();
+                  }}
+                  className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-semibold cursor-pointer transition-colors shrink-0"
+                  title={lang === 'en' ? 'Sign out' : lang === 'ja' ? 'ログアウト' : '登出目前帳號'}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{lang === 'en' ? 'Sign Out' : lang === 'ja' ? 'ログアウト' : '登出'}</span>
+                </button>
+              )}
               <button
-                onClick={() => {
-                  onLogout();
-                  onClose();
-                }}
-                className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-semibold cursor-pointer transition-colors shrink-0"
-                title={lang === 'en' ? 'Sign out' : lang === 'ja' ? 'ログアウト' : '登出目前帳號'}
+                onClick={onClose}
+                className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
               >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>{lang === 'en' ? 'Sign Out' : lang === 'ja' ? 'ログアウト' : '登出'}</span>
+                <X className="w-5 h-5" />
               </button>
-            )}
+            </div>
           </div>
 
           {/* Navigation Tabs inside Header */}
@@ -160,7 +161,7 @@ export const LoyaltyModal: React.FC<LoyaltyModalProps> = ({
           </div>
         </div>
 
-        <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-5 max-h-[70vh] overflow-y-auto">
           {activeTab === 'perks' ? (
             <>
               {/* Points Balance Card */}

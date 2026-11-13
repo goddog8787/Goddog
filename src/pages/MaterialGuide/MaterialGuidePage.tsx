@@ -423,7 +423,7 @@ export const MaterialGuidePage: React.FC<MaterialGuidePageProps> = ({
                     <span className="inline-block bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold px-2.5 py-0.5 rounded-full mb-1.5 border border-indigo-200/50 dark:border-indigo-800">
                       {badgeText}
                     </span>
-                    <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100">
+                    <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-slate-100 text-balance line-clamp-2 min-h-[2.4em]">
                       {activeLang === 'en'
                         ? mat.id === 'petg-hf'
                           ? 'PETG / PETG-HF High-Flow Tough'
@@ -446,7 +446,7 @@ export const MaterialGuidePage: React.FC<MaterialGuidePageProps> = ({
                 </div>
 
                 {/* Description */}
-                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-4">
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-4 text-pretty line-clamp-3 sm:line-clamp-4 min-h-[4.5em]">
                   {descText}
                 </p>
 

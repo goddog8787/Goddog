@@ -59,7 +59,7 @@ export const OrderCertificateModal: React.FC<OrderCertificateModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in select-none cursor-pointer"
+      className="fixed inset-0 z-[100] overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in select-none cursor-pointer"
       onClick={onClose}
       title="點擊背景可關閉視窗"
     >
@@ -68,35 +68,35 @@ export const OrderCertificateModal: React.FC<OrderCertificateModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
-        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/80">
-          <div className="flex items-center gap-3">
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/80 dark:bg-slate-800/80">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
               <ShieldCheck className="w-6 h-6" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white text-balance">
                   訂單電子憑證與資料完整性證明
                 </h2>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
                   <CheckCircle2 className="w-3 h-3" /> 簽章已核驗
                 </span>
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono truncate">
                 憑證編號: {cert.certificateId}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Scrollable Body */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
           {/* Notification banner if downloaded */}
           {downloadSuccess && (
             <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 rounded-xl text-xs font-bold flex items-center gap-2 animate-fade-in">

@@ -38,33 +38,33 @@ export const FeaturedKnowledgeSection: React.FC = () => {
 
         {/* Feature Highlights Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-8 pt-6 border-t border-slate-800/80">
-          <Link to="/tools" className="flex items-center gap-3 p-3 rounded-2xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 transition-colors">
+          <Link to="/tools" className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 transition-colors">
             <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
               <Calculator className="w-5 h-5" />
             </div>
-            <div>
-              <div className="text-xs font-bold text-slate-100">代印成品報價算式</div>
-              <div className="text-[11px] text-slate-400">含電費、損耗與機台折舊</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-slate-100 text-balance line-clamp-1">代印成品報價算式</div>
+              <div className="text-[11px] text-slate-400 text-pretty line-clamp-2 leading-snug mt-0.5">含電費、損耗與機台折舊</div>
             </div>
           </Link>
 
-          <Link to="/tools" className="flex items-center gap-3 p-3 rounded-2xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 transition-colors">
+          <Link to="/tools" className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 transition-colors">
             <div className="w-9 h-9 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center shrink-0">
               <Scale className="w-5 h-5" />
             </div>
-            <div>
-              <div className="text-xs font-bold text-slate-100">線盤餘量秤重換算</div>
-              <div className="text-[11px] text-slate-400">各廠空盤扣重推算剩餘米數</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-slate-100 text-balance line-clamp-1">線盤餘量秤重換算</div>
+              <div className="text-[11px] text-slate-400 text-pretty line-clamp-2 leading-snug mt-0.5">各廠空盤扣重推算剩餘米數</div>
             </div>
           </Link>
 
-          <Link to="/tools" className="flex items-center gap-3 p-3 rounded-2xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 transition-colors">
+          <Link to="/tools" className="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 transition-colors">
             <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
               <Thermometer className="w-5 h-5" />
             </div>
-            <div>
-              <div className="text-xs font-bold text-slate-100">烘烤溫度與防潮指南</div>
-              <div className="text-[11px] text-slate-400">徹底消除受潮氣泡與牽絲</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-slate-100 text-balance line-clamp-1">烘烤溫度與防潮指南</div>
+              <div className="text-[11px] text-slate-400 text-pretty line-clamp-2 leading-snug mt-0.5">徹底消除受潮氣泡與牽絲</div>
             </div>
           </Link>
         </div>
@@ -115,11 +115,11 @@ export const FeaturedKnowledgeSection: React.FC = () => {
                   </div>
                 </div>
 
-                <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-2 leading-snug mb-2">
+                <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors text-balance line-clamp-2 min-h-[2.75em] leading-snug mb-2">
                   {article.title}
                 </h3>
 
-                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                <p className="text-xs text-slate-500 dark:text-slate-400 text-pretty line-clamp-2 min-h-[2.6em] leading-relaxed">
                   {article.excerpt}
                 </p>
               </div>

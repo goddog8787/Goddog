@@ -25,6 +25,15 @@ import {
 import { FilamentProduct, ColorOption, LanguageCode } from '../../types';
 import { PRINTER_PROFILES, PRINTER_BRANDS, PrinterProfile, findPrinterProfile, getPrintersByBrand } from '../../data/printerProfiles';
 import { computeFilamentMatchByFunction } from '../../utils/filamentFunctionEngine';
+import { loadCustomerUserData, getStoredCustomerSession } from '../../lib/customerPersistence';
+
+function extractValidNozzleSize(rawNozzle?: string): '0.4mm' | '0.2mm' | '0.6mm' | '0.8mm' {
+  const s = String(rawNozzle || '');
+  if (s.includes('0.2')) return '0.2mm';
+  if (s.includes('0.6')) return '0.6mm';
+  if (s.includes('0.8')) return '0.8mm';
+  return '0.4mm';
+}
 
 interface AIAdvisorModalProps {
   isOpen: boolean;
@@ -43,11 +52,12 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
   onOpenSupportWithPrompt,
   lang = 'zh-TW',
 }) => {
-  // Selected Brand & Printer state (Brand-first workflow)
+  // Selected Brand & Printer state (Auto-synced from user's Printer Garage default, with manual override)
   const [selectedBrandFilter, setSelectedBrandFilter] = useState<string>('bambu');
   const [selectedPrinterId, setSelectedPrinterId] = useState<string>('bambu-x1c');
-  const [printerSearchQuery, setPrinterSearchQuery] = useState<string>('');
-  
+  const [garagePrinters, setGaragePrinters] = useState<any[]>([]);
+  const [hasLoadedGarageDefault, setHasLoadedGarageDefault] = useState<boolean>(false);
+
   // Interactive Slider States
   // 1. 承受溫度需求 (°C): 45 ~ 115
   const [heatResistance, setHeatResistance] = useState<number>(65);
@@ -61,6 +71,63 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
   const [surfaceFinish, setSurfaceFinish] = useState<'standard' | 'matte' | 'cf' | 'flexible'>('standard');
 
   const [nozzleSize, setNozzleSize] = useState<'0.4mm' | '0.2mm' | '0.6mm' | '0.8mm'>('0.4mm');
+
+  // Auto-sync default printer from "我的列印機車庫" on open & when garage updates
+  useEffect(() => {
+    const applyGaragePrinter = (printerEntry: any) => {
+      if (!printerEntry) return;
+      const matched = findPrinterProfile(printerEntry.profileId || printerEntry.name);
+      if (matched) {
+        setSelectedBrandFilter(matched.brandId);
+        setSelectedPrinterId(matched.id);
+        if (printerEntry.nozzle) {
+          setNozzleSize(extractValidNozzleSize(printerEntry.nozzle));
+        }
+        setHasLoadedGarageDefault(true);
+      }
+    };
+
+    const syncFromGarage = async () => {
+      try {
+        const cachedRaw = localStorage.getItem('printcore_default_printer_profile');
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          if (parsed && (parsed.profileId || parsed.name)) {
+            applyGaragePrinter(parsed);
+          }
+        }
+      } catch {}
+
+      try {
+        const session = getStoredCustomerSession();
+        const savedList = await loadCustomerUserData(session?.id, 'printers');
+        if (Array.isArray(savedList) && savedList.length > 0) {
+          setGaragePrinters(savedList);
+          const defaultEntry = savedList.find((p: any) => p.current) || savedList[0];
+          if (defaultEntry) {
+            applyGaragePrinter(defaultEntry);
+          }
+        } else {
+          setGaragePrinters([]);
+        }
+      } catch {}
+    };
+
+    if (isOpen) {
+      syncFromGarage();
+    }
+
+    const handlePrinterChanged = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail) {
+        applyGaragePrinter(detail);
+      }
+      syncFromGarage();
+    };
+
+    window.addEventListener('printcore:printer-changed', handlePrinterChanged);
+    return () => window.removeEventListener('printcore:printer-changed', handlePrinterChanged);
+  }, [isOpen]);
   const [customNote, setCustomNote] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [recommendation, setRecommendation] = useState<any | null>(null);
@@ -261,17 +328,8 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
-        <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-blue-950 text-white px-4 py-4 sm:px-6 sm:py-5 relative border-b border-indigo-500/20">
-          <button
-            id="close-ai-advisor-modal-btn"
-            onClick={onClose}
-            className="absolute top-3.5 right-3.5 sm:top-4 sm:right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer z-10"
-            aria-label="關閉視窗"
-          >
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-
-          <div className="flex items-center gap-3 pr-9">
+        <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-blue-950 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex items-center justify-between gap-3 border-b border-indigo-500/20 shrink-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-indigo-600/80 border border-indigo-400/40 flex items-center justify-center shadow-lg text-amber-300 shrink-0">
               <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
             </div>
@@ -293,6 +351,15 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
               </p>
             </div>
           </div>
+
+          <button
+            id="close-ai-advisor-modal-btn"
+            onClick={onClose}
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            aria-label="關閉視窗"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Modal Body */}
@@ -301,12 +368,52 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
             <div className="space-y-4 sm:space-y-5">
               {/* SECTION 1: CLEAN BRAND -> MODEL SELECTOR */}
               <div className="bg-slate-50 p-3.5 sm:p-4 rounded-2xl border border-slate-200 space-y-3">
-                <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                  <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span>
-                    {lang === 'en' ? '1. Select Printer' : lang === 'ja' ? '1. プリンターを選択' : '1. 選擇 3D 印表機'}
-                  </span>
-                </label>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <Printer className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span>
+                      {lang === 'en' ? '1. Select Printer' : lang === 'ja' ? '1. プリンターを選択' : '1. 選擇 3D 印表機'}
+                    </span>
+                  </label>
+                  {(garagePrinters.length > 0 || hasLoadedGarageDefault) && (
+                    <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      <span>已自動帶入車庫機台</span>
+                    </span>
+                  )}
+                </div>
+
+                {garagePrinters.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    <span className="text-[11px] font-bold text-slate-500 shrink-0">我的車庫：</span>
+                    {garagePrinters.map((gp) => {
+                      const matched = findPrinterProfile(gp.profileId || gp.name);
+                      const isSelected = matched?.id === selectedPrinterId;
+                      return (
+                        <button
+                          key={gp.id}
+                          type="button"
+                          onClick={() => {
+                            if (matched) {
+                              setSelectedBrandFilter(matched.brandId);
+                              setSelectedPrinterId(matched.id);
+                              if (gp.nozzle) {
+                                setNozzleSize(extractValidNozzleSize(gp.nozzle));
+                              }
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer border ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                          }`}
+                        >
+                          {gp.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div>
@@ -319,7 +426,18 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                           setSelectedBrandFilter(newBrand);
                           const matching = getPrintersByBrand(newBrand);
                           if (matching.length > 0) {
-                            setSelectedPrinterId(matching[0].id);
+                            const nextPrinter = matching[0];
+                            setSelectedPrinterId(nextPrinter.id);
+                            try {
+                              localStorage.setItem(
+                                'printcore_default_printer_profile',
+                                JSON.stringify({
+                                  profileId: nextPrinter.id,
+                                  brandId: nextPrinter.brandId,
+                                  name: nextPrinter.name,
+                                })
+                              );
+                            } catch {}
                           }
                         }}
                         className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:border-indigo-500 outline-none appearance-none cursor-pointer"
@@ -339,7 +457,21 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                     <div className="relative">
                       <select
                         value={selectedPrinterId}
-                        onChange={(e) => setSelectedPrinterId(e.target.value)}
+                        onChange={(e) => {
+                          const nextId = e.target.value;
+                          setSelectedPrinterId(nextId);
+                          const found = findPrinterProfile(nextId);
+                          try {
+                            localStorage.setItem(
+                              'printcore_default_printer_profile',
+                              JSON.stringify({
+                                profileId: found.id,
+                                brandId: found.brandId,
+                                name: found.name,
+                              })
+                            );
+                          } catch {}
+                        }}
                         className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:border-indigo-500 outline-none appearance-none cursor-pointer"
                       >
                         {visiblePrinters.map((printer) => (

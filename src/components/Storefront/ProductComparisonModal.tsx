@@ -978,7 +978,7 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-slate-900 truncate" title={product.name}>
+                  <div className="text-xs font-bold text-slate-900 text-balance line-clamp-2 min-h-[2.4em] leading-snug" title={product.name}>
                     {product.name}
                   </div>
                   <div className="flex items-center gap-1.5 mt-0.5">
@@ -1031,15 +1031,15 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 touch-manipulation animate-fade-in"
+      className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 touch-manipulation animate-fade-in"
       onClick={onClose}
     >
       <div
-        className="bg-white w-full h-[95vh] sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-t-2xl sm:max-w-6xl flex flex-col shadow-2xl border-0 sm:border border-slate-200 relative overflow-hidden"
+        className="bg-white w-full h-[95vh] sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-t-3xl sm:max-w-6xl flex flex-col shadow-2xl border-0 sm:border border-slate-200 relative overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
-        <div className="sticky top-0 z-30 bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between gap-3 border-b border-slate-800 shadow-md shrink-0">
+        <div className="sticky top-0 z-30 bg-slate-900 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex items-center justify-between gap-3 border-b border-slate-800 shadow-md shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shadow-lg shrink-0">
               <Scale className="w-5 h-5" />
@@ -1082,7 +1082,7 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/30 text-white flex items-center justify-center transition-colors cursor-pointer touch-manipulation shrink-0"
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 active:bg-white/30 text-white flex items-center justify-center transition-colors cursor-pointer touch-manipulation shrink-0"
               title="關閉視窗 (Esc)"
               aria-label="關閉對比視窗"
             >
@@ -1219,10 +1219,10 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                           </span>
                           <span className="text-xs text-slate-400 font-medium">2 款耗材</span>
                         </div>
-                        <div className="font-black text-sm text-slate-900 mb-1">
+                        <div className="font-black text-sm text-slate-900 mb-1 text-balance line-clamp-1">
                           {preset.title}
                         </div>
-                        <p className="text-xs text-slate-600 leading-relaxed mb-3">
+                        <p className="text-xs text-slate-600 leading-relaxed mb-3 text-pretty line-clamp-2 min-h-[2.7em]">
                           {preset.description}
                         </p>
                         
@@ -1364,7 +1364,7 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                             </div>
 
                             <div className="text-center">
-                              <div className="font-bold text-slate-900 line-clamp-2 leading-snug">{p.name}</div>
+                              <div className="font-bold text-slate-900 text-balance line-clamp-2 leading-snug">{p.name}</div>
                               <div className="text-[11px] text-indigo-600 font-semibold mt-0.5">
                                 {p.brand} • {p.weight}
                               </div>

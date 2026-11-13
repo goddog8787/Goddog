@@ -990,7 +990,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   return (
     <div 
       id="customer-support-modal-backdrop"
-      className={`fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-6 transition-all duration-300 cursor-pointer select-none ${
+      className={`fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-5 transition-all duration-300 cursor-pointer select-none ${
         isOpen ? 'opacity-100 pointer-events-auto visible' : 'opacity-0 pointer-events-none invisible'
       }`}
       onClick={onClose}
@@ -1008,7 +1008,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header - Fixed layout for mobile to prevent squashing */}
-        <div className="p-2 sm:p-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shrink-0 min-h-[60px]">
+        <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shrink-0 min-h-[60px]">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
             {/* Back to Home Button - Hidden text on small mobile */}
             <button
@@ -1112,10 +1112,10 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
             <button
               id="close-customer-support-modal-btn"
               onClick={onClose}
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/10 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/10 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
               title={lang === 'en' ? 'Close window' : lang === 'ja' ? 'ウィンドウを閉じる' : '關閉客服視窗 (亦可點擊背景空白處)'}
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
@@ -1248,7 +1248,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         </div>
 
         {/* Chat / Solution Feed */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 bg-slate-50/50">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/50">
           {messages.map((m, idx) => (
             <div
               key={m.id || idx}
@@ -1476,7 +1476,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         </div>
 
         {/* Chat input box with mobile safe area */}
-        <div className="p-3 sm:p-4 border-t border-slate-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
+        <div className="px-4 py-3 sm:px-5 sm:py-4 border-t border-slate-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
           <form
             onSubmit={(e) => {
               e.preventDefault();

@@ -96,7 +96,7 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
@@ -105,7 +105,7 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white p-5 sm:p-6 flex items-center justify-between border-b border-emerald-500/20 shrink-0">
+        <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex items-center justify-between gap-3 border-b border-emerald-500/20 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-emerald-600/80 border border-emerald-400/40 text-emerald-200 flex items-center justify-center shadow-lg shrink-0">
               <Recycle className="w-5 h-5 text-emerald-300" />
@@ -138,7 +138,7 @@ export const SpoolRecycleModal: React.FC<SpoolRecycleModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-5 sm:p-6 overflow-y-auto">
+        <div className="p-4 sm:p-6 overflow-y-auto">
           {isSubmitted ? (
             <div className="text-center py-4 space-y-4">
               <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/80 rounded-full flex items-center justify-center mx-auto text-emerald-600 dark:text-emerald-400 animate-bounce">

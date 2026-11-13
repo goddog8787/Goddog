@@ -232,7 +232,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-fade-in"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-fade-in"
       onClick={onClose}
     >
       <div 
@@ -240,38 +240,38 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Clean Compact Header */}
-        <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white p-5 sm:p-6 flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shrink-0">
+        <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white px-4 py-3.5 sm:px-6 sm:py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shrink-0">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-black tracking-tight">
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-xl font-black tracking-tight text-balance">
                 {lang === 'en' ? 'Maker VIP Club' : lang === 'ja' ? 'メイカー VIP クラブ' : '創客 VIP 會員方案'}
               </h2>
-              <p className="text-slate-300 text-xs mt-0.5">
+              <p className="text-slate-300 text-xs mt-0.5 truncate">
                 {lang === 'en' ? '5% OFF storewide • 2x Points • Priority Dispatch' : lang === 'ja' ? '全館95折・ポイント2倍・優先発送' : '全館 95 折 · 雙倍積分 · 專屬徽章'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-5 sm:p-6 space-y-5 bg-slate-50 dark:bg-slate-950">
+        <div className="p-4 sm:p-6 space-y-5 bg-slate-50 dark:bg-slate-950">
           {isSubscribed ? (
             <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-slate-900 rounded-2xl p-6 text-center border border-amber-200 dark:border-amber-800/60 space-y-2">
               <div className="w-14 h-14 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto shadow-md">
                 <Check className="w-7 h-7 text-white" />
               </div>
-              <h3 className="text-lg font-black text-amber-900 dark:text-amber-300">
+              <h3 className="text-lg font-black text-amber-900 dark:text-amber-300 text-balance">
                 您已是尊榮 {member.subscriptionPlan} 會員
               </h3>
-              <p className="text-xs font-bold text-amber-700 dark:text-amber-400">
+              <p className="text-xs font-bold text-amber-700 dark:text-amber-400 text-pretty">
                 會員效期：{expiryText} · 結帳自動享 95 折與 2 倍積分
               </p>
             </div>
@@ -283,9 +283,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                   <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
                     <Package className="w-4 h-4" />
                   </div>
-                  <div>
-                    <div className="font-bold text-xs text-slate-900 dark:text-white">全館 95 折</div>
-                    <div className="text-[10px] text-slate-500">結帳自動折抵</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs text-slate-900 dark:text-white text-balance line-clamp-1">全館 95 折</div>
+                    <div className="text-[10px] text-slate-500 text-pretty line-clamp-1">結帳自動折抵</div>
                   </div>
                 </div>
 
@@ -293,9 +293,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                   <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                     <Sparkles className="w-4 h-4" />
                   </div>
-                  <div>
-                    <div className="font-bold text-xs text-slate-900 dark:text-white">雙倍狗勾幣</div>
-                    <div className="text-[10px] text-slate-500">2x 點數回饋</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs text-slate-900 dark:text-white text-balance line-clamp-1">雙倍狗勾幣</div>
+                    <div className="text-[10px] text-slate-500 text-pretty line-clamp-1">2x 點數回饋</div>
                   </div>
                 </div>
 
@@ -303,9 +303,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                   <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
-                  <div>
-                    <div className="font-bold text-xs text-slate-900 dark:text-white">金星徽章</div>
-                    <div className="text-[10px] text-slate-500">尊榮身份標識</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs text-slate-900 dark:text-white text-balance line-clamp-1">金星徽章</div>
+                    <div className="text-[10px] text-slate-500 text-pretty line-clamp-1">尊榮身份標識</div>
                   </div>
                 </div>
 
@@ -313,9 +313,9 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                   <div className="w-8 h-8 rounded-xl bg-sky-100 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
                     <Truck className="w-4 h-4" />
                   </div>
-                  <div>
-                    <div className="font-bold text-xs text-slate-900 dark:text-white">優先揀貨</div>
-                    <div className="text-[10px] text-slate-500">專屬快速通道</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-xs text-slate-900 dark:text-white text-balance line-clamp-1">優先揀貨</div>
+                    <div className="text-[10px] text-slate-500 text-pretty line-clamp-1">專屬快速通道</div>
                   </div>
                 </div>
               </div>
@@ -335,12 +335,12 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                       }`}
                     >
                       <div className="flex sm:w-full items-center justify-between gap-2">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-black text-sm text-slate-900 dark:text-white">{plan.name}</span>
-                            <span className="text-[11px] text-slate-500">({plan.duration})</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-black text-sm text-slate-900 dark:text-white text-balance">{plan.name}</span>
+                            <span className="text-[11px] text-slate-500 whitespace-nowrap">({plan.duration})</span>
                           </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">{plan.perMonthText}</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5 text-pretty">{plan.perMonthText}</div>
                         </div>
                         {plan.badge && (
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${

@@ -396,19 +396,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <Sparkles className="w-24 h-24" />
           </div>
 
-          <div className="flex items-center gap-4 relative z-10">
-            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm border border-white/20 shadow-inner">
+          <div className="flex items-center gap-4 relative z-10 min-w-0 flex-1">
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm border border-white/20 shadow-inner shrink-0">
               {isVipActive 
                 ? <Sparkles className="w-6 h-6 text-amber-300 drop-shadow" />
                 : <Package className="w-6 h-6 text-white drop-shadow" />
               }
             </div>
-            <div>
-              <h3 className="font-black text-lg sm:text-xl drop-shadow-sm flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-black text-lg sm:text-xl drop-shadow-sm flex items-center gap-2 flex-wrap text-balance">
                 {isVipActive 
                   ? (lang === 'en' ? `Elite ${member?.subscriptionPlan} Maker` : lang === 'ja' ? `VIP ${member?.subscriptionPlan} メイカー` : `尊榮 ${member?.subscriptionPlan} 創客`)
                   : (lang === 'en' ? 'Maker VIP Club' : lang === 'ja' ? 'メイカー VIP クラブ' : '創客 VIP 俱樂部')}
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm ${
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm whitespace-nowrap shrink-0 ${
                   isVipActive 
                     ? 'bg-amber-400 text-amber-900' 
                     : 'bg-white text-amber-600'
@@ -416,7 +416,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   {isVipActive ? (lang === 'en' ? 'Active' : lang === 'ja' ? '有効' : '已啟用') : (lang === 'en' ? 'Inactive' : lang === 'ja' ? '未加入' : '未開通')}
                 </span>
               </h3>
-              <p className="text-white/90 text-xs sm:text-sm mt-0.5 font-medium drop-shadow-sm">
+              <p className="text-white/90 text-xs sm:text-sm mt-0.5 font-medium drop-shadow-sm text-pretty line-clamp-2">
                 {isVipActive && member?.subscriptionExpiry
                   ? (lang === 'en'
                       ? `VIP Perks Active! 5% Off storewide, ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} days remaining`
@@ -490,17 +490,17 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <Printer className="w-32 h-32" />
           </div>
           <div className="relative z-10 flex items-center justify-between gap-3">
-            <div>
-              <h3 className="font-black text-lg mb-1 flex items-center gap-2 flex-wrap">
-                <Printer className="w-5 h-5 text-indigo-300" />
+            <div className="min-w-0 flex-1">
+              <h3 className="font-black text-lg mb-1 flex items-center gap-2 flex-wrap text-balance">
+                <Printer className="w-5 h-5 text-indigo-300 shrink-0" />
                 <span>{lang === 'en' ? 'My Printer Garage' : lang === 'ja' ? 'マイプリンターガレージ' : '我的列印機車庫'}</span>
                 {printerGarageCount > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-indigo-100 font-bold">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/15 border border-white/20 text-indigo-100 font-bold whitespace-nowrap">
                     已綁定 {printerGarageCount} 台
                   </span>
                 )}
               </h3>
-              <p className="text-indigo-200 text-xs leading-relaxed">
+              <p className="text-indigo-200 text-xs leading-relaxed text-pretty line-clamp-2">
                 {lang === 'en'
                   ? 'Select brand & model for tailored filament parameters'
                   : lang === 'ja'
@@ -508,7 +508,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   : '設定您的 3D 列印機型，自動配對最佳切片參數'}
               </p>
             </div>
-            <button onClick={() => openModal("printers")} className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-sm font-bold backdrop-blur-sm transition-colors cursor-pointer shrink-0">
+            <button onClick={() => openModal("printers")} className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/25 rounded-xl text-sm font-bold backdrop-blur-sm transition-colors cursor-pointer shrink-0 whitespace-nowrap">
               {lang === 'en' ? 'Manage' : lang === 'ja' ? '管理' : '管理機台'}
             </button>
           </div>
@@ -541,18 +541,18 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <div className={`w-12 h-12 rounded-2xl ${item.bg} ${item.color} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105`}>
                   <item.icon className="w-6 h-6" />
                 </div>
-                <div className="ml-4 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold text-slate-900 text-sm">{item.label}</p>
+                <div className="ml-4 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-slate-900 text-sm text-balance">{item.label}</p>
                     {item.badge && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-mono font-bold">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-mono font-bold whitespace-nowrap">
                         {item.badge}
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">{item.desc}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5 text-pretty line-clamp-2">{item.desc}</p>
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-slate-400 transition-colors" />
+                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-slate-400 transition-colors shrink-0 ml-2" />
               </button>
             ))}
           </div>

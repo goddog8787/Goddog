@@ -8,9 +8,11 @@ import {
   Search, 
   Clock, 
   Sparkles,
+  Play,
 } from 'lucide-react';
 import { SEO } from '../../components/SEO';
 import { BLOG_ARTICLES } from '../../data/blogArticles';
+import { getBlogArticleAnimation } from '../../data/blogAnimations';
 import { AdSenseBanner } from '../../components/Monetization/AdSenseBanner';
 import { AdSenseConfig, LanguageCode } from '../../types';
 import { translateBlogArticle, translateBlogCategory } from '../../utils/i18n';
@@ -131,7 +133,7 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 text-xs font-bold mb-4">
               <span>{lang === 'en' ? 'Featured In-Depth Review' : lang === 'ja' ? '注目ディープレビュー' : '焦點深度評測'}</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-black mb-3 leading-tight">
+            <h2 className="text-2xl sm:text-3xl font-black mb-3 leading-tight text-balance">
               <Link 
                 to={`/blog/${filteredArticles[0].slug}`}
                 className="hover:text-indigo-300 transition-colors"
@@ -139,7 +141,7 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
                 {filteredArticles[0].title}
               </Link>
             </h2>
-            <p className="text-xs sm:text-sm text-indigo-200 line-clamp-3 leading-relaxed mb-6">
+            <p className="text-xs sm:text-sm text-indigo-200 text-pretty line-clamp-3 leading-relaxed mb-6">
               {filteredArticles[0].excerpt}
             </p>
             <div className="flex flex-wrap items-center gap-4 text-xs text-indigo-300">
@@ -182,7 +184,7 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
           <Link
             key={article.id}
             to={`/blog/${article.slug}`}
-            className="bg-white dark:bg-slate-800/80 rounded-3xl p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-2xs hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-500 transition-all flex flex-col justify-between group cursor-pointer"
+            className="bg-white dark:bg-slate-800/80 rounded-3xl p-5 sm:p-6 border border-slate-200/80 dark:border-slate-700/80 shadow-2xs hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-500 transition-all flex flex-col justify-between group cursor-pointer"
           >
             <div>
               {/* Category & Date */}
@@ -197,12 +199,12 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
               </div>
 
               {/* Title */}
-              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug mb-2.5 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-2">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug mb-2.5 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors text-balance line-clamp-2 min-h-[2.75em]">
                 {article.title}
               </h3>
 
               {/* Excerpt */}
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 mb-4">
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed text-pretty line-clamp-3 min-h-[4.6em] mb-4">
                 {article.excerpt}
               </p>
 
@@ -223,7 +225,13 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
             <div className="pt-4 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between text-xs">
               <span className="text-slate-400 text-[11px] flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
-                {article.readTime}
+                <span>{article.readTime}</span>
+                {getBlogArticleAnimation(article.id) && (
+                  <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400 font-medium ml-1.5">
+                    <Play className="w-3 h-3" />
+                    <span>{lang === 'en' ? 'Interactive Lab' : lang === 'ja' ? '実験アニメ付' : '互動實驗'}</span>
+                  </span>
+                )}
               </span>
               <span className="font-bold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform inline-flex items-center gap-1">
                 <span>{lang === 'en' ? 'Read More' : lang === 'ja' ? '続きを読む' : '閱讀全文'}</span>

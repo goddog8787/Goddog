@@ -183,7 +183,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
 
   return (
     <div 
-      className="fixed inset-0 z-[60] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[60] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
@@ -195,14 +195,14 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
         <button
           id="close-product-detail-modal-btn"
           onClick={onClose}
-          className="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+          className="absolute top-3.5 right-3.5 sm:top-4 sm:right-4 z-20 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
 
         <div className="grid grid-cols-1 md:grid-cols-2">
           {/* Left Column: Image & Spool preview */}
-          <div className="bg-slate-50 p-6 sm:p-8 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200">
+          <div className="bg-slate-50 p-4 sm:p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200">
             <div className="relative aspect-square rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-inner flex items-center justify-center p-4">
               {displayProduct.imageUrl && displayProduct.imageUrl.trim() !== '' ? (
                 <img
@@ -263,15 +263,15 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
           </div>
 
           {/* Right Column: Configurations & Actions */}
-          <div className="p-6 sm:p-8 flex flex-col justify-between">
+          <div className="p-4 sm:p-6 flex flex-col justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs text-indigo-600 font-bold mb-1 pr-9">
+              <div className="flex items-center gap-2 text-xs text-indigo-600 font-bold mb-1 pr-10">
                 <span className="whitespace-nowrap">{(displayProduct.brand || '').replace(/\s*pro/gi, '') || '神狗勾'}</span>
                 <span>•</span>
                 <span className="text-slate-500 font-mono whitespace-nowrap">SKU: {displayProduct.sku}</span>
               </div>
 
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight pr-8">
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight pr-10 text-balance">
                 {(displayProduct.name || '').replace(/莫蘭迪\s*/g, '')}
               </h2>
 

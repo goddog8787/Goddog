@@ -366,16 +366,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[95] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[95] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可返回主頁面"
     >
       <div 
-        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full h-full sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 dark:border-slate-800 flex flex-col relative cursor-default select-text pb-16 sm:pb-6"
+        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full h-full sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 dark:border-slate-800 flex flex-col relative cursor-default select-text pb-16 sm:pb-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
-        <div className="px-4 py-3.5 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md sticky top-0 z-10">
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md sticky top-0 z-10">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
               <ShieldCheck className="w-5 h-5" />
@@ -412,7 +412,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <button
             id="close-checkout-modal-btn"
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            className="w-9 h-9 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -420,7 +420,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         {/* If Order is Created Success View */}
         {createdOrder ? (
-          <div className="p-6 sm:p-10 flex flex-col items-center text-center space-y-6">
+          <div className="p-4 sm:p-6 flex flex-col items-center text-center space-y-6">
             <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/10 animate-bounce">
               <CheckCircle2 className="w-12 h-12" />
             </div>
@@ -503,7 +503,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
         ) : (
           /* Normal Checkout Form */
-          <div className="p-4 sm:p-7 space-y-6">
+          <div className="p-4 sm:p-6 space-y-5">
             {/* Compact Trust & Security Banner */}
             <div className="bg-gradient-to-r from-slate-50 via-indigo-50/40 to-emerald-50/40 dark:from-slate-950/80 dark:via-indigo-950/20 dark:to-emerald-950/20 rounded-2xl p-3 border border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2.5 shadow-2xs">
               <div className="flex items-center gap-2 flex-wrap text-xs">
@@ -538,11 +538,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             {/* Main Form Columns */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left Column: Clean Simple Checkout Flow (Matching Screenshot Style + Our Store Theme) */}
+              {/* Left Column: Clean Simple Checkout Flow */}
               <div className="lg:col-span-7 space-y-6">
                 
                 {/* Section 1: 貨物 (物流取件方式) & 總計 */}
-                <div className="bg-white dark:bg-slate-900/90 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-5">
+                <div className="bg-white dark:bg-slate-900/90 rounded-3xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
                   {/* 寄送到離島區域 Checkbox */}
                   <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
                     <input
@@ -556,22 +556,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </label>
 
-                  {/* 貨物 (Shipping Methods Radio List) */}
-                  <div className="grid grid-cols-12 gap-3 sm:gap-4 items-start pt-2 border-t border-slate-100 dark:border-slate-800/80">
-                    <div className="col-span-3 sm:col-span-3 pt-1">
-                      <span className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300">
-                        貨物
+                  {/* 貨物 (Shipping Methods Radio List — zero orphan wrapping) */}
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-2.5 sm:gap-5 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                    <div className="sm:w-24 shrink-0 sm:pt-0.5">
+                      <span className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                        配送方式
                       </span>
                     </div>
 
-                    <div className="col-span-9 sm:col-span-9 space-y-4">
+                    <div className="flex-1 min-w-0 space-y-3">
                       {shippingOptions.map((opt) => {
                         const isSelected = shippingMethod === opt.id;
+                        const feeText = opt.fee === 0 ? 'NT$0（免運）' : `NT$${opt.fee}`;
                         return (
                           <div
                             key={opt.id}
                             onClick={() => handleShippingMethodChange(opt.id)}
-                            className="cursor-pointer group"
+                            className={`cursor-pointer group rounded-2xl p-2.5 -mx-1 transition-colors ${
+                              isSelected ? 'bg-indigo-50/70 dark:bg-indigo-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                            }`}
                           >
                             <div className="flex items-center gap-2.5">
                               {/* Radio Circle */}
@@ -587,19 +590,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 )}
                               </div>
 
-                              <span className="text-sm sm:text-[15px] font-bold text-slate-900 dark:text-slate-100">
-                                {opt.label}: {opt.fee === 0 ? 'NT$0 (免運)' : `NT$${opt.fee}`}
-                              </span>
+                              <div className="flex-1 min-w-0 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                                <span className="text-sm sm:text-[15px] font-bold text-slate-900 dark:text-slate-100 text-balance">
+                                  {opt.label}
+                                </span>
+                                <span className="text-xs sm:text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap shrink-0 tabular-nums">
+                                  {feeText}
+                                </span>
+                              </div>
                             </div>
 
                             {/* Free Shipping Difference Pill Badge */}
                             <div className="pl-7 mt-1.5">
                               {opt.diffForFree > 0 ? (
-                                <span className="inline-block bg-[#d46b6b] text-white text-xs font-bold px-3 py-1 rounded-md shadow-2xs">
-                                  還差 {opt.diffForFree} 元 即可免運
+                                <span className="inline-flex items-center whitespace-nowrap bg-[#d46b6b] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-2xs">
+                                  還差 {opt.diffForFree} 元免運
                                 </span>
                               ) : (
-                                <span className="inline-block bg-emerald-600 text-white text-xs font-bold px-3 py-1 rounded-md shadow-2xs">
+                                <span className="inline-flex items-center whitespace-nowrap bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-2xs">
                                   已享免運優惠
                                 </span>
                               )}
@@ -611,14 +619,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
 
                   {/* 總計 Row */}
-                  <div className="grid grid-cols-12 gap-3 sm:gap-4 items-center pt-4 border-t border-slate-100 dark:border-slate-800/80">
-                    <div className="col-span-3 sm:col-span-3">
-                      <span className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300">
-                        總計
+                  <div className="flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 pt-4 border-t border-slate-100 dark:border-slate-800/80">
+                    <div className="sm:w-24 shrink-0">
+                      <span className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                        應付總計
                       </span>
                     </div>
-                    <div className="col-span-9 sm:col-span-9">
-                      <span className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white font-mono">
+                    <div className="sm:flex-1">
+                      <span className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white font-mono whitespace-nowrap tabular-nums">
                         {formatPrice(total, currency)}
                       </span>
                     </div>
@@ -753,19 +761,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   )}
                 </div>
 
-                {/* Section 2: 付款方式 (Clean Vertical Radio List matching user's screenshot & wired to NewebPay MPG) */}
-                <div className="bg-white dark:bg-slate-900/90 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xs">
-                  <div className="grid grid-cols-12 gap-3 sm:gap-4 items-start">
-                    <div className="col-span-3 sm:col-span-3 pt-1">
-                      <span className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200">
+                {/* Section 2: 付款方式 (2-Column Balanced Grid, zero orphan wrapping) */}
+                <div className="bg-white dark:bg-slate-900/90 rounded-3xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row sm:items-start gap-2.5 sm:gap-5">
+                    <div className="sm:w-24 shrink-0 sm:pt-1 flex sm:flex-col items-center sm:items-start justify-between sm:justify-start gap-2">
+                      <span className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                         付款方式
                       </span>
-                      <span className="block text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">
+                      <span className="inline-block text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full font-bold sm:mt-1 whitespace-nowrap">
                         藍新金流
                       </span>
                     </div>
 
-                    <div className="col-span-9 sm:col-span-9 space-y-3.5">
+                    <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {paymentRadioOptions.map((pm) => {
                         const isSelected = paymentGateway === pm.id;
                         return (
@@ -775,21 +783,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                               setPaymentGateway(pm.id);
                               if (formError) setFormError(null);
                             }}
-                            className="flex items-center gap-3 cursor-pointer group py-0.5"
+                            className={`flex items-center gap-2.5 cursor-pointer group px-3 py-2.5 rounded-2xl border transition-all ${
+                              isSelected
+                                ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 dark:border-indigo-400'
+                                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                            }`}
                           >
                             <div
-                              className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${
+                              className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${
                                 isSelected
                                   ? 'border-blue-600 dark:border-indigo-400'
                                   : 'border-slate-400 dark:border-slate-600 group-hover:border-blue-500'
                               }`}
                             >
                               {isSelected && (
-                                <div className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-indigo-400" />
+                                <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-blue-600 dark:bg-indigo-400" />
                               )}
                             </div>
 
-                            <span className="text-sm sm:text-[15px] font-bold text-slate-900 dark:text-slate-100">
+                            <span className="text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                               {pm.label}
                             </span>
                           </div>
@@ -970,15 +982,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <span className="font-mono tabular-nums">-{formatPrice(pointsToUse, currency)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
-                      <span>貨物運費 ({shippingMethod === 'HOME' ? '宅配運輸' : `超商取貨 ${cvsBrandInfo.shortName}`})</span>
-                      <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold tabular-nums">
+                    <div className="flex justify-between items-center gap-3 text-slate-600 dark:text-slate-400">
+                      <span className="min-w-0 text-pretty">貨物運費 ({shippingMethod === 'HOME' ? '宅配運輸' : `超商取貨 ${cvsBrandInfo.shortName}`})</span>
+                      <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold tabular-nums whitespace-nowrap shrink-0">
                         {shippingFee === 0 ? 'NT$ 0 (免運)' : `NT$ ${shippingFee}`}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center text-base font-extrabold text-slate-900 dark:text-slate-100 pt-2 border-t border-slate-200 dark:border-slate-800">
-                      <span>總計</span>
-                      <span className="font-mono text-indigo-600 dark:text-indigo-400 text-xl font-black tabular-nums">
+                    <div className="flex justify-between items-center gap-3 text-base font-extrabold text-slate-900 dark:text-slate-100 pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <span className="whitespace-nowrap">總計</span>
+                      <span className="font-mono text-indigo-600 dark:text-indigo-400 text-xl font-black tabular-nums whitespace-nowrap shrink-0">
                         {formatPrice(total, currency)}
                       </span>
                     </div>
@@ -1005,17 +1017,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     id="start-payment-gateway-btn"
                     onClick={handleStartPayment}
                     disabled={isProcessing}
-                    className="w-full py-3.5 px-5 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20 whitespace-nowrap"
+                    className="w-full py-3.5 px-4 sm:px-5 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20"
                   >
                     {isProcessing ? (
-                      <div className="flex items-center gap-2 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
                         <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0"></span>
-                        <span>正在連線藍新金流加密授權...</span>
+                        <span className="text-center text-balance leading-snug">正在連線藍新金流加密授權...</span>
                       </div>
                     ) : (
                       <>
                         <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
-                        <span className="whitespace-nowrap">
+                        <span className="text-center text-balance leading-snug">
                           前往藍新結帳・{(paymentRadioOptions.find(p => p.id === paymentGateway)?.label || '安全付款').replace(/[\(（]/g, ' ').replace(/[\)）]/g, '').trim()}
                         </span>
                         <ArrowRight className="w-4 h-4 shrink-0" />
@@ -1023,7 +1035,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     )}
                   </button>
 
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center whitespace-nowrap">
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center text-balance leading-relaxed">
                     🔒 藍新金流 NewebPay 256-bit SSL 安全加密收銀台
                   </p>
                 </div>

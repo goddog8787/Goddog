@@ -23,6 +23,7 @@ import { FilamentProduct, ColorOption, MaterialType, CurrencyCode, ALL_MATERIAL_
 import { formatPrice } from '../../utils/i18n';
 import { ProductImageStudioModal } from './ProductImageStudioModal';
 import { handleProductImageError } from '../../utils/productImage';
+import { waitForLastCatalogCloudSync } from '../../lib/productPersistence';
 
 interface EditProductModalProps {
   isOpen: boolean;
@@ -129,6 +130,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
   const [newColorName, setNewColorName] = useState('');
   const [newColorHex, setNewColorHex] = useState('#000000');
   const [newColorStock, setNewColorStock] = useState(10);
+  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -160,7 +162,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
       setDescription(product.description || '');
       setFeatures(product.features ? [...product.features] : []);
     }
-  }, [product, isOpen]);
+  }, [product?.id, isOpen]);
 
   if (!isOpen || !product) return null;
 
@@ -225,10 +227,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
+  const buildUpdatedProductFromForm = (overrideImageUrl?: string): FilamentProduct => {
     const shippingMethods: ('7-11' | 'familymart' | 'blackcat')[] = [];
     if (shipping711) shippingMethods.push('7-11');
     if (shippingFamilyMart) shippingMethods.push('familymart');
@@ -237,18 +236,20 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
     const baseCopy = { ...product };
     delete (baseCopy as any).badge;
 
-    const updatedProduct: FilamentProduct = {
+    const finalImage = (overrideImageUrl ?? imageUrl).trim() || product.imageUrl;
+
+    return {
       ...baseCopy,
       ...(badge.trim() ? { badge: badge.trim() } : {}),
-      name: name.trim(),
+      name: name.trim() || product.name,
       brand: brand.trim() || '神狗勾',
       material,
       diameter,
       weight,
       spoolType,
-      imageUrl: imageUrl.trim() || product.imageUrl,
+      imageUrl: finalImage,
       price: Number(price),
-      originalPrice: Number(price),
+      originalPrice: Number(originalPrice) || Number(price),
       stock: Number(stock),
       colors: colors.length > 0 ? colors : product.colors,
       nozzleTemp,
@@ -261,9 +262,22 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
       description: description.trim(),
       features: features.length > 0 ? features : product.features,
     };
+  };
 
-    onSave(updatedProduct);
-    onClose();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || isSavingToCloud) return;
+
+    const updatedProduct = buildUpdatedProductFromForm();
+
+    setIsSavingToCloud(true);
+    try {
+      onSave(updatedProduct);
+      await waitForLastCatalogCloudSync();
+    } finally {
+      setIsSavingToCloud(false);
+      onClose();
+    }
   };
 
   return (
@@ -982,10 +996,11 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                disabled={isSavingToCloud}
+                className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white rounded-xl font-bold shadow-md shadow-indigo-500/20 flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
               >
                 <Save className="w-4 h-4" />
-                <span>儲存商品變更</span>
+                <span>{isSavingToCloud ? '雲端同步儲存中...' : '儲存商品變更'}</span>
               </button>
             </div>
           </div>
@@ -1001,6 +1016,9 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
           initialImage={imageUrl || product?.imageUrl || ''}
           onApplyImage={(newImgUrl) => {
             setImageUrl(newImgUrl);
+            if (product) {
+              onSave(buildUpdatedProductFromForm(newImgUrl));
+            }
             setIsImageStudioOpen(false);
           }}
         />

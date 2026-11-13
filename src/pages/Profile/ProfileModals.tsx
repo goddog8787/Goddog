@@ -75,14 +75,19 @@ const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
     {isOpen && (
       <>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50" />
-        <motion.div initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} className="fixed inset-x-0 bottom-0 z-50 bg-slate-50 rounded-t-[32px] overflow-hidden flex flex-col max-w-xl mx-auto shadow-2xl" style={{ maxHeight: '90vh' }}>
-          <div className="flex items-center justify-between px-6 py-5 bg-white border-b border-slate-100 shrink-0">
-            <h3 className="font-black text-lg text-slate-900">{title}</h3>
-            <button onClick={onClose} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer">
+        <motion.div initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} className="fixed inset-x-0 bottom-0 z-50 bg-slate-50 dark:bg-slate-950 rounded-t-[28px] overflow-hidden flex flex-col max-w-2xl mx-auto shadow-2xl" style={{ maxHeight: '90vh' }}>
+          <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white tracking-tight text-balance truncate">{title}</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="關閉視窗"
+              className="w-9 h-9 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="p-6 overflow-y-auto flex-1 pb-24">
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 pb-24">
             {children}
           </div>
         </motion.div>
@@ -814,8 +819,17 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
   useEffect(() => {
     if (isOpen) {
       loadCustomerUserData(member?.id, 'printers').then((data) => {
-        if (Array.isArray(data) && data.length > 0) setPrinters(data);
-        else setPrinters([]);
+        if (Array.isArray(data) && data.length > 0) {
+          setPrinters(data);
+          const def = data.find((p: any) => p.current) || data[0];
+          if (def) {
+            try {
+              localStorage.setItem('printcore_default_printer_profile', JSON.stringify(def));
+            } catch {}
+          }
+        } else {
+          setPrinters([]);
+        }
       });
     }
   }, [isOpen, member?.id]);
@@ -838,6 +852,15 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
   const saveToDb = (newPrinters: any[]) => {
     setPrinters(newPrinters);
     saveCustomerUserData(member?.id, 'printers', newPrinters);
+    try {
+      const def = newPrinters.find((p) => p.current) || newPrinters[0] || null;
+      if (def) {
+        localStorage.setItem('printcore_default_printer_profile', JSON.stringify(def));
+      } else {
+        localStorage.removeItem('printcore_default_printer_profile');
+      }
+      window.dispatchEvent(new CustomEvent('printcore:printer-changed', { detail: def }));
+    } catch {}
   };
 
   const handleAddPrinter = () => {
@@ -861,10 +884,11 @@ export const PrinterModal: React.FC<{ isOpen: boolean; onClose: () => void; memb
       maxSpeedMmS: profile.maxPrintSpeed,
       maxNozzleTemp: profile.maxTempNozzle,
       maxBedTemp: profile.maxTempBed,
-      current: printers.length === 0,
+      current: true,
     };
 
-    saveToDb([...printers, newEntry]);
+    const updatedList = printers.map((p) => ({ ...p, current: false }));
+    saveToDb([...updatedList, newEntry]);
     setCustomNickname('');
     setIsAdding(false);
   };
@@ -2120,6 +2144,7 @@ export const AchievementModal: React.FC<{
     ];
   }, [verifiedOrders, orders, member, userPrinters.length, slicerUsedCount]);
 
+  const realUnlockedCount = badgesData.filter((b) => !b.locked).length;
   const badges = badgesData.map((b) =>
     demoMaxLevel ? { ...b, locked: false, current: b.target } : b
   );
@@ -2139,8 +2164,10 @@ export const AchievementModal: React.FC<{
     : [];
 
   const handleClaimMilestone = (m: (typeof milestones)[number]) => {
-    if (unlockedCount < m.target) return;
+    if (demoMaxLevel) return;
+    if (realUnlockedCount < m.target) return;
     if (claimedCodes.includes(m.code)) return;
+    if ((member?.coupons || []).some((c: any) => c.code === m.code)) return;
 
     const newCoupon = {
       id: Date.now(),
@@ -2161,7 +2188,7 @@ export const AchievementModal: React.FC<{
       setMember(updated);
       saveUserProfileToFirestore(updated);
     }
-    setClaimMsg(`🎁 恭喜解鎖【${m.title}】里程碑！${m.reward} 已自動存入「我的優惠券」！`);
+    setClaimMsg(`恭喜解鎖【${m.title}】里程碑！${m.reward} 已自動存入「我的優惠券」！`);
     setTimeout(() => setClaimMsg(''), 3500);
   };
 
@@ -2176,86 +2203,207 @@ export const AchievementModal: React.FC<{
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="創客成就徽章">
       {claimMsg && (
-        <div className="mb-4 p-3 rounded-2xl bg-emerald-600 text-white text-xs font-bold flex items-center gap-2 shadow-md">
+        <div className="mb-4 p-3.5 rounded-2xl bg-emerald-600 text-white text-xs font-bold flex items-center gap-2.5 shadow-sm">
           <Gift className="w-4 h-4 shrink-0" />
           <span>{claimMsg}</span>
         </div>
       )}
 
-      <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100 relative overflow-hidden">
-        <div className="flex justify-between items-end mb-2 relative z-10">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">目前稱號</p>
+      <div
+        className={`mb-5 p-4 sm:p-5 rounded-2xl border relative overflow-hidden transition-all duration-500 ${
+          isRareTitle
+            ? 'bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 border-amber-400/50 text-white shadow-[0_14px_38px_-10px_rgba(245,158,11,0.45)]'
+            : 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800 shadow-2xs'
+        }`}
+      >
+        {isRareTitle && (
+          <>
+            <div className="absolute -top-14 -left-14 w-44 h-44 bg-amber-400/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-16 -right-12 w-48 h-48 bg-indigo-500/25 rounded-full blur-3xl pointer-events-none" />
+            <motion.div
+              aria-hidden="true"
+              animate={{ x: ['-130%', '230%'] }}
+              transition={{ duration: 3.4, repeat: Infinity, repeatDelay: 1.6, ease: 'easeInOut' }}
+              className="absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-amber-200/15 to-transparent -skew-x-12 pointer-events-none"
+            />
+          </>
+        )}
+
+        <div className="flex items-start justify-between gap-3 relative z-10">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center flex-wrap gap-2">
+              <span
+                className={`text-xs font-bold tracking-wide whitespace-nowrap ${
+                  isRareTitle ? 'text-amber-200/85' : 'text-slate-500 dark:text-slate-400'
+                }`}
+              >
+                目前稱號
+              </span>
               <button
+                type="button"
                 onClick={() => setDemoMaxLevel(!demoMaxLevel)}
-                className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold hover:bg-slate-300 transition-colors cursor-pointer"
+                className={`text-xs px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  demoMaxLevel
+                    ? 'bg-amber-400 text-slate-950 hover:bg-amber-300 shadow-sm shadow-amber-400/30'
+                    : isRareTitle
+                      ? 'bg-white/15 text-amber-100 hover:bg-white/25'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
               >
                 {demoMaxLevel ? '還原真實進度' : '預覽滿級稱號 ✨'}
               </button>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center flex-wrap gap-x-2.5 gap-y-1 mt-1.5">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                {isRareTitle && (
+                  <motion.span
+                    animate={{ rotate: [0, 12, -12, 0], scale: [1, 1.15, 1] }}
+                    transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+                    className="inline-flex items-center justify-center shrink-0"
+                  >
+                    <Sparkles className="w-5 h-5 text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.85)]" />
+                  </motion.span>
+                )}
+                <span
+                  className={`text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap ${
+                    isRareTitle
+                      ? 'text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-yellow-100 to-amber-400 animate-gold-shine drop-shadow-[0_0_14px_rgba(251,191,36,0.65)]'
+                      : 'text-indigo-700 dark:text-indigo-400'
+                  }`}
+                >
+                  【{currentTitle}】
+                </span>
+              </span>
               <span
-                className={`text-xl font-black ${
-                  isRareTitle
-                    ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 via-amber-400 to-yellow-600'
-                    : 'text-indigo-700'
+                className={`text-xs font-semibold tabular-nums whitespace-nowrap ${
+                  isRareTitle ? 'text-indigo-200' : 'text-slate-600 dark:text-slate-300'
                 }`}
               >
-                【{currentTitle}】
-              </span>
-              <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
                 已解鎖 {unlockedCount} / {totalCount}
               </span>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs font-bold text-slate-500">達成率</p>
-            <p className="text-lg font-black text-slate-800">{progressPercent}%</p>
+
+          <div className="text-right shrink-0">
+            <p className={`text-xs font-medium whitespace-nowrap ${isRareTitle ? 'text-amber-200/80' : 'text-slate-500 dark:text-slate-400'}`}>
+              達成率
+            </p>
+            <p
+              className={`text-xl sm:text-2xl font-black tabular-nums whitespace-nowrap ${
+                isRareTitle
+                  ? 'text-amber-300 drop-shadow-[0_0_10px_rgba(251,191,36,0.45)]'
+                  : 'text-slate-900 dark:text-white'
+              }`}
+            >
+              {progressPercent}%
+            </p>
           </div>
         </div>
 
+        {demoMaxLevel && (
+          <p
+            className={`mt-2.5 text-xs font-medium rounded-xl px-3 py-2 leading-relaxed relative z-10 border ${
+              isRareTitle
+                ? 'text-amber-100 bg-amber-400/15 border-amber-400/35'
+                : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 border-amber-200/80 dark:border-amber-800/60'
+            }`}
+          >
+            目前為滿級外觀預覽模式，僅供檢視稱號與徽章效果；里程碑優惠券須依實際累積進度解鎖後方可領取。
+          </p>
+        )}
+
         {/* Progress Bar */}
-        <div className="h-3 w-full bg-slate-200 rounded-full overflow-hidden relative z-10 mt-3 mb-2">
+        <div
+          className={`h-2.5 w-full rounded-full overflow-hidden mt-3.5 relative z-10 ${
+            isRareTitle ? 'bg-white/15' : 'bg-slate-100 dark:bg-slate-800'
+          }`}
+        >
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${progressPercent}%` }}
-            transition={{ duration: 0.8, ease: 'easeOut' }}
-            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+            className={`h-full rounded-full ${
+              isRareTitle
+                ? 'bg-gradient-to-r from-amber-400 via-yellow-200 to-amber-500 shadow-[0_0_12px_rgba(251,191,36,0.65)]'
+                : 'bg-gradient-to-r from-indigo-600 to-violet-500'
+            }`}
           />
         </div>
 
-        {/* Milestones Markers with Claimable Coupon Rewards */}
-        <div className="grid grid-cols-4 gap-1.5 mt-3 relative z-10">
+        {/* Milestones Markers with Claimable Coupon Rewards (2x2 on mobile, 4-col on desktop) */}
+        <div
+          className={`grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 mt-4 border-t relative z-10 ${
+            isRareTitle ? 'border-white/10' : 'border-slate-100 dark:border-slate-800'
+          }`}
+        >
           {milestones.map((m, i) => {
-            const reached = unlockedCount >= m.target;
-            const claimed = claimedCodes.includes(m.code);
+            const realReached = realUnlockedCount >= m.target;
+            const claimed = claimedCodes.includes(m.code) || (member?.coupons || []).some((c: any) => c.code === m.code);
+            const remaining = Math.max(0, m.target - realUnlockedCount);
+
             return (
               <div
                 key={i}
-                className={`p-2 rounded-xl border text-center flex flex-col items-center ${
-                  reached ? 'bg-white border-indigo-200 shadow-2xs' : 'bg-slate-100/70 border-slate-200/60'
+                className={`p-3 rounded-xl flex flex-col justify-between gap-2 text-center border ${
+                  isRareTitle
+                    ? realReached
+                      ? 'bg-amber-400/15 border-amber-300/45'
+                      : 'bg-white/8 border-white/15'
+                    : realReached
+                      ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-200/80 dark:border-indigo-800/60'
+                      : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200/60 dark:border-slate-700/60'
                 }`}
               >
-                <span className={`text-[10px] font-black ${reached ? 'text-indigo-600' : 'text-slate-400'}`}>
-                  {m.target} 徽章・{m.title}
-                </span>
-                <span className="text-[10px] font-bold text-amber-600 mt-0.5">{m.reward}</span>
-                {reached ? (
-                  <button
-                    type="button"
-                    disabled={claimed}
-                    onClick={() => handleClaimMilestone(m)}
-                    className={`mt-1.5 px-2 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
-                      claimed
-                        ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                        : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                <div className="space-y-0.5">
+                  <p
+                    className={`text-xs font-bold whitespace-nowrap ${
+                      isRareTitle
+                        ? 'text-white'
+                        : realReached
+                          ? 'text-indigo-700 dark:text-indigo-300'
+                          : 'text-slate-600 dark:text-slate-300'
                     }`}
                   >
-                    {claimed ? '已領取' : '領取神券'}
+                    {m.target} 徽章 · {m.title}
+                  </p>
+                  <p
+                    className={`text-xs font-extrabold whitespace-nowrap tabular-nums ${
+                      isRareTitle ? 'text-amber-300' : 'text-amber-700 dark:text-amber-400'
+                    }`}
+                  >
+                    {m.reward}
+                  </p>
+                </div>
+
+                {claimed ? (
+                  <span
+                    className={`w-full py-1.5 px-2 rounded-lg text-xs font-bold whitespace-nowrap ${
+                      isRareTitle
+                        ? 'bg-emerald-400/20 text-emerald-200 border border-emerald-400/30'
+                        : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300'
+                    }`}
+                  >
+                    已領取
+                  </span>
+                ) : realReached && !demoMaxLevel ? (
+                  <button
+                    type="button"
+                    onClick={() => handleClaimMilestone(m)}
+                    className="w-full min-h-[34px] py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-bold cursor-pointer transition-all whitespace-nowrap"
+                  >
+                    領取神券
                   </button>
                 ) : (
-                  <span className="mt-1.5 text-[9px] text-slate-400">差 {m.target - unlockedCount} 個</span>
+                  <span
+                    className={`w-full py-1.5 px-2 rounded-lg text-xs font-semibold whitespace-nowrap tabular-nums ${
+                      isRareTitle
+                        ? 'bg-white/10 text-slate-300'
+                        : 'bg-slate-200/70 dark:bg-slate-700/60 text-slate-500 dark:text-slate-300'
+                    }`}
+                  >
+                    {demoMaxLevel ? '預覽不可領' : `尚差 ${remaining} 枚`}
+                  </span>
                 )}
               </div>
             );
@@ -2263,42 +2411,51 @@ export const AchievementModal: React.FC<{
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 pb-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 pb-4">
         {badges.map((b, i) => {
           const pct = Math.min(100, Math.round((b.current / b.target) * 100));
           return (
             <div
               key={i}
-              className={`p-3.5 rounded-2xl border relative overflow-hidden transition-all duration-300 ${
+              className={`p-3.5 rounded-2xl border flex flex-col justify-between transition-all duration-300 ${
                 b.locked
-                  ? 'bg-slate-50 border-slate-200/80 opacity-85'
-                  : 'bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-500/10'
+                  ? 'bg-white/70 dark:bg-slate-900/50 border-slate-200/80 dark:border-slate-800 opacity-85'
+                  : isRareTitle
+                    ? 'bg-white dark:bg-slate-900 border-amber-300/80 dark:border-amber-500/50 shadow-sm shadow-amber-500/10 ring-1 ring-amber-400/25'
+                    : 'bg-white dark:bg-slate-900 border-indigo-200 dark:border-indigo-800/70 shadow-2xs'
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <div
-                  className={`w-9 h-9 rounded-full ${b.bg} ${b.color} flex items-center justify-center shadow-inner ${
-                    b.locked ? 'grayscale opacity-70' : ''
-                  }`}
-                >
-                  <b.icon className="w-4 h-4" />
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2.5">
+                  <div
+                    className={`w-9 h-9 rounded-full ${b.bg} ${b.color} flex items-center justify-center shrink-0 ${
+                      b.locked ? 'grayscale opacity-70' : isRareTitle ? 'ring-2 ring-amber-300/70 shadow-sm shadow-amber-400/30' : ''
+                    }`}
+                  >
+                    <b.icon className="w-4 h-4" />
+                  </div>
+                  <span
+                    className={`text-xs font-semibold tabular-nums whitespace-nowrap ${
+                      b.locked ? 'text-slate-500 dark:text-slate-400' : 'text-emerald-700 dark:text-emerald-400'
+                    }`}
+                  >
+                    {b.locked ? `${b.current}/${b.target}` : '✓ 已達成'}
+                  </span>
                 </div>
-                <span
-                  className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${
-                    b.locked ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-700'
-                  }`}
-                >
-                  {b.locked ? `${b.current}/${b.target}` : '✓ 已達成'}
-                </span>
+                <h4 className={`font-black text-sm mb-1 ${b.locked ? 'text-slate-700 dark:text-slate-300' : 'text-slate-900 dark:text-white'}`}>
+                  {b.name}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-snug mb-3">{b.desc}</p>
               </div>
-              <h4 className={`font-black text-sm mb-0.5 ${b.locked ? 'text-slate-700' : 'text-indigo-950'}`}>
-                {b.name}
-              </h4>
-              <p className="text-[10px] text-slate-500 leading-tight mb-2">{b.desc}</p>
-              <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+
+              <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full ${
-                    b.locked ? 'bg-slate-400' : 'bg-gradient-to-r from-indigo-500 to-emerald-500'
+                    b.locked
+                      ? 'bg-slate-400 dark:bg-slate-600'
+                      : isRareTitle
+                        ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-emerald-500'
+                        : 'bg-gradient-to-r from-indigo-500 to-emerald-500'
                   }`}
                   style={{ width: `${pct}%` }}
                 />

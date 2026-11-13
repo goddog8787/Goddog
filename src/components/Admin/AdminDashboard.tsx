@@ -93,7 +93,9 @@ import {
   recordAdminProductDelete,
   loadLocalCatalogDelta,
   syncCatalogDeltaToCloud,
+  waitForLastCatalogCloudSync,
 } from '../../lib/productPersistence';
+import { matchesProductDeepSearch } from '../../utils/productSearch';
 
 interface AdminDashboardProps {
   products: FilamentProduct[];
@@ -192,8 +194,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveProductEdit = (updated: FilamentProduct) => {
     const updatedList = recordAdminProductUpsert(updated, INITIAL_PRODUCTS);
     setProducts(updatedList);
-    setToastMessage(`✨ 耗材【${updated.name}】已永久儲存更新（重整網頁不會還原）！`);
-    setTimeout(() => setToastMessage(null), 4000);
+    setEditingProduct(updated);
+    setToastMessage(`☁️ 耗材【${updated.name}】正在同步寫入 Firestore 雲端資料庫...`);
+    waitForLastCatalogCloudSync().then(() => {
+      setToastMessage(`✅ 耗材【${updated.name}】已儲存至 Firestore 雲端資料庫（重整網頁永久生效）！`);
+      setTimeout(() => setToastMessage(null), 4000);
+    });
   };
 
   // Admin Security Lock States
@@ -613,8 +619,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const updatedProd: FilamentProduct = { ...target, stock: Math.max(0, Number(stockEditValue)) };
       const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
       setProducts(updatedList);
-      setToastMessage(`✨ 已永久儲存【${target.name}】庫存為 ${updatedProd.stock} 卷！`);
-      setTimeout(() => setToastMessage(null), 3000);
+      waitForLastCatalogCloudSync().then(() => {
+        setToastMessage(`✅ 已同步儲存【${target.name}】庫存 (${updatedProd.stock} 卷) 至 Firestore 雲端！`);
+        setTimeout(() => setToastMessage(null), 3000);
+      });
     } else {
       setProducts((prev) =>
         prev.map((p) => (p.id === id ? { ...p, stock: Math.max(0, Number(stockEditValue)) } : p))
@@ -631,12 +639,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const updatedProd: FilamentProduct = {
         ...target,
         price: nextPrice,
-        originalPrice: nextPrice,
+        originalPrice: Math.max(target.originalPrice || nextPrice, nextPrice),
       };
       const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
       setProducts(updatedList);
-      setToastMessage(`✨ 已永久儲存【${target.name}】售價為 NT$ ${nextPrice.toLocaleString()}！`);
-      setTimeout(() => setToastMessage(null), 3000);
+      waitForLastCatalogCloudSync().then(() => {
+        setToastMessage(`✅ 已同步儲存【${target.name}】售價 (NT$ ${nextPrice.toLocaleString()}) 至 Firestore 雲端！`);
+        setTimeout(() => setToastMessage(null), 3000);
+      });
     }
     setEditingPriceId(null);
   };
@@ -676,17 +686,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setProducts(updatedList);
     setIsAddProductOpen(false);
     setNewProdName('');
-    setToastMessage(`✨ 新商品【${newProd.name}】已成功上架並永久儲存！`);
-    setTimeout(() => setToastMessage(null), 4000);
+    waitForLastCatalogCloudSync().then(() => {
+      setToastMessage(`✅ 新商品【${newProd.name}】已上架並同步寫入 Firestore 雲端資料庫！`);
+      setTimeout(() => setToastMessage(null), 4000);
+    });
   };
 
   const filteredProducts = products.filter((p) => {
-    const q = productSearch.toLowerCase().trim();
-    const matchesSearch = !q || 
-      p.name.toLowerCase().includes(q) || 
-      p.sku.toLowerCase().includes(q) ||
-      p.material.toLowerCase().includes(q) ||
-      p.brand.toLowerCase().includes(q);
+    const q = productSearch.trim();
+    const matchesSearch = !q || matchesProductDeepSearch(p, q);
     const matchesMat = selectedMaterialFilter === 'All' || p.material === selectedMaterialFilter;
     return matchesSearch && matchesMat;
   });
@@ -1503,8 +1511,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onClick={() => {
                                 const updatedList = recordAdminProductDelete(p.id, INITIAL_PRODUCTS);
                                 setProducts(updatedList);
-                                setToastMessage(`🗑️ 已將【${p.name}】永久下架！`);
-                                setTimeout(() => setToastMessage(null), 3500);
+                                waitForLastCatalogCloudSync().then(() => {
+                                  setToastMessage(`🗑️ 已將【${p.name}】從 Firestore 雲端與商城永久下架！`);
+                                  setTimeout(() => setToastMessage(null), 3500);
+                                });
                               }}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               title="下架商品"
@@ -2540,8 +2550,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             setProducts(updatedList);
             setIsStudioOpen(false);
             setStudioProduct(null);
-            setToastMessage(`✨ 已永久儲存【${studioProduct.name}】的商品圖片！`);
-            setTimeout(() => setToastMessage(null), 4000);
+            waitForLastCatalogCloudSync().then(() => {
+              setToastMessage(`✅ 已同步儲存【${studioProduct.name}】的商品圖片至 Firestore 雲端！`);
+              setTimeout(() => setToastMessage(null), 4000);
+            });
           }}
         />
       )}

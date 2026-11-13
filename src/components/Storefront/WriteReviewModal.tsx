@@ -196,27 +196,27 @@ export const WriteReviewModal: React.FC<WriteReviewModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) onClose();
       }}
     >
       <div 
         id="write-review-modal"
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh] transition-all"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh] transition-all"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/40 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
               <Star className="w-4 h-4 fill-amber-400" />
             </div>
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base leading-tight">
+            <div className="min-w-0">
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base leading-tight text-balance">
                 撰寫創客真實評價
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                 嚴格防偽防洗評：僅限購買過且已確認收貨的創客留評
               </p>
             </div>
@@ -225,24 +225,24 @@ export const WriteReviewModal: React.FC<WriteReviewModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
           {/* Target Product Badge */}
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center gap-3">
             {product.imageUrl ? (
               <img
                 src={product.imageUrl}
                 alt={product.name}
-                className="w-12 h-12 object-cover rounded-lg border border-slate-200 dark:border-slate-700 shrink-0"
+                className="w-12 h-12 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
               />
             ) : (
-              <div className="w-12 h-12 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-600 font-bold shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-600 font-bold shrink-0">
                 3D
               </div>
             )}
@@ -252,7 +252,7 @@ export const WriteReviewModal: React.FC<WriteReviewModalProps> = ({
                 <span>•</span>
                 <span>{product.material}</span>
               </div>
-              <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 truncate">
+              <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 text-balance line-clamp-2 leading-snug">
                 {product.name}
               </h4>
               <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">

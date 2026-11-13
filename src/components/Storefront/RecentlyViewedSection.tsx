@@ -173,7 +173,7 @@ export const RecentlyViewedSection: React.FC<RecentlyViewedSectionProps> = ({
               <button
                 type="button"
                 onClick={(e) => handleDeleteItem(item.id, e)}
-                className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-slate-900/60 hover:bg-rose-600 text-white opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer shadow-md"
+                className="absolute top-2 right-2 z-10 w-6 h-6 rounded-full bg-slate-900/65 hover:bg-rose-600 text-white sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer shadow-md"
                 title={lang === 'en' ? 'Remove this item' : lang === 'ja' ? 'この項目を削除' : '從瀏覽記錄中刪除此商品'}
               >
                 <X className="w-3.5 h-3.5" />
@@ -198,11 +198,11 @@ export const RecentlyViewedSection: React.FC<RecentlyViewedSectionProps> = ({
               <div className="flex-1 min-w-0 flex flex-col justify-between">
                 <div>
                   {item.brand && (
-                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 font-mono block">
+                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 font-mono block truncate">
                       {item.brand === '神狗勾' ? (lang === 'en' ? 'GodDog' : lang === 'ja' ? '神狗勾 (GodDog)' : '神狗勾') : item.brand}
                     </span>
                   )}
-                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 text-balance line-clamp-2 min-h-[2.6em] leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                     {displayName}
                   </h4>
                 </div>

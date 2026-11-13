@@ -17,6 +17,7 @@ import { SEO } from '../../components/SEO';
 import { AdSenseBanner } from '../../components/Monetization/AdSenseBanner';
 import { AdSenseConfig, LanguageCode } from '../../types';
 import { translateBlogArticle } from '../../utils/i18n';
+import { ArticleInteractiveAnimation } from '../../components/Blog/ArticleInteractiveAnimation';
 
 interface BlogPostPageProps {
   adSenseConfig?: AdSenseConfig;
@@ -251,6 +252,12 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ adSenseConfig, lang:
             prose-ol:list-decimal prose-ol:pl-6 prose-ol:space-y-2
             prose-li:text-slate-700 dark:prose-li:text-slate-300"
           dangerouslySetInnerHTML={{ __html: splitContent.part1 }}
+        />
+
+        {/* Pure HTML5 Interactive Simulation for this article */}
+        <ArticleInteractiveAnimation
+          articleId={rawArticle?.id ?? article.id}
+          lang={lang}
         />
 
         {/* Official Adsterra In-Article Native Placement */}

@@ -118,47 +118,47 @@ export const LogisticsTimelineModal: React.FC<LogisticsTimelineModalProps> = ({
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
         />
 
-        <div className="flex min-h-full items-center justify-center p-3 sm:p-6 text-center">
+        <div className="flex min-h-full items-center justify-center p-3 sm:p-5 text-center">
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl transform overflow-hidden rounded-[28px] sm:rounded-[32px] bg-white text-left align-middle shadow-2xl border border-slate-100 transition-all flex flex-col max-h-[90vh]"
+            className="w-full max-w-xl transform overflow-hidden rounded-3xl bg-white text-left align-middle shadow-2xl border border-slate-100 transition-all flex flex-col max-h-[90vh]"
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white border-b border-slate-800 shrink-0 relative overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4 bg-slate-900 text-white border-b border-slate-800 shrink-0 relative overflow-hidden">
               <div className="absolute top-0 right-0 -mr-10 -mt-10 w-36 h-36 bg-sky-500/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="flex items-center gap-3 relative z-10">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-sky-400 shadow-inner">
+              <div className="flex items-center gap-3 relative z-10 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-sky-400 shadow-inner shrink-0">
                   <Truck className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-black text-base sm:text-lg text-white flex items-center gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-black text-base sm:text-lg text-white flex items-center gap-2 flex-wrap">
                     <span>即時物流配送軌跡</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 whitespace-nowrap">
                       Live Tracking
                     </span>
                   </h3>
-                  <p className="text-[11px] text-slate-300 font-medium">
+                  <p className="text-[11px] text-slate-300 font-medium truncate mt-0.5">
                     台灣超商 / 宅配物流全流程數位時間軸追蹤
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 relative z-10">
+              <div className="flex items-center gap-1.5 relative z-10 shrink-0">
                 <button
                   onClick={fetchTracking}
                   disabled={isLoading}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-200 transition-colors cursor-pointer disabled:opacity-50"
                   title="重新整理物流狀態"
                 >
                   <RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                 </button>
                 <button
                   onClick={onClose}
-                  className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
                   title="關閉"
                 >
                   <X className="w-5 h-5" />
@@ -167,7 +167,7 @@ export const LogisticsTimelineModal: React.FC<LogisticsTimelineModalProps> = ({
             </div>
 
             {/* Modal Body */}
-            <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-5 bg-slate-50/60">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 bg-slate-50/60">
               {isLoading && !trackingData ? (
                 <div className="py-16 text-center space-y-3">
                   <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600">

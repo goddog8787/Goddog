@@ -127,7 +127,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
@@ -136,31 +136,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 relative">
-          <button
-            id="close-auth-modal-btn"
-            onClick={onClose}
-            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-4 py-4 sm:px-6 sm:py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center shrink-0">
+                <KeyRound className="w-5 h-5 text-indigo-300" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg sm:text-xl font-extrabold tracking-tight text-balance">
+                  {lang === 'en' ? 'GodDog 3D Member Center' : lang === 'ja' ? '神狗勾 3D 会員センター' : '神狗勾 3D 會員中心'}
+                </h3>
+                <p className="text-xs text-indigo-200/80 mt-0.5 truncate">
+                  {lang === 'en' ? 'Google Account & Firebase Cloud Authentication' : lang === 'ja' ? 'Googleアカウント＆Firebaseクラウド認証' : '串聯 Google 帳號與 Firebase 雲端認證'}
+                </p>
+              </div>
+            </div>
 
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center">
-              <KeyRound className="w-5 h-5 text-indigo-300" />
-            </div>
-            <div>
-              <h3 className="text-xl font-extrabold tracking-tight">
-                {lang === 'en' ? 'GodDog 3D Member Center' : lang === 'ja' ? '神狗勾 3D 会員センター' : '神狗勾 3D 會員中心'}
-              </h3>
-              <p className="text-xs text-indigo-200/80 mt-0.5">
-                {lang === 'en' ? 'Google Account & Firebase Cloud Authentication' : lang === 'ja' ? 'Googleアカウント＆Firebaseクラウド認証' : '串聯 Google 帳號與 Firebase 雲端認證'}
-              </p>
-            </div>
+            <button
+              id="close-auth-modal-btn"
+              onClick={onClose}
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Tab Switchers */}
-          <div className="flex bg-white/10 p-1 rounded-2xl mt-6 gap-1 backdrop-blur-md">
+          <div className="flex bg-white/10 p-1 rounded-2xl mt-5 gap-1 backdrop-blur-md">
             <button
               id="auth-tab-login"
               onClick={() => { setActiveTab('login'); setErrorMessage(null); }}
@@ -183,7 +185,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {/* Notifications */}
           {errorMessage && (
             <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 animate-shake">
