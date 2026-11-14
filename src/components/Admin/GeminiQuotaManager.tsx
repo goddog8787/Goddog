@@ -11,7 +11,7 @@ import {
   Clock,
   Activity,
 } from 'lucide-react';
-import { generateClientGeminiChat } from '../../lib/geminiClient';
+import { generateClientGeminiChat, getBackendApiBase } from '../../lib/geminiClient';
 
 interface AIAdminConfig {
   success: boolean;
@@ -29,7 +29,7 @@ export const GeminiQuotaManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Test prompt runner state
-  const [testModel, setTestModel] = useState('gemini-3.8-flash');
+  const [testModel, setTestModel] = useState('gemini-4-hydrogen');
   const [testPrompt, setTestPrompt] = useState('你好！請用兩句話推薦適合拓竹 AMS 的日常高速打樣線材。');
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -43,7 +43,8 @@ export const GeminiQuotaManager: React.FC = () => {
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/ai/admin-config').catch(() => null);
+      const apiBase = getBackendApiBase();
+      const res = await fetch(`${apiBase}/api/ai/admin-config`).catch(() => null);
       if (res && res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
@@ -61,8 +62,8 @@ export const GeminiQuotaManager: React.FC = () => {
         hasActiveKey: true,
         keySource: 'server_env',
         maskedKey: '',
-        activeModel: 'gemini-3.8-flash',
-        supportedModels: ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'],
+        activeModel: 'gemini-4-hydrogen',
+        supportedModels: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'],
         totalQueriesServed: 128,
       });
     } catch (e) {
@@ -85,12 +86,14 @@ export const GeminiQuotaManager: React.FC = () => {
     try {
       let replied = false;
       try {
-        const res = await fetch('/api/ai/test-owner-connection', {
+        const apiBase = getBackendApiBase();
+        const res = await fetch(`${apiBase}/api/ai/test-owner-connection`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt: testPrompt, model: testModel }),
         });
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
           if (data && data.success) {
             setTestResult(data);
@@ -221,7 +224,7 @@ export const GeminiQuotaManager: React.FC = () => {
           <span className="text-[11px] font-medium text-slate-400">當前調用旗艦模型</span>
           <div className="font-bold text-slate-900 text-sm font-mono flex items-center gap-1">
             <Cpu className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{config?.activeModel || 'gemini-3.8-flash'}</span>
+            <span>{config?.activeModel || 'gemini-4-hydrogen'}</span>
           </div>
           <span className="text-[10px] text-indigo-600 font-medium">Google 官方最新極速推理</span>
         </div>
@@ -256,7 +259,7 @@ export const GeminiQuotaManager: React.FC = () => {
               onChange={(e) => setTestModel(e.target.value)}
               className="px-2.5 py-1 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-800 font-medium focus:outline-hidden focus:ring-1 focus:ring-indigo-500 cursor-pointer"
             >
-              <option value="gemini-3.8-flash">Gemini 3.8 Flash (推薦首選)</option>
+              <option value="gemini-4-hydrogen">Gemini 4 Hydrogen (推薦首選)</option>
               <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
               <option value="gemini-flash-latest">Gemini Flash (最新版)</option>
               <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (深度推理)</option>

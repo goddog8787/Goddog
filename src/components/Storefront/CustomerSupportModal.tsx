@@ -22,10 +22,8 @@ import {
 } from 'lucide-react';
 import {
   getBackendApiBase,
-  isStaticHostingEnv,
-  callDirectBrowserGemini,
+  dispatchGeminiStream,
   generateSmart3DExpertReply,
-  requestGeminiViaFirestoreBridge,
 } from '../../lib/geminiClient';
 import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 
@@ -88,7 +86,7 @@ function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
       sender: 'ai',
       text: "Hey there! I'm the GodDog 3D Filament & Slicing Specialist.\n\nWhether you need dialed-in nozzle & bed temps for PLA+, PETG-HF, TPU 95A, or Carbon Fiber, Bambu Lab AMS tips, or help fixing stringing and warping—just ask away!",
       timestamp: Date.now(),
-      modelUsed: 'Gemini 3.8 Flash',
+      modelUsed: 'Gemini 4 Hydrogen',
     };
   }
   if (lang === 'ja') {
@@ -97,7 +95,7 @@ function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
       sender: 'ai',
       text: 'こんにちは！神狗勾 (GodDog) 3Dフィラメント専属AIアドバイザーです。\n\nPLA+・PETG・TPU・炭素繊維フィラメントの最適な温度設定やスライサー調整、Bambu Lab AMSでの給紙のコツ、糸引き・反り対策など、何でもお気軽にご相談ください！',
       timestamp: Date.now(),
-      modelUsed: 'Gemini 3.8 Flash',
+      modelUsed: 'Gemini 4 Hydrogen',
     };
   }
   return {
@@ -105,7 +103,7 @@ function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
     sender: 'ai',
     text: '您好！我是神狗勾 3D 智能顧問。\n\n無論是 PLA+、PETG、TPU 還是碳纖維線材的切片推薦溫度、速度、拓竹 AMS 供料設定或列印故障排查，請隨時告訴我！',
     timestamp: Date.now(),
-    modelUsed: 'Gemini 3.8 Flash',
+    modelUsed: 'Gemini 4 Hydrogen',
   };
 }
 
@@ -291,12 +289,16 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('printcore_selected_ai_model');
+      if (saved === 'gemini-3.8-flash') {
+        localStorage.setItem('printcore_selected_ai_model', 'gemini-4-hydrogen');
+        return 'gemini-4-hydrogen';
+      }
       if (saved && SUPPORTED_AI_MODELS.some((m) => m.id === saved)) {
         return saved;
       }
-      return 'gemini-3.8-flash';
+      return 'gemini-4-hydrogen';
     } catch {
-      return 'gemini-3.8-flash';
+      return 'gemini-4-hydrogen';
     }
   });
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -543,7 +545,6 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     setIsLoading(true);
 
     const userTier = member?.membershipTier || (member?.tier === 'Diamond' ? 'PLUS' : member?.tier === 'Gold' ? 'GO' : member?.subscriptionPlan && member.subscriptionPlan !== 'None' ? 'PLUS' : 'FREE');
-    const apiBase = getBackendApiBase();
     const storeContextPayload = {
       viewingProduct: activeViewingProduct
         ? {
@@ -583,221 +584,79 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         return;
       }
 
-      // 1. When backend server is available (AI Studio Preview / localhost / custom VITE_API_BASE_URL), try SSE Stream & JSON endpoints
-      if (!isStaticHostingEnv()) {
-        try {
-          const streamRes = await fetch(`${apiBase}/api/ai/chat/stream`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({
-              message: text,
-              model: selectedModel,
-              membershipTier: userTier,
-              messages: historyPayload,
-              storeContext: storeContextPayload,
-              lang,
-            }),
-          });
-
-          if (streamRes.status === 403) {
-            const errJson = await streamRes.json().catch(() => ({}));
-            const forbiddenMsg =
-              errJson?.reply ||
-              (lang === 'en'
-                ? '[Membership Notice] This flagship Pro model is exclusive to PLUS members. Please switch to the recommended Flash model or upgrade in your Member Center!'
-                : lang === 'ja'
-                ? '【会員ランク制限】この上位ProモデルはPLUS会員限定です。推奨のFlashモデルに切り替えるか、会員センターでアップグレードしてください！'
-                : '【會員權限提示】此高階旗艦模型僅限 PLUS 付費會員使用，請切換至 Flash 推薦模型或至會員中心升級！');
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === aiMsgId
-                  ? {
-                      ...m,
-                      text: forbiddenMsg,
-                      isLoading: false,
-                      modelUsed: lang === 'en' ? 'Access Restricted (403)' : lang === 'ja' ? 'アクセス制限 (403)' : '權限攔截 (403)',
-                    }
-                  : m
-              )
-            );
-            return;
+      // Unified fast dispatcher: streams directly from Cloud Run / local Express SSE with 4.5s first-byte timeout,
+      // and seamlessly falls back to Firestore Live Bridge on static hosts like goddog.space.
+      let resolvedModelName = currentModelObj.name;
+      const dispatched = await dispatchGeminiStream({
+        message: text,
+        model: selectedModel,
+        membershipTier: userTier,
+        history: historyPayload,
+        storeContext: storeContextPayload,
+        signal: controller.signal,
+        lang,
+        onMeta: (meta) => {
+          if (meta?.modelUsed) {
+            resolvedModelName = meta.modelUsed;
           }
+        },
+        onChunk: (streamedSoFar) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === aiMsgId
+                ? {
+                    ...m,
+                    text: streamedSoFar,
+                    isLoading: false,
+                    modelUsed: resolvedModelName,
+                  }
+                : m
+            )
+          );
+        },
+      });
 
-          const streamContentType = streamRes.headers.get('content-type') || '';
-          if (streamRes.ok && streamRes.body && streamContentType.includes('text/event-stream')) {
-            const reader = streamRes.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let accumulatedText = '';
-            let streamDone = false;
-
-            while (!streamDone) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              const chunk = decoder.decode(value, { stream: true });
-              const lines = chunk.split('\n');
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed.startsWith('data:')) continue;
-                const dataStr = trimmed.slice(5).trim();
-                if (dataStr === '[DONE]') {
-                  streamDone = true;
-                  break;
+      if (dispatched?.forbidden) {
+        const forbiddenMsg =
+          dispatched.forbiddenMessage ||
+          (lang === 'en'
+            ? '[Membership Notice] This flagship Pro model is exclusive to PLUS members. Please switch to the recommended Flash model or upgrade in your Member Center!'
+            : lang === 'ja'
+            ? '【会員ランク制限】この上位ProモデルはPLUS会員限定です。推奨のFlashモデルに切り替えるか、会員センターでアップグレードしてください！'
+            : '【會員權限提示】此高階旗艦模型僅限 PLUS 付費會員使用，請切換至 Gemini 4 Hydrogen 或至會員中心升級！');
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? {
+                  ...m,
+                  text: forbiddenMsg,
+                  isLoading: false,
+                  modelUsed: lang === 'en' ? 'Access Restricted (403)' : lang === 'ja' ? 'アクセス制限 (403)' : '權限攔截 (403)',
                 }
-                try {
-                  const parsed = JSON.parse(dataStr);
-                  if (parsed.text) {
-                    accumulatedText += parsed.text;
-                    setMessages((prev) =>
-                      prev.map((m) =>
-                        m.id === aiMsgId
-                          ? {
-                              ...m,
-                              text: accumulatedText,
-                              isLoading: false,
-                              modelUsed: currentModelObj.name,
-                            }
-                          : m
-                      )
-                    );
-                  }
-                } catch {}
-              }
-            }
-
-            if (accumulatedText) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === aiMsgId
-                    ? {
-                        ...m,
-                        text: cleanChatText(accumulatedText),
-                        isLoading: false,
-                        modelUsed: currentModelObj.name,
-                      }
-                    : m
-                )
-              );
-              return;
-            }
-          }
-
-          // Standard JSON /api/ai/chat endpoint
-          const res = await fetch(`${apiBase}/api/ai/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({
-              message: text,
-              model: selectedModel,
-              membershipTier: userTier,
-              messages: historyPayload,
-              storeContext: storeContextPayload,
-              lang,
-            }),
-          });
-
-          const resContentType = res.headers.get('content-type') || '';
-          if (resContentType.includes('application/json')) {
-            const data = await res.json();
-            if (res.ok && data?.reply) {
-              const replyText = cleanChatText(data.reply);
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === aiMsgId
-                    ? {
-                        ...m,
-                        text: replyText,
-                        solution: data?.solution,
-                        isLoading: false,
-                        modelUsed: data?.modelUsed || currentModelObj.name,
-                      }
-                    : m
-                )
-              );
-              return;
-            }
-          }
-        } catch (backendErr: any) {
-          if (backendErr?.name === 'AbortError') throw backendErr;
-          // Fall through to direct browser AI or 3D expert engine
-        }
-      }
-
-      // 2. Direct Browser Gemini / Custom Proxy API call
-      try {
-        const directReply = await callDirectBrowserGemini(
-          text,
-          historyPayload,
-          selectedModel,
-          storeContextPayload,
-          controller.signal,
-          lang
+              : m
+          )
         );
-        if (directReply) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === aiMsgId
-                ? {
-                    ...m,
-                    text: cleanChatText(directReply),
-                    isLoading: false,
-                    modelUsed: currentModelObj.name,
-                  }
-                : m
-            )
-          );
-          return;
-        }
-      } catch (directErr: any) {
-        if (directErr?.name === 'AbortError') throw directErr;
+        return;
       }
 
-      // 3. Firestore Real-Time AI Live Bridge
-      try {
-        const bridgeReply = await requestGeminiViaFirestoreBridge({
-          message: text,
-          model: selectedModel,
-          history: historyPayload,
-          storeContext: storeContextPayload,
-          signal: controller.signal,
-          lang,
-          onChunk: (streamedSoFar) => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === aiMsgId
-                  ? {
-                      ...m,
-                      text: streamedSoFar,
-                      isLoading: false,
-                      modelUsed: currentModelObj.name,
-                    }
-                  : m
-              )
-            );
-          },
-        });
-        if (bridgeReply && bridgeReply.trim()) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === aiMsgId
-                ? {
-                    ...m,
-                    text: cleanChatText(bridgeReply),
-                    isLoading: false,
-                    modelUsed: currentModelObj.name,
-                  }
-                : m
-            )
-          );
-          return;
-        }
-      } catch (bridgeErr: any) {
-        if (bridgeErr?.name === 'AbortError') throw bridgeErr;
+      if (dispatched?.reply && dispatched.reply.trim()) {
+        const finalModel = dispatched.modelUsed || resolvedModelName;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId
+              ? {
+                  ...m,
+                  text: cleanChatText(dispatched.reply),
+                  isLoading: false,
+                  modelUsed: finalModel,
+                }
+              : m
+          )
+        );
+        return;
       }
 
-      // 4. Built-in 3D Printing Expert Knowledge Engine (offline fallback)
+      // Built-in 3D Printing Expert Knowledge Engine (offline fallback)
       if (controller.signal.aborted) return;
 
       const expertResult = generateSmart3DExpertReply(text, storeContextPayload, lang);
@@ -809,7 +668,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                 text: cleanChatText(expertResult.reply),
                 solution: expertResult.solution,
                 isLoading: false,
-                modelUsed: currentModelObj.name || expertResult.modelUsed,
+                modelUsed: expertResult.modelUsed,
               }
             : m
         )
@@ -827,7 +686,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                 text: cleanChatText(fallbackResult.reply),
                 solution: fallbackResult.solution,
                 isLoading: false,
-                modelUsed: currentModelObj.name || fallbackResult.modelUsed,
+                modelUsed: fallbackResult.modelUsed,
               }
             : m
         )
@@ -873,17 +732,20 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     const apiBase = getBackendApiBase();
 
     try {
-      if (lang === 'zh-TW' && !isStaticHostingEnv()) {
+      if (lang === 'zh-TW') {
+        const diagController = new AbortController();
+        const diagTimer = setTimeout(() => diagController.abort(), 4000);
         const res = await fetch(`${apiBase}/api/ai/support-diagnose`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: diagController.signal,
           body: JSON.stringify({
             issueType: category,
             filamentType: activeViewingProduct?.material || 'PLA / PETG / TPU',
             description: `創客排查問題：${category}`,
             lang,
           }),
-        });
+        }).finally(() => clearTimeout(diagTimer));
         const contentType = res.headers.get('content-type') || '';
         if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
@@ -987,6 +849,17 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
   const userTurnCount = messages.filter((m) => m.sender === 'user').length;
 
+  const shortModelLabel =
+    currentModelObj.id === 'gemini-4-hydrogen'
+      ? '4 Hydrogen'
+      : currentModelObj.id === 'gemini-3.1-flash-lite'
+      ? '3.1 Flash-Lite'
+      : currentModelObj.id === 'gemini-3.1-pro-preview'
+      ? '3.1 Pro'
+      : currentModelObj.id === 'local-expert'
+      ? (lang === 'en' ? 'Offline Expert' : lang === 'ja' ? 'オフライン' : '離線專家')
+      : 'Gemini Flash';
+
   return (
     <div 
       id="customer-support-modal-backdrop"
@@ -998,158 +871,168 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
     >
       <div 
         id="customer-support-modal-window"
-        className={`bg-white w-full rounded-3xl shadow-2xl border border-slate-200 overflow-hidden relative flex flex-col transition-all duration-500 cursor-default select-text ${
-          isOpen ? 'translate-y-0 scale-100' : 'translate-y-12 scale-95'
+        className={`bg-white w-full rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden relative flex flex-col transition-all duration-300 cursor-default select-text ${
+          isOpen ? 'translate-y-0 scale-100' : 'translate-y-8 scale-95'
         } ${
           isExpanded 
-            ? 'sm:max-w-5xl h-[94vh]' 
-            : 'sm:max-w-[490px] h-[660px] max-h-[88vh]'
+            ? 'sm:max-w-5xl h-[92dvh] sm:h-[90vh]' 
+            : 'sm:max-w-[540px] h-[92dvh] sm:h-[680px] sm:max-h-[88vh]'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header - Fixed layout for mobile to prevent squashing */}
-        <div className="px-4 py-3 sm:px-5 sm:py-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shrink-0 min-h-[60px]">
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
-            {/* Back to Home Button - Hidden text on small mobile */}
+        {/* Header: Clean 2-tier layout on mobile (zero title crushing), sleek single-row on desktop */}
+        <div className="bg-slate-900 text-white border-b border-slate-800 shrink-0 px-3.5 py-2.5 sm:px-5 sm:py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+          {/* Primary Row: Back + Avatar + Full Readable Title + Mobile Close */}
+          <div className="flex items-center justify-between gap-2.5 min-w-0 sm:flex-1">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-9 w-9 sm:w-auto sm:px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+                title={lang === 'en' ? 'Close and return to store' : lang === 'ja' ? '閉じてショップに戻る' : '關閉並返回商城主頁'}
+              >
+                <ArrowLeft className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">{lang === 'en' ? 'Back' : lang === 'ja' ? '戻る' : '返回'}</span>
+              </button>
+
+              <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center shrink-0">
+                <Bot className="w-4.5 h-4.5" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-[15px] text-white tracking-tight truncate leading-tight">
+                  {lang === 'en' ? 'GodDog 3D AI Specialist' : lang === 'ja' ? '神狗勾 3D AIアドバイザー' : '神狗勾 3D 智能顧問'}
+                </h3>
+                <p className="text-[11px] text-slate-300/85 truncate leading-tight mt-0.5">
+                  {lang === 'en' ? 'Filament Selection · Slicer Tuning' : lang === 'ja' ? 'フィラメント相談 · スライサー設定' : '選材推薦 · 切片調參 · 售後諮詢'}
+                </p>
+              </div>
+            </div>
+
+            {/* Mobile-only top-right Close Button */}
             <button
               type="button"
               onClick={onClose}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-semibold transition-colors cursor-pointer shrink-0"
-              title={lang === 'en' ? 'Close and return to store' : lang === 'ja' ? '閉じてショップに戻る' : '關閉並返回商城主頁'}
+              className="sm:hidden w-9 h-9 rounded-xl bg-white/10 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+              aria-label={lang === 'en' ? 'Close' : lang === 'ja' ? '閉じる' : '關閉視窗'}
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{lang === 'en' ? 'Back' : lang === 'ja' ? '戻る' : '返回主頁'}</span>
+              <X className="w-4.5 h-4.5" />
             </button>
-
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 flex items-center justify-center shadow-xs shrink-0">
-              <Bot className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 overflow-hidden">
-                <h3 className="font-black text-[11px] sm:text-sm text-white tracking-tight truncate shrink-0">
-                  {lang === 'en' ? 'GodDog 3D AI Specialist' : lang === 'ja' ? '神狗勾 3D AIアドバイザー' : '神狗勾 3D 智能顧問'}
-                </h3>
-                <span className="hidden sm:flex items-center gap-1 text-[8px] sm:text-[9px] bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap shrink-0">
-                  <span className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span>{lang === 'en' ? 'Online' : lang === 'ja' ? 'オンライン' : '在線'}</span>
-                </span>
-              </div>
-              <p className="text-[9px] sm:text-[10px] text-indigo-200/80 truncate opacity-80">
-                {lang === 'en' ? 'Filament Selection & Slicer Tuning' : lang === 'ja' ? 'フィラメント相談＆スライサー設定診断' : '3D 列印材料諮詢與切片設定'}
-              </p>
-            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* AI Model Switcher Button */}
+          {/* Secondary Toolbar (Row 2 on mobile, Right zone on desktop) */}
+          <div className="flex items-center justify-between sm:justify-end gap-2 pt-2 border-t border-white/10 sm:border-t-0 sm:pt-0 shrink-0">
+            {/* Active AI Model Switcher showing exact model name */}
             <button
               type="button"
               onClick={() => setShowModelPicker(!showModelPicker)}
-              title={lang === 'en' ? `Current model: ${currentModelObj.name}` : lang === 'ja' ? `現在モデル: ${currentModelObj.name}` : `目前模型：${currentModelObj.name}（點擊自選回覆模型）`}
-              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-400/40 text-indigo-100 hover:text-white text-[10px] sm:text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+              title={lang === 'en' ? `Model: ${currentModelObj.name}` : lang === 'ja' ? `モデル: ${currentModelObj.name}` : `目前模型：${currentModelObj.name}`}
+              className="h-9 flex items-center gap-1.5 px-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/35 text-indigo-100 hover:text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               <Cpu className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
-              <span className="hidden sm:inline">{currentModelObj.name.split(' ')[0]}</span>
-              <span className="text-[9px] sm:text-[10px] bg-indigo-400/30 text-indigo-200 px-1.5 py-0.5 rounded font-mono font-bold">
-                {currentModelObj.badge}
-              </span>
-              <ChevronDown className="w-3 h-3 text-indigo-300 shrink-0" />
+              <span>{shortModelLabel}</span>
+              <ChevronDown className={`w-3.5 h-3.5 text-indigo-300 shrink-0 transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
             </button>
 
-            {/* Clear Memory Button */}
-            {isResetConfirming ? (
-              <div className="flex items-center gap-1 bg-rose-950/90 border border-rose-500/50 px-2 py-1 rounded-xl text-[10px] animate-fade-in">
-                <span className="text-rose-200 text-[10px]">{lang === 'en' ? 'Clear?' : lang === 'ja' ? '削除？' : '清空？'}</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Clear Memory Button */}
+              {isResetConfirming ? (
+                <div className="h-9 flex items-center gap-1.5 bg-rose-950/90 border border-rose-500/50 px-2.5 rounded-xl text-xs">
+                  <span className="text-rose-200 whitespace-nowrap">{lang === 'en' ? 'Clear?' : lang === 'ja' ? '削除？' : '清空？'}</span>
+                  <button
+                    type="button"
+                    onClick={handleResetConversation}
+                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg cursor-pointer text-[11px]"
+                  >
+                    {lang === 'en' ? 'Yes' : lang === 'ja' ? 'はい' : '確定'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsResetConfirming(false)}
+                    className="px-1.5 py-1 text-slate-300 hover:text-white cursor-pointer text-[11px]"
+                  >
+                    {lang === 'en' ? 'No' : lang === 'ja' ? '戻す' : '取消'}
+                  </button>
+                </div>
+              ) : (
                 <button
-                  onClick={handleResetConversation}
-                  className="px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded cursor-pointer text-[10px]"
+                  type="button"
+                  onClick={() => setIsResetConfirming(true)}
+                  title={lang === 'en' ? 'Clear conversation history' : lang === 'ja' ? '会話履歴をリセット' : '清空對話記憶'}
+                  className="h-9 px-2.5 sm:w-9 sm:px-0 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs font-medium whitespace-nowrap"
                 >
-                  {lang === 'en' ? 'Yes' : lang === 'ja' ? 'はい' : '是'}
+                  <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                  <span className="sm:hidden">{lang === 'en' ? 'Clear' : lang === 'ja' ? 'リセット' : '清空'}</span>
                 </button>
-                <button
-                  onClick={() => setIsResetConfirming(false)}
-                  className="px-1 py-0.5 text-slate-300 hover:text-white cursor-pointer text-[10px]"
-                >
-                  {lang === 'en' ? 'No' : lang === 'ja' ? 'いいえ' : '否'}
-                </button>
-              </div>
-            ) : (
+              )}
+
+              {/* Restore Floating Widget Button */}
               <button
                 type="button"
-                onClick={() => setIsResetConfirming(true)}
-                title={lang === 'en' ? 'Clear conversation history' : lang === 'ja' ? '会話履歴をリセット' : '清空對話記憶並開啟新話題'}
-                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('printcore_show_chat_widget'));
+                }}
+                title={lang === 'en' ? 'Show floating AI button' : lang === 'ja' ? 'フローティングAIボタンを表示' : '開啟/還原畫面懸浮球'}
+                className="h-9 flex items-center gap-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-100 hover:text-white text-xs font-medium transition-colors cursor-pointer whitespace-nowrap"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <Bot className="w-3.5 h-3.5 text-indigo-300 shrink-0" />
+                <span>{lang === 'en' ? 'Widget' : lang === 'ja' ? '浮動球' : '懸浮球'}</span>
               </button>
-            )}
 
-            {/* Desktop Maximize / Restore Toggle */}
-            <button
-              type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              title={isExpanded ? (lang === 'en' ? 'Compact window' : lang === 'ja' ? 'コンパクト表示' : '切換為小視窗') : (lang === 'en' ? 'Expand window' : lang === 'ja' ? 'ワイド表示' : '放大為寬螢幕視窗')}
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
-            >
-              {isExpanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            </button>
+              {/* Desktop Maximize / Restore Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                title={isExpanded ? (lang === 'en' ? 'Compact window' : lang === 'ja' ? 'コンパクト表示' : '切換為標準視窗') : (lang === 'en' ? 'Expand window' : lang === 'ja' ? 'ワイド表示' : '放大為寬螢幕視窗')}
+                className="hidden sm:flex w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-white items-center justify-center cursor-pointer transition-colors shrink-0"
+              >
+                {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
 
-            {/* Restore floating button if removed */}
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('printcore_show_chat_widget'));
-              }}
-              title={lang === 'en' ? 'Show floating AI button' : lang === 'ja' ? 'フローティングAIボタンを表示' : '在畫面上開啟/還原 AI 客服可調位置懸浮球'}
-              className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-xl bg-indigo-600/80 hover:bg-indigo-600 text-white text-[10px] font-bold transition-colors cursor-pointer"
-            >
-              <Bot className="w-3 h-3 text-sky-200" />
-              <span>{lang === 'en' ? 'Widget' : lang === 'ja' ? 'ウィジェット' : '懸浮球'}</span>
-            </button>
-
-            {/* Close Button */}
-            <button
-              id="close-customer-support-modal-btn"
-              onClick={onClose}
-              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/10 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
-              title={lang === 'en' ? 'Close window' : lang === 'ja' ? 'ウィンドウを閉じる' : '關閉客服視窗 (亦可點擊背景空白處)'}
-            >
-              <X className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
+              {/* Desktop Close Button */}
+              <button
+                id="close-customer-support-modal-btn"
+                type="button"
+                onClick={onClose}
+                className="hidden sm:flex w-9 h-9 rounded-xl bg-white/10 hover:bg-rose-600 text-white items-center justify-center cursor-pointer transition-colors shrink-0"
+                title={lang === 'en' ? 'Close window' : lang === 'ja' ? 'ウィンドウを閉じる' : '關閉客服視窗'}
+              >
+                <X className="w-4.5 h-4.5" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* AI Model Picker Popover */}
         {showModelPicker && (
           <div 
-            className="absolute top-16 right-3 sm:right-6 z-50 w-[calc(100%-24px)] sm:w-[390px] bg-slate-900/98 backdrop-blur-xl border border-indigo-500/40 rounded-2xl shadow-2xl p-3 sm:p-4 text-white animate-fade-in"
+            className="absolute top-[108px] sm:top-16 left-3 right-3 sm:left-auto sm:right-5 z-50 sm:w-[390px] bg-slate-900/98 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-3.5 text-white animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                  <Cpu className="w-3.5 h-3.5" />
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center">
+                  <Cpu className="w-4 h-4" />
                 </div>
                 <div>
                   <h4 className="font-bold text-xs sm:text-sm text-white">
                     {lang === 'en' ? 'Select AI Engine' : lang === 'ja' ? 'AI応答モデルの選択' : '自選 AI 顧問回覆模型'}
                   </h4>
-                  <p className="text-[10px] text-slate-400">
-                    {lang === 'en' ? 'Saved automatically for your next message' : lang === 'ja' ? '選択内容は自動保存され、次の会話から適用されます' : '所有切換自動儲存於瀏覽器，下輪對話立即生效'}
+                  <p className="text-[11px] text-slate-400">
+                    {lang === 'en' ? 'Saved automatically for your next message' : lang === 'ja' ? '次の会話から即座に反映されます' : '切換後自動儲存，下一則訊息立即生效'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowModelPicker(false)}
-                className="w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white text-xs cursor-pointer"
+                className="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-1.5 mt-2.5 max-h-[340px] overflow-y-auto pr-1">
+            <div className="space-y-1.5 mt-2.5 max-h-[320px] overflow-y-auto pr-1">
               {SUPPORTED_AI_MODELS.map((model) => {
                 const isSelected = model.id === selectedModel;
                 return (
@@ -1157,10 +1040,10 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                     key={model.id}
                     type="button"
                     onClick={() => handleSelectModel(model.id)}
-                    className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2.5 ${
+                    className={`w-full text-left p-2.5 rounded-xl border transition-colors cursor-pointer flex items-start gap-2.5 ${
                       isSelected
-                        ? 'bg-indigo-600/30 border-indigo-400 text-white shadow-inner'
-                        : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/60 text-slate-300 hover:text-white'
+                        ? 'bg-indigo-600/25 border-indigo-400 text-white'
+                        : 'bg-slate-800/70 hover:bg-slate-800 border-slate-700/70 text-slate-300 hover:text-white'
                     }`}
                   >
                     <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
@@ -1169,15 +1052,15 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                       {isSelected && <Check className="w-2.5 h-2.5" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-xs truncate text-white">{model.name}</span>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0 ${
-                          isSelected ? 'bg-indigo-400 text-slate-950' : 'bg-slate-700 text-indigo-300'
+                        <span className={`text-[11px] font-mono font-semibold shrink-0 tabular-nums ${
+                          isSelected ? 'text-indigo-200' : 'text-slate-400'
                         }`}>
                           {model.speed}
                         </span>
                       </div>
-                      <p className="text-[10px] text-slate-300/80 mt-1 leading-relaxed">
+                      <p className="text-[11px] text-slate-300/80 mt-0.5 leading-relaxed">
                         {model.description}
                       </p>
                     </div>
@@ -1188,103 +1071,107 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
           </div>
         )}
 
-        {/* Current Active Product Context Bar (if viewing a product) */}
+        {/* Current Active Product Context Bar */}
         {activeViewingProduct && (
-          <div className="px-3 sm:px-4 py-2 bg-indigo-50/90 border-b border-indigo-100 flex items-center justify-between text-xs text-indigo-900 shrink-0">
-            <div className="flex items-center gap-2 truncate">
-              <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white font-bold text-[10px] shrink-0">
-                {lang === 'en' ? 'Active Spool' : lang === 'ja' ? '相談中の商品' : '目前討論商品'}
+          <div className="px-3.5 sm:px-5 py-2 bg-indigo-50/90 border-b border-indigo-100 flex items-center justify-between gap-2 text-xs text-indigo-950 shrink-0">
+            <div className="flex items-center gap-2 min-w-0 truncate">
+              <span className="font-semibold text-indigo-700 shrink-0">
+                {lang === 'en' ? 'Active:' : lang === 'ja' ? '相談中:' : '諮詢商品：'}
               </span>
-              <span className="font-bold truncate text-[11px] sm:text-xs">
+              <span className="font-bold truncate">
                 {activeViewingProduct.name} ({activeViewingProduct.material})
               </span>
-              <span className="text-indigo-600 font-mono text-[11px] font-bold shrink-0">
-                NT$ {activeViewingProduct.price}
+              <span className="text-indigo-600 font-mono font-bold shrink-0 tabular-nums">
+                NT${activeViewingProduct.price}
               </span>
             </div>
             <button
               type="button"
               onClick={() => setActiveViewingProduct(null)}
-              className="text-[11px] text-indigo-500 hover:text-indigo-800 ml-2 shrink-0 underline cursor-pointer"
+              className="text-[11px] text-indigo-600 hover:text-indigo-800 shrink-0 underline cursor-pointer whitespace-nowrap"
             >
-              {lang === 'en' ? 'General Chat' : lang === 'ja' ? '一般相談へ切替' : '切換一般諮詢'}
+              {lang === 'en' ? 'General' : lang === 'ja' ? '一般相談' : '切換一般'}
             </button>
           </div>
         )}
 
-        {/* Quick Symptoms buttons */}
-        <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-1.5 overflow-x-auto text-xs scrollbar-none shrink-0">
-          <span className="text-slate-400 font-semibold shrink-0 text-[11px] ml-0.5">
-            {lang === 'en' ? 'Quick Fix:' : lang === 'ja' ? 'トラブル診断：' : '常見排查速診：'}
+        {/* Quick Symptoms Bar */}
+        <div className="px-3.5 sm:px-5 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-x-auto text-xs scrollbar-none shrink-0">
+          <span className="text-slate-500 font-semibold shrink-0 text-[11px] whitespace-nowrap">
+            {lang === 'en' ? 'Quick Fix:' : lang === 'ja' ? '排查診斷：' : '排查速診：'}
           </span>
           <button
+            type="button"
             disabled={isLoading}
             onClick={() => handleQuickDiagnose(lang === 'en' ? 'First-layer warping & poor bed adhesion (Warping)' : lang === 'ja' ? '1層目の剥がれ・反り (Warping)' : '首層不黏/嚴重翹邊 (Warping)')}
-            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
+            className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 hover:text-indigo-700 shrink-0 font-medium cursor-pointer transition-colors disabled:opacity-50 text-xs whitespace-nowrap"
           >
-            {lang === 'en' ? 'Bed Warping' : lang === 'ja' ? '1層目の剥がれ・反り' : '首層脫落翹邊'}
+            {lang === 'en' ? 'Bed Warping' : lang === 'ja' ? '1層目の反り' : '首層翹邊'}
           </button>
           <button
+            type="button"
             disabled={isLoading}
             onClick={() => handleQuickDiagnose(lang === 'en' ? 'Heavy stringing & oozing (Stringing)' : lang === 'ja' ? '糸引き・クモの巣現象 (Stringing)' : '劇烈拉絲/蜘蛛絲 (Stringing)')}
-            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
+            className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 hover:text-indigo-700 shrink-0 font-medium cursor-pointer transition-colors disabled:opacity-50 text-xs whitespace-nowrap"
           >
-            {lang === 'en' ? 'Fine Stringing' : lang === 'ja' ? '糸引き・クモの巣' : '劇烈拉絲蜘蛛絲'}
+            {lang === 'en' ? 'Stringing' : lang === 'ja' ? '糸引き対策' : '拉絲蜘蛛絲'}
           </button>
           <button
+            type="button"
             disabled={isLoading}
             onClick={() => handleQuickDiagnose(lang === 'en' ? 'Clogged nozzle & extruder clicking (Clogged Nozzle)' : lang === 'ja' ? 'ノズル詰まり・ギア空回り (Clogged Nozzle)' : '噴嘴堵塞/喀喀齒輪打滑 (Clogged Nozzle)')}
-            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
+            className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 hover:text-indigo-700 shrink-0 font-medium cursor-pointer transition-colors disabled:opacity-50 text-xs whitespace-nowrap"
           >
-            {lang === 'en' ? 'Nozzle Clog' : lang === 'ja' ? 'ノズル詰まり' : '噴嘴堵塞打滑'}
+            {lang === 'en' ? 'Nozzle Clog' : lang === 'ja' ? 'ノズル詰まり' : '噴嘴堵塞'}
           </button>
           <button
+            type="button"
             disabled={isLoading}
             onClick={() => handleQuickDiagnose(lang === 'en' ? 'Weak layer bonding & splitting (Layer Delamination)' : lang === 'ja' ? '層間剥離・割れ (Layer Delamination)' : '層間剝離脆弱 (Layer Delamination)')}
-            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 shrink-0 font-medium cursor-pointer shadow-2xs hover:text-indigo-600 transition-colors disabled:opacity-50 text-[11px]"
+            className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-slate-700 hover:text-indigo-700 shrink-0 font-medium cursor-pointer transition-colors disabled:opacity-50 text-xs whitespace-nowrap"
           >
-            {lang === 'en' ? 'Layer Splitting' : lang === 'ja' ? '層間剥離・割れ' : '層間開裂脆弱'}
+            {lang === 'en' ? 'Layer Split' : lang === 'ja' ? '層間剥離' : '層間開裂'}
           </button>
         </div>
 
         {/* Chat / Solution Feed */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/50">
+        <div className="flex-1 overflow-y-auto px-3.5 py-4 sm:px-5 sm:py-5 space-y-4 bg-slate-50/70">
           {messages.map((m, idx) => (
             <div
               key={m.id || idx}
-              className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'} gap-1.5`}
+              className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'} gap-1`}
             >
               <div
-                className={`flex gap-2.5 sm:gap-3 text-xs w-full ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex gap-2 sm:gap-2.5 text-xs w-full ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {m.sender === 'ai' && (
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 mt-0.5">
                     <Bot className="w-4 h-4" />
                   </div>
                 )}
 
                 <div
-                  className={`max-w-[90%] sm:max-w-[84%] p-3 sm:p-4 rounded-2xl leading-relaxed whitespace-pre-line ${
+                  className={`max-w-[88%] sm:max-w-[82%] px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl leading-relaxed whitespace-pre-line ${
                     m.sender === 'user'
-                      ? 'bg-indigo-600 text-white rounded-tr-none shadow-xs'
-                      : 'bg-white text-slate-800 rounded-tl-none border border-slate-200/80 shadow-xs'
+                      ? 'bg-indigo-600 text-white rounded-tr-xs'
+                      : 'bg-white text-slate-800 rounded-tl-xs border border-slate-200'
                   }`}
                 >
                   {/* Inline loading indicator inside this specific AI response bubble */}
                   {m.isLoading ? (
-                    <div className="flex items-center gap-2.5 text-indigo-600 py-1">
+                    <div className="flex items-center gap-2.5 text-indigo-600 py-0.5">
                       <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
                       <span className="text-xs font-medium">
                         {lang === 'en'
-                          ? 'Dialing in slicer parameters & troubleshooting checklist...'
+                          ? `Connecting to ${shortModelLabel} for real-time answer...`
                           : lang === 'ja'
-                          ? 'スライサー推奨値とトラブル診断リストを作成中...'
-                          : 'AI 顧問正在調取上下文並計算切片參數與排查清單...'}
+                          ? `${shortModelLabel} へ接続してリアルタイム解析中...`
+                          : `正在連線 ${shortModelLabel} 即時分析回覆...`}
                       </span>
                     </div>
                   ) : (
                     <>
-                      <div className="text-xs sm:text-[13px]">{cleanChatText(m.text)}</div>
+                      <div className="text-[13px] sm:text-sm leading-relaxed">{cleanChatText(m.text)}</div>
 
                       {/* AI Structured Solution Card attached directly to this specific response */}
                       {m.solution && (
@@ -1422,20 +1309,17 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                         </div>
                       )}
 
-                      {/* AI Model Attribution & Timestamp */}
+                      {/* AI Model Attribution & Timestamp (unboxed clean metadata) */}
                       {m.sender === 'ai' && !m.isLoading && (
-                        <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-                          <div className="flex items-center gap-1.5 font-medium">
-                            <Cpu className="w-3 h-3 text-indigo-500" />
-                            <span className="text-slate-400">
-                              {lang === 'en' ? 'Model:' : lang === 'ja' ? '応答モデル：' : '回覆模型：'}
-                            </span>
-                            <span className="text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                        <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Cpu className="w-3 h-3 text-indigo-500 shrink-0" />
+                            <span className="text-slate-600 font-medium truncate">
                               {m.modelUsed || currentModelObj.name}
                             </span>
                           </div>
                           {m.timestamp && (
-                            <span className="text-slate-300">
+                            <span className="text-slate-400 tabular-nums shrink-0">
                               {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           )}
@@ -1446,7 +1330,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                 </div>
 
                 {m.sender === 'user' && (
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-800 text-white flex items-center justify-center shrink-0 mt-0.5">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-800 text-white flex items-center justify-center shrink-0 mt-0.5">
                     <User className="w-4 h-4" />
                   </div>
                 )}
@@ -1457,26 +1341,26 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Quick Question Chips */}
-        <div className="px-3 pt-2 pb-1 bg-white border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto text-[11px] scrollbar-none shrink-0">
-          <span className="text-slate-400 shrink-0 flex items-center gap-1 text-[10px]">
-            <Sparkles className="w-3 h-3 text-amber-500" />
-            <span>{lang === 'en' ? 'Quick Qs:' : lang === 'ja' ? '質問例：' : '接續提問：'}</span>
+        {/* Quick Question Suggestions */}
+        <div className="px-3.5 sm:px-5 py-2 bg-white border-t border-slate-100 flex items-center gap-2 overflow-x-auto text-xs scrollbar-none shrink-0">
+          <span className="text-slate-500 font-medium shrink-0 text-[11px] whitespace-nowrap">
+            {lang === 'en' ? 'Suggested:' : lang === 'ja' ? '質問例：' : '常見提問：'}
           </span>
           {quickPrompts.map((prompt, i) => (
             <button
+              type="button"
               key={i}
               disabled={isLoading}
               onClick={() => handleSendChat(prompt)}
-              className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 shrink-0 transition-colors cursor-pointer disabled:opacity-50 text-[11px] whitespace-nowrap"
+              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200/80 shrink-0 transition-colors cursor-pointer disabled:opacity-50 text-xs font-medium whitespace-nowrap"
             >
               {prompt}
             </button>
           ))}
         </div>
 
-        {/* Chat input box with mobile safe area */}
-        <div className="px-4 py-3 sm:px-5 sm:py-4 border-t border-slate-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
+        {/* Chat Input Box with Mobile Safe Area */}
+        <div className="px-3.5 py-3 sm:px-5 sm:py-3.5 border-t border-slate-200 bg-white pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -1491,16 +1375,16 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               placeholder={isLoading 
-                ? (lang === 'en' ? 'AI Advisor is analyzing, please wait...' : lang === 'ja' ? 'AIアドバイザーが回答を生成中...' : 'AI 顧問正在分析回覆中，請稍候...') 
-                : (lang === 'en' ? 'Ask about 3D printing filaments, slicer tuning, or orders...' : lang === 'ja' ? '3Dフィラメント、スライサー設定、注文について質問...' : '輸入列印問題、機型切片參數或耗材詢問...')}
-              className="flex-1 px-3.5 sm:px-4 py-2.5 sm:py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:bg-slate-100 disabled:cursor-not-allowed"
+                ? (lang === 'en' ? 'Generating reply...' : lang === 'ja' ? '回答を生成中...' : 'AI 顧問正在即時生成回覆...') 
+                : (lang === 'en' ? 'Ask about filaments, slicer settings, or orders...' : lang === 'ja' ? 'フィラメント・設定・注文について質問...' : '輸入列印問題、機型切片參數或耗材詢問...')}
+              className="flex-1 h-11 px-3.5 sm:px-4 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:bg-slate-100 disabled:cursor-not-allowed"
             />
             {isLoading ? (
               <button
                 type="button"
                 onClick={handleStopGenerating}
-                className="px-3.5 sm:px-4 py-2.5 sm:py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
-                title={lang === 'en' ? 'Stop generating' : lang === 'ja' ? '生成を停止' : '中止當前 AI 串流請求，防止 Token 消耗'}
+                className="h-11 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+                title={lang === 'en' ? 'Stop generating' : lang === 'ja' ? '生成を停止' : '停止生成'}
               >
                 <div className="w-2.5 h-2.5 bg-white rounded-xs" />
                 <span>{lang === 'en' ? 'Stop' : lang === 'ja' ? '停止' : '停止'}</span>
@@ -1510,7 +1394,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                 id="customer-support-send-btn"
                 type="submit"
                 disabled={!chatInput.trim()}
-                className="px-4 sm:px-5 py-2.5 sm:py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:cursor-not-allowed shrink-0"
+                className="h-11 px-4 sm:px-5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
               >
                 <Send className="w-4 h-4" />
                 <span className="hidden sm:inline">{lang === 'en' ? 'Send' : lang === 'ja' ? '送信' : '發送'}</span>
@@ -1518,15 +1402,12 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
             )}
           </form>
 
-          <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-slate-400 select-none">
-            <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-              <span>{lang === 'en' ? 'Click background to close and return' : lang === 'ja' ? '背景をクリックすると閉じて戻ります' : '點擊外圍空白背景即可關閉並返回主頁面'}</span>
-            </span>
+          <div className="hidden sm:flex items-center justify-between mt-2 px-1 text-[11px] text-slate-400 select-none">
+            <span>{lang === 'en' ? 'Press ESC or click outside to close' : lang === 'ja' ? 'ESCまたは背景クリックで閉じます' : '點擊視窗外空白處或按 ESC 即可返回主頁面'}</span>
             <button
               type="button"
               onClick={onClose}
-              className="text-slate-400 hover:text-indigo-600 underline cursor-pointer"
+              className="text-slate-500 hover:text-indigo-600 underline cursor-pointer"
             >
               {lang === 'en' ? 'Close' : lang === 'ja' ? '閉じる' : '返回主頁面'}
             </button>

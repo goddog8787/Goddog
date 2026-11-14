@@ -994,7 +994,7 @@ export async function saveAIConfigToFirestore(config: {
   try {
     const payload = {
       apiBaseUrl: (config.apiBaseUrl || '').trim(),
-      activeModel: config.activeModel || 'gemini-3.8-flash',
+      activeModel: config.activeModel || 'gemini-4-hydrogen',
       updatedAt: new Date().toISOString(),
     };
     await setDoc(doc(db, 'settings', 'ai_config'), payload, { merge: true });
@@ -1018,7 +1018,7 @@ export async function loadAIConfigFromFirestore(): Promise<{
       }
       return {
         apiBaseUrl: data?.apiBaseUrl,
-        activeModel: data?.activeModel || 'gemini-3.8-flash',
+        activeModel: data?.activeModel === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : (data?.activeModel || 'gemini-4-hydrogen'),
       };
     }
   } catch (error) {
@@ -1027,7 +1027,42 @@ export async function loadAIConfigFromFirestore(): Promise<{
   return null;
 }
 
-// Real-Time Firestore AI Bridge for goddog.space -> server.ts Gemini 3 Flash Engine
+// Firestore NewebPay & Logistics Config Sync Helper (ensures goddog.space always uses the latest Admin HashKey / HashIV)
+export async function saveNewebPayConfigToFirestore(settings: Record<string, any>) {
+  try {
+    const payload = {
+      ...settings,
+      newebpayLogisticsMerchantId: String(settings.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
+      newebpayLogisticsHashKey: String(settings.newebpayLogisticsHashKey || '').trim(),
+      newebpayLogisticsHashIV: String(settings.newebpayLogisticsHashIV || '').trim(),
+      newebpayLogisticsTestMode: Boolean(settings.newebpayLogisticsTestMode),
+      updatedAt: new Date().toISOString(),
+    };
+    await setDoc(doc(db, 'settings', 'logistics_config'), payload, { merge: true });
+    return payload;
+  } catch (error) {
+    console.warn('Firestore NewebPay config sync fallback:', error);
+    return null;
+  }
+}
+
+export async function loadNewebPayConfigFromFirestore(): Promise<Record<string, any> | null> {
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'logistics_config'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data && typeof window !== 'undefined') {
+        localStorage.setItem('printcore_logistics_settings', JSON.stringify(data));
+      }
+      return data;
+    }
+  } catch (error) {
+    // Ignore silently
+  }
+  return null;
+}
+
+// Real-Time Firestore AI Bridge for goddog.space -> server.ts Gemini 4 Hydrogen Engine
 export async function requestGeminiViaFirestoreBridge(params: {
   message: string;
   history: Array<{ sender: string; text: string }>;
@@ -1057,7 +1092,7 @@ export async function requestGeminiViaFirestoreBridge(params: {
       sender: m.sender,
       text: String(m.text || '').slice(0, 600),
     })),
-    model: params.model || 'gemini-3.8-flash',
+    model: params.model === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : (params.model || 'gemini-4-hydrogen'),
     storeContext: safeContext,
     createdAt: Date.now(),
   });
@@ -1081,7 +1116,7 @@ export async function requestGeminiViaFirestoreBridge(params: {
         cleanup();
         reject(new Error('BRIDGE_TIMEOUT'));
       }
-    }, 12500);
+    }, 9500);
 
     if (params.signal) {
       params.signal.addEventListener('abort', () => {

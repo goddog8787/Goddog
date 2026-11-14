@@ -25,7 +25,7 @@ import {
   ShippingMethod 
 } from '../../types';
 import { formatPrice, translations, translateProductName, translateProduct } from '../../utils/i18n';
-import { auth } from '../../lib/firebase';
+import { auth, loadNewebPayConfigFromFirestore } from '../../lib/firebase';
 import { 
   downloadOrderProofJSON, 
   downloadOrderProofPDF 
@@ -34,7 +34,8 @@ import { OrderCertificateModal } from './OrderCertificateModal';
 import { CvsStoreSelectorModal } from './CvsStoreSelectorModal';
 import { TrustCertModal } from './TrustCertModal';
 import { validateCoupon } from '../../utils/couponManager';
-import { createClientNewebPayCheckout } from '../../lib/newebpayClient';
+import { createClientNewebPayCheckout, getActiveNewebPayCredentials } from '../../lib/newebpayClient';
+import { getBackendApiBase } from '../../lib/geminiClient';
 import { TaiwanAddressInput } from './TaiwanAddressInput';
 import { loadCustomerUserData, isMemberVipActive } from '../../lib/customerPersistence';
 
@@ -378,6 +379,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const triggerNewebPayCheckout = async (methodToUse: PaymentGateway = paymentGateway) => {
     setIsProcessing(true);
     try {
+      await loadNewebPayConfigFromFirestore().catch(() => null);
+      const activeCreds = getActiveNewebPayCredentials();
+
       const pendingOrderInfo = {
         userId: (member?.id && !member.id.startsWith('guest')) ? member.id : (auth.currentUser?.uid || 'guest'),
         customerName,
@@ -402,7 +406,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
 
       try {
-        const res = await fetch(window.location.origin + '/api/payment/checkout', {
+        const apiBase = getBackendApiBase() || window.location.origin;
+        const res = await fetch(`${apiBase}/api/payment/checkout`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -410,9 +415,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             email: customerEmail,
             desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
             paymentMethod: methodToUse,
+            useSandbox: activeCreds.testMode,
+            merchantId: activeCreds.merchantId,
+            hashKey: activeCreds.hashKey,
+            hashIV: activeCreds.hashIV,
+            originUrl: window.location.origin,
           }),
         });
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
           if (data && data.success && data.formParams) {
             checkoutData = data;
@@ -428,6 +439,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           email: customerEmail,
           desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
           paymentMethod: methodToUse,
+          merchantId: activeCreds.merchantId,
+          hashKey: activeCreds.hashKey,
+          hashIV: activeCreds.hashIV,
+          testMode: activeCreds.testMode,
         });
       }
 

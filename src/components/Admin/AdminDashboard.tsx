@@ -95,6 +95,8 @@ import {
   waitForLastCatalogCloudSync,
 } from '../../lib/productPersistence';
 import { matchesProductDeepSearch } from '../../utils/productSearch';
+import { saveNewebPayConfigToFirestore, loadNewebPayConfigFromFirestore } from '../../lib/firebase';
+import { getBackendApiBase } from '../../lib/geminiClient';
 
 interface AdminDashboardProps {
   products: FilamentProduct[];
@@ -187,9 +189,38 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
   });
 
+  useEffect(() => {
+    loadNewebPayConfigFromFirestore().then((remote) => {
+      if (remote && remote.newebpayLogisticsMerchantId) {
+        setLogisticsSettings((prev) => ({
+          ...prev,
+          ...remote,
+        }));
+      }
+    });
+  }, []);
+
   const handleSaveLogisticsSettings = (newSettings: LogisticsSettings) => {
-    setLogisticsSettings(newSettings);
-    localStorage.setItem('printcore_logistics_settings', JSON.stringify(newSettings));
+    const cleaned: LogisticsSettings = {
+      ...newSettings,
+      newebpayLogisticsMerchantId: (newSettings.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
+      newebpayLogisticsHashKey: (newSettings.newebpayLogisticsHashKey || '').trim(),
+      newebpayLogisticsHashIV: (newSettings.newebpayLogisticsHashIV || '').trim(),
+    };
+    setLogisticsSettings(cleaned);
+    localStorage.setItem('printcore_logistics_settings', JSON.stringify(cleaned));
+    saveNewebPayConfigToFirestore(cleaned);
+    const apiBase = getBackendApiBase();
+    fetch(`${apiBase}/api/payment/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        merchantId: cleaned.newebpayLogisticsMerchantId,
+        hashKey: cleaned.newebpayLogisticsHashKey,
+        hashIV: cleaned.newebpayLogisticsHashIV,
+        testMode: cleaned.newebpayLogisticsTestMode,
+      }),
+    }).catch(() => {});
   };
 
   const handleSaveProductEdit = (updated: FilamentProduct) => {
@@ -2044,7 +2075,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     AI 智能自動廣告投放引擎 (Auto Ad Delivery)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    由 Gemini 3.8 Flash 根據即時庫存與受眾足跡自動生成頂級文案與 Target ROAS 競價
+                    由 Gemini 4 Hydrogen 根據即時庫存與受眾足跡自動生成頂級文案與 Target ROAS 競價
                   </p>
                 </div>
               </div>
@@ -2318,7 +2349,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {isAutoLaunching ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
-                        <span>Gemini 3.8 Flash 生成文案與自動對接 Ads API 中...</span>
+                        <span>Gemini 4 Hydrogen 生成文案與自動對接 Ads API 中...</span>
                       </>
                     ) : (
                       <>

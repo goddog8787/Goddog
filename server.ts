@@ -4,7 +4,7 @@ import fs from 'fs';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import crypto from 'crypto';
 
 try {
@@ -286,7 +286,16 @@ function getAIClient(customApiKey?: string): GoogleGenAI | null {
 }
 
 // In-memory cache for ultra-fast instant responses (< 5ms)
-const chatResponseCache = new Map<string, { reply: string; timestamp: number }>();
+const chatResponseCache = new Map<string, { reply: string; modelUsed?: string; timestamp: number }>();
+
+function setCachedChatReply(key: string, reply: string, modelUsed?: string) {
+  if (!reply || !reply.trim()) return;
+  if (chatResponseCache.size >= 300) {
+    const oldestKey = chatResponseCache.keys().next().value;
+    if (oldestKey) chatResponseCache.delete(oldestKey);
+  }
+  chatResponseCache.set(key, { reply, modelUsed, timestamp: Date.now() });
+}
 
 // Helper to detect transient API rate limits, temporary unavailability, or high demand spikes
 function isTransientGeminiError(err: any): boolean {
@@ -318,6 +327,37 @@ async function callWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promi
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
+function buildModelGenConfig(
+  model: string,
+  opts?: { systemInstruction?: string; json?: boolean; maxOutputTokens?: number }
+): Record<string, any> {
+  const isHydrogen = model === 'gemini-4-hydrogen';
+  const isFlashLite = model === 'gemini-3.1-flash-lite';
+  const cfg: Record<string, any> = {};
+  if (opts?.systemInstruction) {
+    cfg.systemInstruction = opts.systemInstruction;
+  }
+  if (opts?.json) {
+    cfg.responseMimeType = 'application/json';
+  }
+  if (isHydrogen) {
+    cfg.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
+  } else if (isFlashLite) {
+    cfg.thinkingConfig = { thinkingLevel: ThinkingLevel.MINIMAL };
+    if (opts?.maxOutputTokens) {
+      cfg.maxOutputTokens = opts.maxOutputTokens;
+    }
+  } else {
+    if (opts?.maxOutputTokens) {
+      cfg.maxOutputTokens = opts.maxOutputTokens;
+    }
+    if (!opts?.json) {
+      cfg.temperature = 0.4;
+    }
+  }
+  return cfg;
+}
+
 async function generateGeminiContentSafely(
   prompt: string,
   options?: { json?: boolean; preferredModel?: string; apiKey?: string }
@@ -325,28 +365,32 @@ async function generateGeminiContentSafely(
   const ai = getAIClient(options?.apiKey);
   if (!ai) return null;
 
-  // Prioritize active Gemini 3.8 Flash & 3.1 Flash-Lite models first, then fallback models
+  // Prioritize active Gemini 4 Hydrogen & 3.1 Flash-Lite models first, then fallback models
   const allSupportedModels = [
-    'gemini-3.8-flash',
+    'gemini-4-hydrogen',
     'gemini-3.1-flash-lite',
     'gemini-flash-latest',
   ];
 
+  const normalizedPref =
+    options?.preferredModel === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : options?.preferredModel;
+
   let models = allSupportedModels;
-  if (options?.preferredModel && allSupportedModels.includes(options.preferredModel)) {
-    models = [options.preferredModel, ...allSupportedModels.filter((m) => m !== options.preferredModel)];
+  if (normalizedPref && allSupportedModels.includes(normalizedPref)) {
+    models = [normalizedPref, ...allSupportedModels.filter((m) => m !== normalizedPref)];
   }
 
   for (const model of models) {
     try {
-      const timeoutMs = 11000;
+      const timeoutMs = 6500;
       const response = await callWithTimeout(
         ai.models.generateContent({
           model,
           contents: prompt,
-          config: options?.json
-            ? { responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } }
-            : { maxOutputTokens: 1200, temperature: 0.6, thinkingConfig: { thinkingBudget: 0 } },
+          config: buildModelGenConfig(model, {
+            json: options?.json,
+            maxOutputTokens: 1200,
+          }),
         }),
         timeoutMs
       );
@@ -363,6 +407,7 @@ async function generateGeminiContentSafely(
 }
 
 const ALL_SUPPORTED_GEMINI_MODELS = [
+  'gemini-4-hydrogen',
   'gemini-3.8-flash',
   'gemini-3-flash-preview',
   'gemini-3.1-flash-lite',
@@ -371,8 +416,9 @@ const ALL_SUPPORTED_GEMINI_MODELS = [
 ];
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  'gemini-3.8-flash': 'Gemini 3.8 Flash (推薦首選)',
-  'gemini-3-flash-preview': 'Gemini 3.8 Flash (推薦首選)',
+  'gemini-4-hydrogen': 'Gemini 4 Hydrogen (推薦首選)',
+  'gemini-3.8-flash': 'Gemini 4 Hydrogen (推薦首選)',
+  'gemini-3-flash-preview': 'Gemini 4 Hydrogen (推薦首選)',
   'gemini-3.1-flash-lite': 'Gemini 3.1 Flash-Lite (極速輕量)',
   'gemini-flash-latest': 'Gemini Flash (自動分流)',
   'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (深度推理)',
@@ -395,7 +441,7 @@ function checkModelTierAccess(requestedModel: string, tier?: string): { allowed:
     if (normalizedTier !== 'PLUS' && normalizedTier !== 'DIAMOND') {
       return {
         allowed: false,
-        reason: '旗艦級深度推理大模型 (Gemini 3.1 Pro) 僅開放予 PLUS 尊榮會員或鑽石創客使用。FREE/GO 會員請選用 Gemini 3.8 Flash (推薦首選) 或升級會員方案。',
+        reason: '旗艦級深度推理大模型 (Gemini 3.1 Pro) 僅開放予 PLUS 尊榮會員或鑽石創客使用。FREE/GO 會員請選用 Gemini 4 Hydrogen (推薦首選) 或升級會員方案。',
       };
     }
   }
@@ -453,11 +499,12 @@ ${olderTranscript}`;
         model: 'gemini-3.1-flash-lite',
         contents: summaryPrompt,
         config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
           maxOutputTokens: 280,
           temperature: 0.2,
         },
       }),
-      6000
+      2200
     );
 
     const summaryText = summaryResponse?.text?.trim() || '';
@@ -482,7 +529,8 @@ async function* generateGeminiChatStreamSafely(
   latestUserMessage: string,
   preferredModel?: string,
   customApiKey?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  onModelResolved?: (modelId: string) => void
 ): AsyncGenerator<string, void, unknown> {
   const ai = getAIClient(customApiKey);
   if (!ai) {
@@ -511,36 +559,32 @@ async function* generateGeminiChatStreamSafely(
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
 
-  // Prioritize gemini-3.8-flash and gemini-3.1-flash-lite with automatic silent fallback if any node returns 503
-  const candidateConfigs: Array<{ model: string; useThinkingZero: boolean }> =
-    preferredModel === 'gemini-3.1-pro-preview'
-      ? [
-          { model: 'gemini-3.8-flash', useThinkingZero: false },
-          { model: 'gemini-3.1-pro-preview', useThinkingZero: false },
-          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
-        ]
-      : [
-          { model: 'gemini-3.8-flash', useThinkingZero: false },
-          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
-          { model: 'gemini-flash-latest', useThinkingZero: false },
-        ];
+  const normalizedPreferred =
+    preferredModel === 'gemini-3.8-flash' || preferredModel === 'gemini-3-flash-preview' || !preferredModel
+      ? 'gemini-4-hydrogen'
+      : preferredModel;
 
-  for (const candidate of candidateConfigs) {
+  // Prioritize selected model then ultrafast failover nodes
+  const baseOrder = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  const orderedModels =
+    normalizedPreferred === 'gemini-3.1-pro-preview'
+      ? ['gemini-3.1-pro-preview', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+      : [normalizedPreferred, ...baseOrder.filter((m) => m !== normalizedPreferred)];
+
+  for (const candidateModel of orderedModels) {
     if (abortSignal?.aborted) return;
     let yieldedFromCandidate = false;
     try {
       const stream = await callWithTimeout(
         ai.models.generateContentStream({
-          model: candidate.model,
+          model: candidateModel,
           contents: rawContents,
-          config: {
+          config: buildModelGenConfig(candidateModel, {
             systemInstruction,
-            maxOutputTokens: 600,
-            temperature: 0.4,
-            ...(candidate.useThinkingZero ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-          },
+            maxOutputTokens: 700,
+          }),
         }),
-        11000
+        5200
       );
 
       for await (const chunk of stream) {
@@ -549,7 +593,10 @@ async function* generateGeminiChatStreamSafely(
         }
         const text = chunk.text;
         if (text) {
-          yieldedFromCandidate = true;
+          if (!yieldedFromCandidate) {
+            yieldedFromCandidate = true;
+            onModelResolved?.(candidateModel);
+          }
           yield text;
         }
       }
@@ -579,18 +626,14 @@ async function generateGeminiChatSafely(
   const ai = getAIClient(customApiKey);
   if (!ai) return { reply: '', modelUsed: '', error: '尚未配置有效的 Google Gemini API Key' };
 
-  const candidateConfigs: Array<{ model: string; useThinkingZero: boolean }> =
-    preferredModel === 'gemini-3.1-pro-preview'
-      ? [
-          { model: 'gemini-3.8-flash', useThinkingZero: false },
-          { model: 'gemini-3.1-pro-preview', useThinkingZero: false },
-          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
-        ]
-      : [
-          { model: 'gemini-3.8-flash', useThinkingZero: false },
-          { model: 'gemini-3.1-flash-lite', useThinkingZero: false },
-          { model: 'gemini-flash-latest', useThinkingZero: false },
-        ];
+  const normalizedPreferred =
+    preferredModel === 'gemini-3.8-flash' || !preferredModel ? 'gemini-4-hydrogen' : preferredModel;
+
+  const baseOrder = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  const orderedModels =
+    normalizedPreferred === 'gemini-3.1-pro-preview'
+      ? ['gemini-3.1-pro-preview', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+      : [normalizedPreferred, ...baseOrder.filter((m) => m !== normalizedPreferred)];
 
   const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
@@ -616,24 +659,22 @@ async function generateGeminiChatSafely(
 
   let lastErrorMsg = '';
 
-  for (const candidate of candidateConfigs) {
+  for (const candidateModel of orderedModels) {
     try {
       const response = await callWithTimeout(
         ai.models.generateContent({
-          model: candidate.model,
+          model: candidateModel,
           contents: rawContents,
-          config: {
+          config: buildModelGenConfig(candidateModel, {
             systemInstruction,
-            maxOutputTokens: 600,
-            temperature: 0.4,
-            ...(candidate.useThinkingZero ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
-          },
+            maxOutputTokens: 700,
+          }),
         }),
-        11000
+        6500
       );
 
       if (response && response.text && response.text.trim()) {
-        return { reply: response.text.trim(), modelUsed: candidate.model };
+        return { reply: response.text.trim(), modelUsed: candidateModel };
       }
     } catch (err: any) {
       lastErrorMsg = String(err?.message || '');
@@ -643,7 +684,7 @@ async function generateGeminiChatSafely(
     }
   }
 
-  return { reply: '', modelUsed: preferredModel || 'gemini-3.8-flash', error: lastErrorMsg || '所有 Gemini 模型請求超時或未回應' };
+  return { reply: '', modelUsed: normalizedPreferred, error: lastErrorMsg || '所有 Gemini 模型請求超時或未回應' };
 }
 
 // -------------------------------------------------------------
@@ -772,13 +813,13 @@ async function startFirestoreAIBridgeWorker() {
               history,
               systemPrompt,
               userMessage,
-              data.model || 'gemini-3.8-flash'
+              data.model || 'gemini-4-hydrogen'
             );
 
             for await (const chunk of streamGen) {
               accumulated += chunk;
               const now = Date.now();
-              if (now - lastFlush > 350) {
+              if (now - lastFlush > 120) {
                 lastFlush = now;
                 await fsSetDoc(
                   docSnap.ref,
@@ -797,7 +838,7 @@ async function startFirestoreAIBridgeWorker() {
                 history,
                 systemPrompt,
                 userMessage,
-                data.model || 'gemini-3.8-flash'
+                data.model || 'gemini-4-hydrogen'
               );
               if (nonStream?.reply) {
                 accumulated = nonStream.reply;
@@ -811,7 +852,7 @@ async function startFirestoreAIBridgeWorker() {
                 {
                   status: 'completed',
                   reply: cleanChatReply(accumulated.trim()),
-                  modelUsed: MODEL_DISPLAY_NAMES[data.model || 'gemini-3.8-flash'] || 'Gemini 3.8 Flash',
+                  modelUsed: MODEL_DISPLAY_NAMES[data.model || 'gemini-4-hydrogen'] || 'Gemini 4 Hydrogen',
                   completedAt: Date.now(),
                 },
                 { merge: true }
@@ -1082,7 +1123,7 @@ app.post('/api/ai/recommend-filament', async (req, res) => {
         if (parsed.material && parsed.slicerSettings) {
           return res.json({
             success: true,
-            modelUsed: requestedModel || 'gemini-3.8-flash',
+            modelUsed: requestedModel || 'gemini-4-hydrogen',
             ...parsed,
             material: recommendedMaterial,
             preferredProductId: computed.materialInfo.preferredProductId,
@@ -1152,8 +1193,8 @@ app.get('/api/ai/status', (_req, res) => {
     source: hasRuntimeKey ? 'official_cluster' : (hasEnvKey ? 'server_env' : 'ready'),
     googleAccount: 'GodDog-Official-Cluster',
     googlePlatform: 'Google AI Cloud',
-    defaultModel: 'gemini-3.8-flash',
-    supportedModels: ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-2.5-pro', 'gemini-2.5-flash', 'local-expert'],
+    defaultModel: 'gemini-4-hydrogen',
+    supportedModels: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.1-pro-preview', 'local-expert'],
     canDirectAnswer: true,
   });
 });
@@ -1170,8 +1211,8 @@ app.get('/api/ai/admin-config', (_req, res) => {
     hasActiveKey: !!activeKey,
     keySource: hasRuntime ? 'official_key' : (hasEnv ? 'server_env' : 'unconfigured'),
     maskedKey,
-    activeModel: 'gemini-3.8-flash',
-    supportedModels: ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-2.5-pro', 'gemini-2.5-flash'],
+    activeModel: 'gemini-4-hydrogen',
+    supportedModels: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.1-pro-preview'],
     totalQueriesServed: totalCustomerQueriesServed,
   });
 });
@@ -1196,7 +1237,7 @@ app.post('/api/ai/set-key', async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const testModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-flash-latest'];
+    const testModels = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
     let verifiedModel = '';
     let pingText = '';
     let lastError = '';
@@ -1207,7 +1248,7 @@ app.post('/api/ai/set-key', async (req, res) => {
           testAI.models.generateContent({
             model: testModel,
             contents: '請用繁體中文回覆這四個字即可：「連線正常」',
-            config: { maxOutputTokens: 25, temperature: 0.2 },
+            config: buildModelGenConfig(testModel, { maxOutputTokens: 50 }),
           }),
           9000
         );
@@ -1263,29 +1304,40 @@ app.post('/api/ai/test-owner-connection', async (req, res) => {
     });
   }
 
-  const requestedTestModel = req.body?.model || 'gemini-3.8-flash';
+  const rawRequested = req.body?.model || 'gemini-4-hydrogen';
+  const requestedTestModel = rawRequested === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : rawRequested;
 
   try {
     const prompt = (req.body?.prompt || '請用繁體中文以一句話推薦適合拓竹 AMS 的高品質 3D 列印耗材。').slice(0, 150);
-    const result = await callWithTimeout(
-      testAI.models.generateContent({
-        model: requestedTestModel,
-        contents: prompt,
-        config: { maxOutputTokens: 200, temperature: 0.4 },
-      }),
-      10000
-    );
-    const latencyMs = Date.now() - startTime;
-    if (result && result.text) {
-      return res.json({
-        success: true,
-        latencyMs,
-        modelUsed: MODEL_DISPLAY_NAMES[requestedTestModel] || requestedTestModel,
-        ownerAccount: 'GodDog-Official-Cluster',
-        reply: result.text.trim(),
-      });
+    const candidates = [requestedTestModel, 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+    const uniqueCandidates = Array.from(new Set(candidates));
+    let lastErr: any = null;
+
+    for (const modelCandidate of uniqueCandidates) {
+      try {
+        const result = await callWithTimeout(
+          testAI.models.generateContent({
+            model: modelCandidate,
+            contents: prompt,
+            config: buildModelGenConfig(modelCandidate, { maxOutputTokens: 300 }),
+          }),
+          10000
+        );
+        const latencyMs = Date.now() - startTime;
+        if (result && result.text) {
+          return res.json({
+            success: true,
+            latencyMs,
+            modelUsed: MODEL_DISPLAY_NAMES[modelCandidate] || modelCandidate,
+            ownerAccount: 'GodDog-Official-Cluster',
+            reply: result.text.trim(),
+          });
+        }
+      } catch (e: any) {
+        lastErr = e;
+      }
     }
-    throw new Error('未收到模型文字回應');
+    throw lastErr || new Error('未收到模型文字回應');
   } catch (err: any) {
     return res.status(500).json({
       success: false,
@@ -1295,51 +1347,44 @@ app.post('/api/ai/test-owner-connection', async (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 1.2 AI 可選模型清單 API (供前端自選 Gemini 3.8 / 3.1-Lite / Flash / 2.5 Pro / 2.5 Flash / 離線專家模式)
+// 1.2 AI 可選模型清單 API (供前端自選 Gemini 4 Hydrogen / 3.1-Lite / Flash / 3.1 Pro / 離線專家模式)
 // -------------------------------------------------------------
 app.get('/api/ai/available-models', (_req, res) => {
   res.json({
-    defaultModel: 'gemini-3.8-flash',
+    defaultModel: 'gemini-4-hydrogen',
     models: [
       {
-        id: 'gemini-3.8-flash',
-        name: 'Gemini 3.8 Flash (推薦首選)',
-        badge: '官方旗艦',
+        id: 'gemini-4-hydrogen',
+        name: 'Gemini 4 Hydrogen (推薦首選)',
+        badge: '旗艦推薦',
         speed: '極快 (~0.8s)',
-        description: 'Google 最新次世代 Flash 模型，具備強大材料科學推理、多輪上下文記憶與自然對話能力。',
+        description: 'Google 最新次世代 4 Hydrogen 模型，具備強大材料科學推理與低延遲繁體中文對話能力。',
       },
       {
         id: 'gemini-3.1-flash-lite',
         name: 'Gemini 3.1 Flash-Lite',
-        badge: '極速輕量',
+        badge: '瞬間秒回',
         speed: '毫秒級 (~0.4s)',
         description: '極低延遲超輕量模型，快速回答出貨、優惠券、物流與一般耗材諮詢。',
       },
       {
         id: 'gemini-flash-latest',
-        name: 'Gemini Flash (自動分流)',
+        name: 'Gemini Flash (自動高負載分流)',
         badge: '經典 Flash',
         speed: '超快 (~1.0s)',
         description: 'Google Flash 系列模型，具備智慧多模型自動容錯與無縫切換。',
       },
       {
-        id: 'gemini-2.5-pro',
-        name: 'Gemini 2.5 Pro (深度推理)',
-        badge: '深度推理',
-        speed: '深度 (~2.2s)',
+        id: 'gemini-3.1-pro-preview',
+        name: 'Gemini 3.1 Pro',
+        badge: 'PLUS 專屬',
+        speed: '思考型 (~2.0s)',
         description: '高階工程推理旗艦，擅長高溫箱溫熱傳導分析、碳纖耐磨與微觀物理探討。',
       },
       {
-        id: 'gemini-2.5-flash',
-        name: 'Gemini 2.5 Flash (穩定旗艦)',
-        badge: '穩定旗艦',
-        speed: '穩定 (~1.2s)',
-        description: '經典穩定版本，適合多輪複雜對話與情境式推薦。',
-      },
-      {
         id: 'local-expert',
-        name: '神狗勾 3D 專家工程模式 (離線)',
-        badge: '離線規則',
+        name: '神狗勾 3D 專家工程模式',
+        badge: '離線雙軌',
         speed: '即時 (<0.05s)',
         description: '神狗勾官方內建 3D 列印黃金切片規則引擎，離線秒回無延遲。',
       },
@@ -1373,7 +1418,8 @@ function cleanChatReply(rawText: string): string {
 // 1.4 AI 智慧客服 SSE 串流 API (支援 Server-Sent Events 與 AbortController 斷線防護)
 // -------------------------------------------------------------
 app.post('/api/ai/chat/stream', async (req, res) => {
-  const requestedModel = req.body?.model || 'gemini-3.8-flash';
+  const rawModel = req.body?.model || 'gemini-4-hydrogen';
+  const requestedModel = rawModel === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : rawModel;
   const membershipTier = req.body?.membershipTier || req.body?.tier || 'FREE';
 
   // 1. 會員階級權限攔截 (RBAC)
@@ -1498,34 +1544,61 @@ ${contextNotes}`;
         ? '神狗勾の全1kgスプール（外径200mm・公差±0.02mm）はBambu Lab AMSおよび主流の高速CoreXY機にそのまま対応しています。推奨設定はHyper PLAがノズル210〜225°C・ベッド55°C、PETG-HFがノズル235〜245°C・ベッド70°C、軟質TPU 95Aが外部給紙で220〜230°Cです。NT$999以上のご注文で送料無料・24時間以内に発送いたします！'
         : '神狗勾全系列 1kg 標準線盤（外徑 200mm、公差 ±0.02mm）全面相容 Bambu Lab AMS 與主流高速機型。常用建議參數：Hyper PLA 噴嘴 210–225°C / 熱床 55°C；PETG-HF 噴嘴 235–245°C / 熱床 70°C；TPU 95A 軟膠請由機身外掛料架進料（220–230°C）。全館滿 NT$999 免運並於 24H 內快速出貨！';
 
+    const sseCacheKey = `${lang}::${requestedModel}::${latestUserMessage.toLowerCase()}::${storeContext?.viewingProduct?.name || ''}`;
+    if (requestedModel !== 'local-expert' && normalizedFullHistory.length <= 2 && latestUserMessage.length <= 100) {
+      const cached = chatResponseCache.get(sseCacheKey);
+      if (cached && Date.now() - cached.timestamp < 300000) {
+        totalCustomerQueriesServed++;
+        res.write(`data: ${JSON.stringify({ meta: { modelUsed: cached.modelUsed || MODEL_DISPLAY_NAMES[requestedModel] || requestedModel, cached: true } })}\n\n`);
+        res.write(`data: ${JSON.stringify({ text: cached.reply })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+    }
+
     if (requestedModel === 'local-expert' || !effectiveApiKey) {
+      res.write(`data: ${JSON.stringify({ meta: { modelUsed: '神狗勾 3D 專家顧問' } })}\n\n`);
       res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
     }
 
+    let resolvedModelId = requestedModel;
     const generator = generateGeminiChatStreamSafely(
       history,
       systemPrompt,
       latestUserMessage,
       requestedModel,
       effectiveApiKey,
-      abortController.signal
+      abortController.signal,
+      (modelId) => {
+        resolvedModelId = modelId;
+        if (!clientDisconnected && !res.writableEnded) {
+          const displayName = MODEL_DISPLAY_NAMES[modelId] || modelId;
+          res.write(`data: ${JSON.stringify({ meta: { modelUsed: displayName } })}\n\n`);
+        }
+      }
     );
 
     let streamedAnyChunk = false;
+    let streamedFullText = '';
     for await (const chunkText of generator) {
       if (clientDisconnected || abortController.signal.aborted) {
         break;
       }
       streamedAnyChunk = true;
+      streamedFullText += chunkText;
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     }
     if (streamedAnyChunk) {
       totalCustomerQueriesServed++;
+      if (normalizedFullHistory.length <= 2 && latestUserMessage.length <= 100 && streamedFullText.trim()) {
+        setCachedChatReply(sseCacheKey, streamedFullText.trim(), MODEL_DISPLAY_NAMES[resolvedModelId] || resolvedModelId);
+      }
     }
 
     if (!streamedAnyChunk && !clientDisconnected && !abortController.signal.aborted) {
+      res.write(`data: ${JSON.stringify({ meta: { modelUsed: '神狗勾 3D 專家顧問' } })}\n\n`);
       res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
     }
 
@@ -1611,7 +1684,8 @@ app.post('/api/ai/chat', async (req, res) => {
       savePersistedOwnerApiKey(clientApiKey);
     }
 
-    const targetModel = requestedModel || 'gemini-3.8-flash';
+    const rawTarget = requestedModel || 'gemini-4-hydrogen';
+    const targetModel = rawTarget === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : rawTarget;
     const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
       normalizedFullHistory,
       targetModel === 'local-expert' ? '' : effectiveApiKey
@@ -1633,16 +1707,17 @@ app.post('/api/ai/chat', async (req, res) => {
 
     const targetDisplayName = MODEL_DISPLAY_NAMES[targetModel] || targetModel;
     const lower = latestUserMessage.toLowerCase();
-    const cacheKey = `${lang}_${targetModel}_${lower}_${history.length > 0 ? history[history.length - 1].text : ''}`;
+    const cacheKey = `${lang}::${targetModel}::${lower}::${storeContext?.viewingProduct?.name || ''}`;
     
-    // Fast path FAQ ONLY for offline local-expert mode in zh-TW
-    if (targetModel === 'local-expert' && lang === 'zh-TW') {
+    // Fast path cache for offline expert mode OR short repeated single/early-turn queries (< 5ms)
+    if (normalizedFullHistory.length <= 2 && lower.length <= 100) {
       const cached = chatResponseCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < 300000) {
+        totalCustomerQueriesServed++;
         return res.json({
           success: true,
           reply: cached.reply,
-          modelUsed: '神狗勾 3D 專家工程模式 (離線)',
+          modelUsed: cached.modelUsed || (targetModel === 'local-expert' ? '神狗勾 3D 專家顧問' : targetDisplayName),
           contextualMemoryActive: true,
           cached: true,
         });
@@ -1687,9 +1762,13 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
         if (geminiReply && geminiReply.reply && geminiReply.reply.trim()) {
           totalCustomerQueriesServed++;
           const usedDisplayName = MODEL_DISPLAY_NAMES[geminiReply.modelUsed] || geminiReply.modelUsed;
+          const cleanReplyText = cleanChatReply(geminiReply.reply.trim());
+          if (normalizedFullHistory.length <= 2 && lower.length <= 100) {
+            setCachedChatReply(cacheKey, cleanReplyText, usedDisplayName);
+          }
           return res.json({
             success: true,
-            reply: cleanChatReply(geminiReply.reply.trim()),
+            reply: cleanReplyText,
             modelUsed: usedDisplayName,
             contextualMemoryActive: true,
           });
@@ -2716,9 +2795,13 @@ Respond ONLY with valid JSON.`,
 // -------------------------------------------------------------
 // 8.5. 藍新金流 (NewebPay) 真實串接 API
 // -------------------------------------------------------------
-const NEWEBPAY_MERCHANT_ID = process.env.NEWEBPAY_MERCHANT_ID || 'MS1843364339';
-const NEWEBPAY_HASH_KEY = process.env.NEWEBPAY_HASH_KEY || 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ';
-const NEWEBPAY_HASH_IV = process.env.NEWEBPAY_HASH_IV || 'P4rlxhbNjCyiK5qC';
+const LEGACY_PLACEHOLDER_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ';
+const LEGACY_PLACEHOLDER_HASH_IV = 'P4rlxhbNjCyiK5qC';
+
+let NEWEBPAY_MERCHANT_ID = (process.env.NEWEBPAY_MERCHANT_ID || 'MS1843364339').trim();
+let NEWEBPAY_HASH_KEY = (process.env.NEWEBPAY_HASH_KEY || LEGACY_PLACEHOLDER_HASH_KEY).trim();
+let NEWEBPAY_HASH_IV = (process.env.NEWEBPAY_HASH_IV || LEGACY_PLACEHOLDER_HASH_IV).trim();
+let NEWEBPAY_IS_SANDBOX = process.env.NEWEBPAY_ENV === 'sandbox';
 const NEWEBPAY_URL = process.env.NEWEBPAY_ENV === 'sandbox' 
   ? 'https://ccore.newebpay.com/MPG/mpg_gateway' 
   : 'https://core.newebpay.com/MPG/mpg_gateway';
@@ -2728,19 +2811,162 @@ const NEWEBPAY_PERIOD_URL = process.env.NEWEBPAY_ENV === 'sandbox'
 const NEWEBPAY_VERSION = '2.0';
 const NEWEBPAY_PERIOD_VERSION = '1.5';
 
+function resolveSafeGatewayCallbackBase(req: express.Request, originUrl?: string): {
+  webhookBaseUrl: string;
+  clientBackUrl: string;
+} {
+  const cloudRunProdUrl = 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app';
+  const host = String(req.get('host') || '').trim();
+  const isLocalOrCustomPort = !host || host.includes('localhost') || host.includes('127.0.0.1') || /:\d+$/.test(host);
+  const webhookBaseUrl = isLocalOrCustomPort ? cloudRunProdUrl : `https://${host}`;
+
+  let clientBackUrl = 'https://goddog.space';
+  if (originUrl && typeof originUrl === 'string' && originUrl.startsWith('http')) {
+    const cleanedOrigin = originUrl.trim().replace(/\/+$/, '');
+    if (!cleanedOrigin.includes('localhost') && !cleanedOrigin.includes('127.0.0.1') && !/:\d+$/.test(cleanedOrigin)) {
+      clientBackUrl = cleanedOrigin;
+    }
+  } else if (!isLocalOrCustomPort) {
+    clientBackUrl = `https://${host}`;
+  }
+
+  return { webhookBaseUrl, clientBackUrl };
+}
+
+// Sync NewebPay credentials from Admin Dashboard
+app.post('/api/payment/config', (req, res) => {
+  try {
+    const { merchantId, hashKey, hashIV, testMode } = req.body || {};
+    if (merchantId && String(merchantId).trim()) {
+      NEWEBPAY_MERCHANT_ID = String(merchantId).trim();
+    }
+    if (
+      hashKey &&
+      String(hashKey).trim().length === 32 &&
+      String(hashKey).trim() !== LEGACY_PLACEHOLDER_HASH_KEY
+    ) {
+      NEWEBPAY_HASH_KEY = String(hashKey).trim();
+    }
+    if (
+      hashIV &&
+      String(hashIV).trim().length === 16 &&
+      String(hashIV).trim() !== LEGACY_PLACEHOLDER_HASH_IV
+    ) {
+      NEWEBPAY_HASH_IV = String(hashIV).trim();
+    }
+    if (typeof testMode === 'boolean') {
+      NEWEBPAY_IS_SANDBOX = testMode;
+    }
+    return res.json({
+      success: true,
+      merchantId: NEWEBPAY_MERCHANT_ID,
+      testMode: NEWEBPAY_IS_SANDBOX,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err?.message || 'Update failed' });
+  }
+});
+
+// Verify NewebPay HashKey & HashIV against NewebPay MPG Gateway to detect MPG03009
+app.post('/api/payment/verify-keys', async (req, res) => {
+  try {
+    const reqKey = String(req.body?.hashKey || '').trim();
+    const reqIv = String(req.body?.hashIV || '').trim();
+    const mId = String(req.body?.merchantId || NEWEBPAY_MERCHANT_ID).trim();
+    const hKey =
+      reqKey.length === 32 && reqKey !== LEGACY_PLACEHOLDER_HASH_KEY ? reqKey : NEWEBPAY_HASH_KEY;
+    const hIv =
+      reqIv.length === 16 && reqIv !== LEGACY_PLACEHOLDER_HASH_IV ? reqIv : NEWEBPAY_HASH_IV;
+    const isSandbox = Boolean(req.body?.testMode ?? NEWEBPAY_IS_SANDBOX);
+
+    if (hKey.length !== 32 || hIv.length !== 16) {
+      return res.json({
+        success: false,
+        message: `金鑰長度錯誤：HashKey 必須為 32 字元 (目前 ${hKey.length})，HashIV 必須為 16 字元 (目前 ${hIv.length})`,
+      });
+    }
+
+    const gatewayUrl = isSandbox
+      ? 'https://ccore.newebpay.com/MPG/mpg_gateway'
+      : 'https://core.newebpay.com/MPG/mpg_gateway';
+
+    const orderId = `GD${Date.now()}`;
+    const tradeInfoObj = {
+      MerchantID: mId,
+      RespondType: 'JSON',
+      TimeStamp: Math.floor(Date.now() / 1000).toString(),
+      Version: NEWEBPAY_VERSION,
+      MerchantOrderNo: orderId,
+      Amt: '100',
+      ItemDesc: '神狗勾3D列印耗材',
+      Email: 'babe0615@gmail.com',
+      LoginType: '0',
+      ReturnURL: 'https://goddog.space/?payment_success=true',
+      NotifyURL: 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app/api/payment/notify',
+      ClientBackURL: 'https://goddog.space/',
+      CREDIT: '1',
+    };
+
+    const tradeInfo = createNewebpayAesEncrypt(tradeInfoObj, hKey, hIv);
+    const tradeSha = createNewebpayShaEncrypt(tradeInfo, hKey, hIv);
+
+    const form = new URLSearchParams({
+      MerchantID: mId,
+      TradeInfo: tradeInfo,
+      TradeSha: tradeSha,
+      Version: NEWEBPAY_VERSION,
+    });
+
+    const resp = await fetch(gatewayUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const html = await resp.text();
+
+    if (html.includes('MPG03009')) {
+      return res.json({
+        success: false,
+        code: 'MPG03009',
+        gatewayUrl,
+        message: `藍新伺服器回傳 MPG03009 (交易資料 SHA 256 檢查不符合)！這代表目前使用的 HashKey 或 HashIV 與藍新後台商店「${mId}」設定的 API 串接金鑰不一致。`,
+      });
+    }
+
+    if (html.includes('MPG03008') || html.includes('查無此特店') || html.includes('MPG01009')) {
+      return res.json({
+        success: false,
+        gatewayUrl,
+        message: `藍新伺服器回傳商店狀態異常（請確認特店代號 ${mId} 是否為${isSandbox ? '測試環境' : '正式環境'}商店）。`,
+      });
+    }
+
+    return res.json({
+      success: true,
+      gatewayUrl,
+      message: `驗證成功！藍新特店 (${mId}) 之 HashKey 與 HashIV 已通過藍新 MPG 金流閘道 SHA-256 數位簽章核驗！`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      message: `連線檢查失敗：${err?.message || '未知錯誤'}`,
+    });
+  }
+});
+
 // 藍新 AES-256-CBC 加密
 function createNewebpayAesEncrypt(tradeInfoParams: Record<string, any>, hashKey: string, hashIV: string): string {
   const dataStr = new URLSearchParams(tradeInfoParams as any).toString();
-  const cipher = crypto.createCipheriv('aes-256-cbc', hashKey, hashIV);
+  const cipher = crypto.createCipheriv('aes-256-cbc', hashKey.trim(), hashIV.trim());
   let encrypted = cipher.update(dataStr, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  return encrypted;
+  return encrypted.toLowerCase();
 }
 
 // 藍新 AES-256-CBC 解密 (支援 JSON 與 Query String 格式)
 function createNewebpayAesDecrypt(tradeInfoHex: string, hashKey: string, hashIV: string): Record<string, any> | null {
   try {
-    const decipher = crypto.createDecipheriv('aes-256-cbc', hashKey, hashIV);
+    const decipher = crypto.createDecipheriv('aes-256-cbc', hashKey.trim(), hashIV.trim());
     decipher.setAutoPadding(true);
     let decrypted = decipher.update(tradeInfoHex, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
@@ -2763,7 +2989,7 @@ function createNewebpayAesDecrypt(tradeInfoHex: string, hashKey: string, hashIV:
 
 function createNewebpayShaEncrypt(aesEncrypt: string, hashKey: string, hashIV: string): string {
   const sha = crypto.createHash('sha256');
-  const plainText = `HashKey=${hashKey}&${aesEncrypt}&HashIV=${hashIV}`;
+  const plainText = `HashKey=${hashKey.trim()}&${aesEncrypt}&HashIV=${hashIV.trim()}`;
   return sha.update(plainText).digest('hex').toUpperCase();
 }
 
@@ -2806,16 +3032,21 @@ const verifiedPaidOrdersStore: Record<string, VerifiedPaidOrder> = {};
 // =============================================================
 app.post('/api/payment/checkout', (req, res) => {
   try {
-    const { amount, email, desc, paymentMethod, useSandbox } = req.body;
+    const { amount, email, desc, paymentMethod, useSandbox, merchantId, hashKey, hashIV, originUrl } = req.body;
     
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid amount' });
     }
 
+    const reqKey = String(hashKey || '').trim();
+    const reqIv = String(hashIV || '').trim();
+    const activeMerchantId = (merchantId && String(merchantId).trim()) ? String(merchantId).trim() : NEWEBPAY_MERCHANT_ID;
+    const activeHashKey = (reqKey.length === 32 && reqKey !== LEGACY_PLACEHOLDER_HASH_KEY) ? reqKey : NEWEBPAY_HASH_KEY;
+    const activeHashIV = (reqIv.length === 16 && reqIv !== LEGACY_PLACEHOLDER_HASH_IV) ? reqIv : NEWEBPAY_HASH_IV;
+    const activeSandbox = typeof useSandbox === 'boolean' ? useSandbox : NEWEBPAY_IS_SANDBOX;
+
     const orderId = `GD${Date.now()}`;
-    const host = req.get('host');
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const baseUrl = `${protocol}://${host}`;
+    const { webhookBaseUrl, clientBackUrl } = resolveSafeGatewayCallbackBase(req, originUrl);
 
     // 儲存待付款紀錄
     pendingPaymentsStore[orderId] = {
@@ -2889,31 +3120,32 @@ app.post('/api/payment/checkout', (req, res) => {
     }
 
     const tradeInfoObj = {
-      MerchantID: NEWEBPAY_MERCHANT_ID,
+      MerchantID: activeMerchantId,
       RespondType: 'JSON',
       TimeStamp: Math.floor(Date.now() / 1000).toString(),
       Version: NEWEBPAY_VERSION,
       MerchantOrderNo: orderId,
       Amt: Math.round(Number(amount)).toString(),
-      ItemDesc: desc || '神狗勾 3D 列印耗材商城訂單',
+      ItemDesc: (desc || '神狗勾 3D 列印耗材商城訂單').slice(0, 50),
       Email: email || 'babe0615@gmail.com',
-      ReturnURL: `${baseUrl}/api/payment/return`, // 藍新金流授權完成後，由藍新向後端 POST 付款明細驗證
-      NotifyURL: `${baseUrl}/api/payment/notify`, // 背景接收付款結果 (Webhook)
-      ClientBackURL: `${baseUrl}/`, // 返回商店按鈕
+      LoginType: '0',
+      ReturnURL: `${webhookBaseUrl}/api/payment/return`, // 藍新金流授權完成後，由藍新向後端 POST 付款明細驗證 (限 80/443 埠)
+      NotifyURL: `${webhookBaseUrl}/api/payment/notify`, // 背景接收付款結果 (Webhook, 限 80/443 埠)
+      ClientBackURL: `${clientBackUrl}/`, // 返回商店按鈕
       ...paymentFlags
     };
 
-    const TradeInfo = createNewebpayAesEncrypt(tradeInfoObj, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-    const TradeSha = createNewebpayShaEncrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
+    const TradeInfo = createNewebpayAesEncrypt(tradeInfoObj, activeHashKey, activeHashIV);
+    const TradeSha = createNewebpayShaEncrypt(TradeInfo, activeHashKey, activeHashIV);
 
-    const gatewayUrl = useSandbox ? 'https://ccore.newebpay.com/MPG/mpg_gateway' : NEWEBPAY_URL;
+    const gatewayUrl = activeSandbox ? 'https://ccore.newebpay.com/MPG/mpg_gateway' : NEWEBPAY_URL;
 
     res.json({
       success: true,
       url: gatewayUrl,
       orderId,
       formParams: {
-        MerchantID: NEWEBPAY_MERCHANT_ID,
+        MerchantID: activeMerchantId,
         TradeInfo,
         TradeSha,
         Version: NEWEBPAY_VERSION
@@ -4592,7 +4824,8 @@ async function startServer() {
         s.headersTimeout = 10000;
       } catch {}
       console.log(`[神狗勾 Server] Running on http://${HOST}:${targetPort} (env: ${process.env.NODE_ENV || 'development'})`);
-      scheduleFirestoreAIBridgeWorker(1500);
+      try { getAIClient(); } catch {}
+      scheduleFirestoreAIBridgeWorker(250);
     });
 
     s.on('error', (err: any) => {

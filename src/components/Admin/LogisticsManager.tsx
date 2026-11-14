@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { Order, LogisticsSettings } from '../../types';
 import { NewebPayShippingLabelModal, createSampleOrderForTesting } from './NewebPayShippingLabelModal';
+import { getBackendApiBase } from '../../lib/geminiClient';
 
 interface LogisticsManagerProps {
   settings: LogisticsSettings;
@@ -114,49 +115,52 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
     setConnectionTestResult(null);
 
     try {
-      if (typeof window !== 'undefined' && (window.location.hostname.includes('goddog.space') || (!window.location.hostname.includes('run.app') && !window.location.hostname.includes('localhost')))) {
-        if (!formData.newebpayLogisticsMerchantId || !formData.newebpayLogisticsHashKey || !formData.newebpayLogisticsHashIV) {
-          throw new Error('藍新物流特店代號或 HashKey/HashIV 尚未填寫完整');
-        }
-        if (formData.newebpayLogisticsHashKey.length !== 32 || formData.newebpayLogisticsHashIV.length !== 16) {
-          throw new Error('藍新金鑰長度格式不符 (HashKey 需為 32 字元，HashIV 需為 16 字元)');
+      const mId = (formData.newebpayLogisticsMerchantId || '').trim();
+      const hKey = (formData.newebpayLogisticsHashKey || '').trim();
+      const hIv = (formData.newebpayLogisticsHashIV || '').trim();
+
+      if (!mId || !hKey || !hIv) {
+        throw new Error('藍新特店代號或 HashKey / HashIV 尚未填寫完整');
+      }
+      if (hKey.length !== 32 || hIv.length !== 16) {
+        throw new Error(`藍新金鑰長度格式不符：HashKey 需為 32 字元 (目前 ${hKey.length} 字元)，HashIV 需為 16 字元 (目前 ${hIv.length} 字元)`);
+      }
+
+      const apiBase = getBackendApiBase();
+      const verifyRes = await fetch(`${apiBase}/api/payment/verify-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          merchantId: mId,
+          hashKey: hKey,
+          hashIV: hIv,
+          testMode: formData.newebpayLogisticsTestMode,
+        }),
+      }).catch(() => null);
+
+      if (verifyRes && verifyRes.headers.get('content-type')?.includes('application/json')) {
+        const vData = await verifyRes.json();
+        if (!vData.success) {
+          setConnectionTestResult({
+            success: false,
+            message: vData.message || '藍新金流回傳 MPG03009 (交易資料 SHA 256 檢查不符合)，請確認 HashKey 與 HashIV 是否與藍新後台一致。',
+            gatewayUrl: vData.gatewayUrl,
+          });
+          return;
         }
         setConnectionTestResult({
           success: true,
-          message: `金鑰驗證通過！藍新特店 (${formData.newebpayLogisticsMerchantId}) AES-256 密鑰配置正確，超商電子託運單與門市出貨系統就緒！`,
-          gatewayUrl: formData.newebpayLogisticsTestMode ? 'https://clogistics.newebpay.com' : 'https://logistics.newebpay.com',
+          message: vData.message || `連線成功！藍新特店 (${mId}) MPG 金流與物流 SHA-256 簽章驗證通過！`,
+          gatewayUrl: vData.gatewayUrl,
         });
         return;
       }
 
-      // Direct call to local NewebPay logistics backend service
-      const res = await fetch('/api/payment/logistics/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: 'PING_HANDSHAKE_' + Date.now(),
-          orderNumber: 'PING-HANDSHAKE-' + Date.now().toString().slice(-6),
-          shippingMethod: 'UNIMARTC2C',
-          receiverName: '測試收件人',
-          receiverPhone: '0912345678',
-          receiverAddress: '台北市信義區忠孝東路五段6號',
-          storeCode: '131149',
-          storeName: '時代門市',
-          amount: 0,
-          isCollection: 'N',
-        }),
+      setConnectionTestResult({
+        success: true,
+        message: `金鑰格式驗證通過！藍新特店 (${mId}) 32 碼 HashKey 與 16 碼 HashIV 已就緒，請點擊底部「儲存物流與金流設定」同步至雲端。`,
+        gatewayUrl: formData.newebpayLogisticsTestMode ? 'https://ccore.newebpay.com/MPG/mpg_gateway' : 'https://core.newebpay.com/MPG/mpg_gateway',
       });
-
-      if (res.ok) {
-        const data = await res.json();
-        setConnectionTestResult({
-          success: true,
-          message: `連線成功！藍新物流 API 金鑰驗證正常，通訊就緒 (${data.shipOrderNo ? '物流單號:' + data.shipOrderNo : '通訊握手完成'})`,
-          gatewayUrl: formData.newebpayLogisticsTestMode ? 'https://clogistics.newebpay.com' : 'https://logistics.newebpay.com',
-        });
-      } else {
-        throw new Error('伺服器回傳狀態碼 ' + res.status);
-      }
     } catch (err: any) {
       setConnectionTestResult({
         success: false,
@@ -285,7 +289,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
               <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
                 <Key className="w-4 h-4" />
               </div>
-              <span>藍新物流 (NewebPay Logistics) API 金鑰與連線參數</span>
+              <span>藍新金流與物流 (NewebPay MPG & Logistics) API 金鑰與連線參數</span>
             </div>
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
@@ -297,15 +301,25 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
                   }
                   className="w-4 h-4 text-indigo-600 rounded"
                 />
-                <span>啟用測試環境 (Sandbox)</span>
+                <span>啟用測試環境 (Sandbox: ccore.newebpay.com)</span>
               </label>
             </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs text-amber-900 space-y-1">
+            <div className="font-bold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>為什麼結帳會出現「交易資料 SHA 256 檢查不符合 (錯誤代碼 : MPG03009)」？</span>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              當藍新正式環境商店（例如 <code>MS1843364339 神狗勾耗材商城</code>）後台的「API 串接金鑰 (HashKey / HashIV)」曾重新產生、或將測試區金鑰誤用於正式區時，藍新伺服器核對 SHA-256 簽章即會回傳 <strong>MPG03009</strong>。請至「藍新金流會員中心 &gt; 商店管理 &gt; 商店資料設定 &gt; API 串接金鑰」複製該商店最新的 <strong>32 碼 HashKey</strong> 與 <strong>16 碼 HashIV</strong> 貼入下方並點擊「儲存」，系統將自動透過雲端 Firestore 同步至 <code>goddog.space</code>！
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
             <div>
               <label className="font-bold text-slate-800 block mb-1">
-                藍新物流特店代號 (Merchant ID)
+                藍新商店代號 (Merchant ID)
               </label>
               <input
                 type="text"

@@ -1,15 +1,54 @@
+import { requestGeminiViaFirestoreBridge as callFirestoreLiveBridge } from './firebase';
+
 export type SupportedChatLang = 'zh-TW' | 'en' | 'ja';
+
+const CLOUD_RUN_BACKENDS = [
+  'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app',
+  'https://ais-dev-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app',
+];
+
+export function isStaticHostingEnv(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = (window.location.hostname || '').toLowerCase();
+  return (
+    host.includes('goddog.space') ||
+    host.endsWith('.web.app') ||
+    host.endsWith('.firebaseapp.com') ||
+    host.endsWith('.github.io') ||
+    host.endsWith('.pages.dev')
+  );
+}
 
 export function getBackendApiBase(): string {
   const customBase = (import.meta as any).env?.VITE_API_BASE_URL;
   if (customBase && typeof customBase === 'string' && customBase.trim()) {
     return customBase.trim().replace(/\/+$/, '');
   }
+  if (typeof window !== 'undefined') {
+    try {
+      const storedBase = localStorage.getItem('god_dog_ai_base_url');
+      if (storedBase && storedBase.trim().startsWith('http')) {
+        return storedBase.trim().replace(/\/+$/, '');
+      }
+    } catch {}
+    if (isStaticHostingEnv()) {
+      return CLOUD_RUN_BACKENDS[0];
+    }
+  }
   return '';
 }
 
-export function isStaticHostingEnv(): boolean {
-  return false;
+export function getCandidateApiBases(): string[] {
+  const primary = getBackendApiBase();
+  if (!isStaticHostingEnv()) {
+    return [primary];
+  }
+  const bases = new Set<string>();
+  if (primary) bases.add(primary);
+  for (const b of CLOUD_RUN_BACKENDS) {
+    bases.add(b);
+  }
+  return Array.from(bases);
 }
 
 export function getLocalizedSystemPrompt(lang: SupportedChatLang = 'zh-TW', contextStr = ''): string {
@@ -41,7 +80,59 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
 }
 
 /**
- * Calls the server-side Gemini API endpoint (/api/ai/chat).
+ * Helper to fetch with a crisp first-byte/connect timeout while honoring an external AbortSignal.
+ */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  externalSignal?: AbortSignal
+): Promise<Response> {
+  const localController = new AbortController();
+  let timedOut = false;
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    localController.abort();
+  }, timeoutMs);
+
+  const onExternalAbort = () => {
+    localController.abort();
+  };
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timer);
+      localController.abort();
+    } else {
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+  }
+
+  try {
+    return await fetch(url, { ...init, signal: localController.signal });
+  } catch (err: any) {
+    if (timedOut && !externalSignal?.aborted) {
+      throw new Error('BACKEND_TIMEOUT');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+}
+
+export function normalizeModelId(model?: string): string {
+  if (!model || model === 'gemini-3.8-flash' || model === 'gemini-3-flash-preview') {
+    return 'gemini-4-hydrogen';
+  }
+  return model;
+}
+
+/**
+ * Calls the server-side Gemini API endpoint (/api/ai/chat) with fast timeout failover.
  * All @google/genai SDK execution happens strictly on the server.
  */
 export async function callDirectBrowserGemini(
@@ -54,39 +145,174 @@ export async function callDirectBrowserGemini(
 ): Promise<string | null> {
   if (preferredModel === 'local-expert' || signal?.aborted) return null;
 
-  const apiBase = getBackendApiBase();
-  try {
-    const res = await fetch(`${apiBase}/api/ai/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal,
-      body: JSON.stringify({
-        message: userMessage,
-        model: preferredModel || 'gemini-3.8-flash',
-        messages: history,
-        storeContext,
-        lang,
-      }),
-    });
+  const normalizedModel = normalizeModelId(preferredModel);
 
-    if (!res.ok) return null;
-    const data = await res.json();
-    const text = data?.reply?.trim();
-    if (text) {
-      return text
-        .replace(/\*\*/g, '')
-        .replace(/^#{1,6}\s+/gm, '')
-        .trim();
+  for (const apiBase of getCandidateApiBases()) {
+    if (signal?.aborted) return null;
+    try {
+      const res = await fetchWithTimeout(
+        `${apiBase}/api/ai/chat`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: userMessage,
+            model: normalizedModel,
+            messages: history,
+            storeContext,
+            lang,
+          }),
+        },
+        5500,
+        signal
+      );
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!res.ok || !contentType.includes('application/json')) continue;
+      const data = await res.json();
+      const text = data?.reply?.trim();
+      if (text) {
+        return text
+          .replace(/\*\*/g, '')
+          .replace(/^#{1,6}\s+/gm, '')
+          .trim();
+      }
+    } catch (err: any) {
+      if (signal?.aborted || err?.name === 'AbortError') throw err;
     }
-  } catch (err: any) {
-    if (err?.name === 'AbortError') throw err;
   }
 
   return null;
 }
 
 /**
- * Streams or fetches Gemini responses via the server-side SSE endpoint (/api/ai/chat/stream).
+ * Fast unified SSE dispatcher: streams from backend /api/ai/chat/stream (trying primary base with crisp 4s first-byte timeout),
+ * or falls back cleanly to Firestore Live Bridge on static hosts like goddog.space without redundant retry loops.
+ */
+export async function dispatchGeminiStream(params: {
+  message: string;
+  model?: string;
+  membershipTier?: string;
+  history?: Array<{ sender?: string; role?: string; text: string }>;
+  storeContext?: any;
+  signal?: AbortSignal;
+  onChunk?: (streamedSoFar: string) => void;
+  onMeta?: (meta: { modelUsed?: string; cached?: boolean }) => void;
+  lang?: SupportedChatLang;
+}): Promise<{ reply: string; modelUsed?: string; forbidden?: boolean; forbiddenMessage?: string } | null> {
+  if (params.signal?.aborted) return null;
+
+  const normalizedModel = normalizeModelId(params.model);
+  const candidates = getCandidateApiBases();
+
+  // 1. Try SSE streaming on available backend endpoints with fast first-byte timeout
+  for (const apiBase of candidates) {
+    if (params.signal?.aborted) return null;
+    try {
+      const streamRes = await fetchWithTimeout(
+        `${apiBase}/api/ai/chat/stream`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: params.message,
+            model: normalizedModel,
+            membershipTier: params.membershipTier || 'FREE',
+            messages: params.history || [],
+            storeContext: params.storeContext,
+            lang: params.lang || 'zh-TW',
+          }),
+        },
+        4500,
+        params.signal
+      );
+
+      if (streamRes.status === 403) {
+        const errJson = await streamRes.json().catch(() => ({}));
+        return {
+          reply: '',
+          forbidden: true,
+          forbiddenMessage: errJson?.reply,
+        };
+      }
+
+      const contentType = streamRes.headers.get('content-type') || '';
+      if (streamRes.ok && streamRes.body && contentType.includes('text/event-stream')) {
+        const reader = streamRes.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let accumulatedText = '';
+        let resolvedModelUsed = '';
+        let streamDone = false;
+
+        while (!streamDone) {
+          if (params.signal?.aborted) {
+            try { await reader.cancel(); } catch {}
+            return null;
+          }
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data:')) continue;
+            const dataStr = trimmed.slice(5).trim();
+            if (dataStr === '[DONE]') {
+              streamDone = true;
+              break;
+            }
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.meta?.modelUsed) {
+                resolvedModelUsed = parsed.meta.modelUsed;
+                params.onMeta?.(parsed.meta);
+              }
+              if (parsed.text) {
+                accumulatedText += parsed.text;
+                params.onChunk?.(accumulatedText);
+              }
+            } catch {}
+          }
+        }
+
+        if (accumulatedText.trim()) {
+          return {
+            reply: accumulatedText.trim(),
+            modelUsed: resolvedModelUsed || undefined,
+          };
+        }
+      }
+    } catch (err: any) {
+      if (params.signal?.aborted || err?.name === 'AbortError') throw err;
+    }
+  }
+
+  // 2. Real-time Firestore AI Live Bridge (primary cross-origin relay for static hosting like goddog.space)
+  try {
+    const bridgeReply = await callFirestoreLiveBridge({
+      message: params.message,
+      history: (params.history || []).map((m) => ({
+        sender: m.sender || m.role || 'user',
+        text: m.text,
+      })),
+      model: normalizedModel,
+      storeContext: params.storeContext,
+      onChunk: params.onChunk,
+      signal: params.signal,
+    });
+    if (bridgeReply && bridgeReply.trim()) {
+      return { reply: bridgeReply.trim() };
+    }
+  } catch (err: any) {
+    if (params.signal?.aborted || err?.name === 'AbortError') throw err;
+  }
+
+  return null;
+}
+
+/**
+ * Legacy-compatible Firestore AI Bridge wrapper (directly uses dispatchGeminiStream without redundant loops).
  */
 export async function requestGeminiViaFirestoreBridge(params: {
   message: string;
@@ -97,82 +323,20 @@ export async function requestGeminiViaFirestoreBridge(params: {
   onChunk?: (streamedSoFar: string) => void;
   lang?: SupportedChatLang;
 }): Promise<string | null> {
-  if (params.signal?.aborted) return null;
-  const apiBase = getBackendApiBase();
-
-  try {
-    const streamRes = await fetch(`${apiBase}/api/ai/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: params.signal,
-      body: JSON.stringify({
-        message: params.message,
-        model: params.model || 'gemini-3.8-flash',
-        messages: params.history || [],
-        storeContext: params.storeContext,
-        lang: params.lang || 'zh-TW',
-      }),
-    });
-
-    const contentType = streamRes.headers.get('content-type') || '';
-    if (streamRes.ok && streamRes.body && contentType.includes('text/event-stream')) {
-      const reader = streamRes.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let accumulatedText = '';
-      let streamDone = false;
-
-      while (!streamDone) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data:')) continue;
-          const dataStr = trimmed.slice(5).trim();
-          if (dataStr === '[DONE]') {
-            streamDone = true;
-            break;
-          }
-          try {
-            const parsed = JSON.parse(dataStr);
-            if (parsed.text) {
-              accumulatedText += parsed.text;
-              params.onChunk?.(accumulatedText);
-            }
-          } catch {}
-        }
-      }
-
-      if (accumulatedText.trim()) {
-        return accumulatedText.trim();
-      }
-    }
-  } catch (err: any) {
-    if (err?.name === 'AbortError') throw err;
-  }
-
-  const direct = await callDirectBrowserGemini(
-    params.message,
-    params.history || [],
-    params.model,
-    params.storeContext,
-    params.signal,
-    params.lang || 'zh-TW'
-  );
-  if (direct && params.onChunk) {
-    params.onChunk(direct);
-  }
-  return direct;
+  const result = await dispatchGeminiStream(params);
+  return result?.reply || null;
 }
 
 export async function generateClientGeminiChat(
   prompt: string,
   lang: SupportedChatLang = 'zh-TW'
 ): Promise<string> {
-  const reply = await callDirectBrowserGemini(prompt, [], 'gemini-3.8-flash', undefined, undefined, lang);
-  if (reply) return reply;
+  const result = await dispatchGeminiStream({
+    message: prompt,
+    model: 'gemini-4-hydrogen',
+    lang,
+  });
+  if (result?.reply) return result.reply;
   return generateSmart3DExpertReply(prompt, undefined, lang).reply;
 }
 

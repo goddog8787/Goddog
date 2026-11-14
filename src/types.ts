@@ -500,11 +500,11 @@ export interface AIModelOption {
 
 export const SUPPORTED_AI_MODELS: AIModelOption[] = [
   {
-    id: 'gemini-3.8-flash',
-    name: 'Gemini 3.8 Flash (推薦首選)',
+    id: 'gemini-4-hydrogen',
+    name: 'Gemini 4 Hydrogen (推薦首選)',
     badge: '旗艦推薦',
     speed: '極快 (~0.8s)',
-    description: 'Google 最新次世代 Flash 模型，具備強大材料科學推理與低延遲繁體中文對話能力。',
+    description: 'Google 最新次世代 4 Hydrogen 模型，具備強大材料科學推理與低延遲繁體中文對話能力。',
     category: 'gemini',
     minTier: 'FREE',
   },

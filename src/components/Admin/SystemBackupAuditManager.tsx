@@ -263,7 +263,7 @@ export const SystemBackupAuditManager: React.FC<SystemBackupAuditManagerProps> =
           </div>
           <div className="mt-2">
             <span className="text-sm font-bold text-cyan-600">自動分流就緒</span>
-            <p className="text-[11px] text-slate-400 mt-0.5">3.8 Flash + 3.1 Flash-Lite 備援</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">4 Hydrogen + 3.1 Flash-Lite 備援</p>
           </div>
         </div>
 
