@@ -2796,10 +2796,15 @@ Respond ONLY with valid JSON.`,
 // 8.5. 藍新金流 (NewebPay) 真實串接 API
 // -------------------------------------------------------------
 const LEGACY_PLACEHOLDER_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ';
+const DEFAULT_PROD_NEWEBPAY_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ';
 const LEGACY_PLACEHOLDER_HASH_IV = 'P4rlxhbNjCyiK5qC';
 
+const rawEnvHashKey = (process.env.NEWEBPAY_HASH_KEY || '').trim();
 let NEWEBPAY_MERCHANT_ID = (process.env.NEWEBPAY_MERCHANT_ID || 'MS1843364339').trim();
-let NEWEBPAY_HASH_KEY = (process.env.NEWEBPAY_HASH_KEY || LEGACY_PLACEHOLDER_HASH_KEY).trim();
+let NEWEBPAY_HASH_KEY =
+  rawEnvHashKey && rawEnvHashKey !== LEGACY_PLACEHOLDER_HASH_KEY
+    ? rawEnvHashKey
+    : DEFAULT_PROD_NEWEBPAY_HASH_KEY;
 let NEWEBPAY_HASH_IV = (process.env.NEWEBPAY_HASH_IV || LEGACY_PLACEHOLDER_HASH_IV).trim();
 let NEWEBPAY_IS_SANDBOX = process.env.NEWEBPAY_ENV === 'sandbox';
 const NEWEBPAY_URL = process.env.NEWEBPAY_ENV === 'sandbox' 
@@ -2840,18 +2845,12 @@ app.post('/api/payment/config', (req, res) => {
     if (merchantId && String(merchantId).trim()) {
       NEWEBPAY_MERCHANT_ID = String(merchantId).trim();
     }
-    if (
-      hashKey &&
-      String(hashKey).trim().length === 32 &&
-      String(hashKey).trim() !== LEGACY_PLACEHOLDER_HASH_KEY
-    ) {
-      NEWEBPAY_HASH_KEY = String(hashKey).trim();
+    if (hashKey && String(hashKey).trim().length === 32) {
+      const cleanedKey = String(hashKey).trim();
+      NEWEBPAY_HASH_KEY =
+        cleanedKey === LEGACY_PLACEHOLDER_HASH_KEY ? DEFAULT_PROD_NEWEBPAY_HASH_KEY : cleanedKey;
     }
-    if (
-      hashIV &&
-      String(hashIV).trim().length === 16 &&
-      String(hashIV).trim() !== LEGACY_PLACEHOLDER_HASH_IV
-    ) {
+    if (hashIV && String(hashIV).trim().length === 16) {
       NEWEBPAY_HASH_IV = String(hashIV).trim();
     }
     if (typeof testMode === 'boolean') {
@@ -2876,7 +2875,7 @@ app.post('/api/payment/verify-keys', async (req, res) => {
     const hKey =
       reqKey.length === 32 && reqKey !== LEGACY_PLACEHOLDER_HASH_KEY ? reqKey : NEWEBPAY_HASH_KEY;
     const hIv =
-      reqIv.length === 16 && reqIv !== LEGACY_PLACEHOLDER_HASH_IV ? reqIv : NEWEBPAY_HASH_IV;
+      reqIv.length === 16 ? reqIv : NEWEBPAY_HASH_IV;
     const isSandbox = Boolean(req.body?.testMode ?? NEWEBPAY_IS_SANDBOX);
 
     if (hKey.length !== 32 || hIv.length !== 16) {
@@ -3042,7 +3041,7 @@ app.post('/api/payment/checkout', (req, res) => {
     const reqIv = String(hashIV || '').trim();
     const activeMerchantId = (merchantId && String(merchantId).trim()) ? String(merchantId).trim() : NEWEBPAY_MERCHANT_ID;
     const activeHashKey = (reqKey.length === 32 && reqKey !== LEGACY_PLACEHOLDER_HASH_KEY) ? reqKey : NEWEBPAY_HASH_KEY;
-    const activeHashIV = (reqIv.length === 16 && reqIv !== LEGACY_PLACEHOLDER_HASH_IV) ? reqIv : NEWEBPAY_HASH_IV;
+    const activeHashIV = (reqIv.length === 16) ? reqIv : NEWEBPAY_HASH_IV;
     const activeSandbox = typeof useSandbox === 'boolean' ? useSandbox : NEWEBPAY_IS_SANDBOX;
 
     const orderId = `GD${Date.now()}`;
@@ -3544,7 +3543,7 @@ app.get('/api/payment/return', (req, res) => {
 });
 
 // 藍新一般交易背景 Webhook (NotifyURL)
-app.post('/api/payment/notify', (req, res) => {
+app.post(['/api/payment/notify', '/api/newebpay/notify'], (req, res) => {
   try {
     const { Status, MerchantID, TradeInfo, TradeSha } = req.body;
     if (TradeInfo && TradeSha) {

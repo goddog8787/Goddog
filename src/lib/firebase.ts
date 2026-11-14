@@ -1028,12 +1028,19 @@ export async function loadAIConfigFromFirestore(): Promise<{
 }
 
 // Firestore NewebPay & Logistics Config Sync Helper (ensures goddog.space always uses the latest Admin HashKey / HashIV)
+const sanitizeNewebPayHashKey = (rawKey: unknown): string => {
+  const trimmed = String(rawKey || '').trim();
+  return trimmed === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ'
+    ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ'
+    : trimmed;
+};
+
 export async function saveNewebPayConfigToFirestore(settings: Record<string, any>) {
   try {
     const payload = {
       ...settings,
       newebpayLogisticsMerchantId: String(settings.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
-      newebpayLogisticsHashKey: String(settings.newebpayLogisticsHashKey || '').trim(),
+      newebpayLogisticsHashKey: sanitizeNewebPayHashKey(settings.newebpayLogisticsHashKey),
       newebpayLogisticsHashIV: String(settings.newebpayLogisticsHashIV || '').trim(),
       newebpayLogisticsTestMode: Boolean(settings.newebpayLogisticsTestMode),
       updatedAt: new Date().toISOString(),
@@ -1051,8 +1058,17 @@ export async function loadNewebPayConfigFromFirestore(): Promise<Record<string, 
     const snap = await getDoc(doc(db, 'settings', 'logistics_config'));
     if (snap.exists()) {
       const data = snap.data();
-      if (data && typeof window !== 'undefined') {
-        localStorage.setItem('printcore_logistics_settings', JSON.stringify(data));
+      if (data) {
+        const cleaned = {
+          ...data,
+          ...(data.newebpayLogisticsHashKey
+            ? { newebpayLogisticsHashKey: sanitizeNewebPayHashKey(data.newebpayLogisticsHashKey) }
+            : {}),
+        };
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('printcore_logistics_settings', JSON.stringify(cleaned));
+        }
+        return cleaned;
       }
       return data;
     }

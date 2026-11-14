@@ -1,8 +1,18 @@
 import CryptoJS from 'crypto-js';
 
 const DEFAULT_NEWEBPAY_MERCHANT_ID = 'MS1843364339';
-const DEFAULT_NEWEBPAY_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ';
+const MISTYPED_NEWEBPAY_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ';
+const DEFAULT_NEWEBPAY_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ';
 const DEFAULT_NEWEBPAY_HASH_IV = 'P4rlxhbNjCyiK5qC';
+
+export function normalizeNewebPayHashKey(rawKey?: string | null): string {
+  const trimmed = String(rawKey || '').trim();
+  if (!trimmed || trimmed === MISTYPED_NEWEBPAY_HASH_KEY) {
+    return DEFAULT_NEWEBPAY_HASH_KEY;
+  }
+  return trimmed;
+}
+
 const NEWEBPAY_PROD_URL = 'https://core.newebpay.com/MPG/mpg_gateway';
 const NEWEBPAY_SANDBOX_URL = 'https://ccore.newebpay.com/MPG/mpg_gateway';
 const NEWEBPAY_PROD_PERIOD_URL = 'https://core.newebpay.com/MPG/period';
@@ -30,7 +40,7 @@ export function getActiveNewebPayCredentials(): {
           merchantId = String(parsed.newebpayLogisticsMerchantId).trim();
         }
         if (parsed?.newebpayLogisticsHashKey && String(parsed.newebpayLogisticsHashKey).trim().length === 32) {
-          hashKey = String(parsed.newebpayLogisticsHashKey).trim();
+          hashKey = normalizeNewebPayHashKey(parsed.newebpayLogisticsHashKey);
         }
         if (parsed?.newebpayLogisticsHashIV && String(parsed.newebpayLogisticsHashIV).trim().length === 16) {
           hashIV = String(parsed.newebpayLogisticsHashIV).trim();
@@ -59,7 +69,7 @@ export interface NewebPayCheckoutParams {
 export function createClientNewebPayCheckout(params: NewebPayCheckoutParams) {
   const activeCreds = getActiveNewebPayCredentials();
   const merchantId = (params.merchantId || activeCreds.merchantId).trim();
-  const hashKey = (params.hashKey || activeCreds.hashKey).trim();
+  const hashKey = normalizeNewebPayHashKey(params.hashKey || activeCreds.hashKey);
   const hashIV = (params.hashIV || activeCreds.hashIV).trim();
   const isSandbox = params.testMode ?? activeCreds.testMode;
 

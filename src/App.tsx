@@ -1701,159 +1701,64 @@ export default function App() {
             )}
 
             {/* Daylight Flagship Storefront Cover */}
-            {(() => {
-              const preferredIds = ['maker-bambu-petg-matte', 'fil-01', 'fil-02'];
-              const pickedFeatured = preferredIds
-                .map((id) => products.find((p) => p.id === id))
-                .filter((p): p is FilamentProduct => Boolean(p));
-              const heroSpotlight = pickedFeatured.length >= 3
-                ? pickedFeatured
-                : products.slice(0, 3);
-              const primarySpot = heroSpotlight[0];
-              const secondarySpots = heroSpotlight.slice(1, 3);
-
-              return (
-                <section className="rounded-2xl sm:rounded-3xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs">
-                  <div className="grid grid-cols-1 lg:grid-cols-12">
-                    {/* Left Editorial Column */}
-                    <div className="lg:col-span-6 px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10 flex flex-col justify-between gap-6">
-                      <div className="space-y-3.5 sm:space-y-4">
-                        <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                          <span>
-                            {lang === 'en'
-                              ? 'Taiwan Local Stock · Same-Day Dispatch'
-                              : lang === 'ja'
-                              ? '国内在庫即納 · 最短当日発送'
-                              : '台灣現貨倉儲 · 拓竹 AMS 與高速機適用'}
-                          </span>
-                        </div>
-
-                        <h1 className="text-[26px] sm:text-4xl lg:text-[40px] font-extrabold tracking-tight leading-[1.14] text-slate-900 dark:text-white text-balance">
-                          {lang === 'en'
-                            ? 'Precision 3D Filaments for High-Speed Printing'
-                            : lang === 'ja'
-                            ? '高速造形を安定させる 3D 専門フィラメント'
-                            : '為穩定高速列印而生的 3D 專業線材'}
-                        </h1>
-
-                        <p className="text-xs sm:text-[15px] text-slate-600 dark:text-slate-300 leading-relaxed max-w-lg text-pretty">
-                          {lang === 'en'
-                            ? 'Authentic GodDog, Bambu Lab, eSUN & Polymaker stock. Laser-checked to ±0.02mm and dispatched in moisture-sealed bags.'
-                            : lang === 'ja'
-                            ? 'GodDog・Bambu Lab・eSUN・Polymaker 正規在庫。±0.02mm レーザー管理と防湿密封袋包装でお届け。'
-                            : '嚴選神狗勾、Bambu Lab 拓竹、eSUN 與 Polymaker 原廠正品。全線通過 ±0.02mm 雙軸測徑檢驗，採用密封袋防潮包裝當日寄出。'}
-                        </p>
-                      </div>
-
-                      {/* Crisp Dual CTAs */}
-                      <div className="flex items-center gap-2.5 sm:gap-3 pt-1">
-                        <button
-                          id="hero-scroll-catalog-btn"
-                          onClick={() => {
-                            const el = document.getElementById('storefront-product-grid');
-                            el?.scrollIntoView({ behavior: 'smooth' });
-                          }}
-                          className="flex-1 sm:flex-initial justify-center px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap shadow-xs"
-                        >
-                          <span>
-                            {lang === 'en'
-                              ? `Browse Catalog (${products.length})`
-                              : lang === 'ja'
-                              ? `全商品を見る (${products.length})`
-                              : `瀏覽全館耗材 (${products.length})`}
-                          </span>
-                          <ArrowRight className="w-4 h-4 shrink-0" />
-                        </button>
-
-                        <button
-                          id="hero-ai-advisor-cta-btn"
-                          onClick={() => setIsAIAdvisorOpen(true)}
-                          className="flex-1 sm:flex-initial justify-center px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-                        >
-                          <Compass className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                          <span>{lang === 'en' ? 'Match Printer' : lang === 'ja' ? '機種別選材' : '依機型選材'}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Right Daylight Featured Spools Gallery */}
-                    <div className="lg:col-span-6 bg-[#F6F8FB] dark:bg-slate-950/60 border-t lg:border-t-0 lg:border-l border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-5 lg:p-6 flex flex-col justify-center">
-                      {primarySpot && (
-                        <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
-                          {/* Primary Spotlight Horizontal Card */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenProductDetail(primarySpot)}
-                            className="col-span-2 group bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 p-3 sm:p-4 flex items-center gap-3.5 sm:gap-4 text-left transition-all hover:shadow-sm cursor-pointer"
-                          >
-                            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
-                              <img
-                                src={getSafeProductImageUrl(primarySpot.imageUrl, primarySpot.material, primarySpot.name)}
-                                alt={translateProductName(primarySpot.name, lang)}
-                                referrerPolicy="no-referrer"
-                                onError={(e) => handleProductImageError(e, primarySpot.material, primarySpot.name)}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            </div>
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 truncate">
-                                  {translateMaterial(primarySpot.material, lang)}
-                                </span>
-                                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium shrink-0">
-                                  {primarySpot.maxSpeed || '300 mm/s'}
-                                </span>
-                              </div>
-                              <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                                {translateProductName(primarySpot.name, lang)}
-                              </div>
-                              <div className="flex items-center justify-between pt-0.5">
-                                <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
-                                  {formatPrice(primarySpot.price, currency)}
-                                </span>
-                                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white flex items-center gap-0.5 transition-colors">
-                                  {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '查看規格'}
-                                  <ArrowRight className="w-3 h-3" />
-                                </span>
-                              </div>
-                            </div>
-                          </button>
-
-                          {/* Two Secondary Spool Quick-Picks */}
-                          {secondarySpots.map((spot) => (
-                            <button
-                              key={spot.id}
-                              type="button"
-                              onClick={() => handleOpenProductDetail(spot)}
-                              className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 p-2.5 sm:p-3 flex items-center gap-2.5 sm:gap-3 text-left transition-all hover:shadow-sm cursor-pointer min-w-0"
-                            >
-                              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0">
-                                <img
-                                  src={getSafeProductImageUrl(spot.imageUrl, spot.material, spot.name)}
-                                  alt={translateProductName(spot.name, lang)}
-                                  referrerPolicy="no-referrer"
-                                  onError={(e) => handleProductImageError(e, spot.material, spot.name)}
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
-                                  {translateMaterial(spot.material, lang)}
-                                </div>
-                                <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                                  {translateProductName(spot.name, lang)}
-                                </div>
-                                <div className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white font-mono tabular-nums mt-0.5">
-                                  {formatPrice(spot.price, currency)}
-                                </div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+            <section className="rounded-2xl sm:rounded-3xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs">
+              <div className="px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-9 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 lg:gap-8">
+                <div className="space-y-3 sm:space-y-3.5 max-w-2xl">
+                  <div className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400">
+                    {lang === 'en'
+                      ? 'Taiwan Local Stock · Same-Day Dispatch'
+                      : lang === 'ja'
+                      ? '国内在庫即納 · 最短当日発送'
+                      : '台灣現貨倉儲 · 拓竹 AMS 與高速機適用'}
                   </div>
+
+                  <h1 className="text-[26px] sm:text-4xl lg:text-[38px] font-extrabold tracking-tight leading-[1.16] text-slate-900 dark:text-white text-balance">
+                    {lang === 'en'
+                      ? 'Precision 3D Filaments for High-Speed Printing'
+                      : lang === 'ja'
+                      ? '高速造形を安定させる 3D 専門フィラメント'
+                      : '為穩定高速列印而生的 3D 專業線材'}
+                  </h1>
+
+                  <p className="text-xs sm:text-[15px] text-slate-600 dark:text-slate-300 leading-relaxed text-pretty">
+                    {lang === 'en'
+                      ? 'Authentic GodDog, Bambu Lab, eSUN & Polymaker stock. Laser-checked to ±0.02mm and dispatched in moisture-sealed bags.'
+                      : lang === 'ja'
+                      ? 'GodDog・Bambu Lab・eSUN・Polymaker 正規在庫。±0.02mm レーザー管理と防湿密封袋包装でお届け。'
+                      : '嚴選神狗勾、Bambu Lab 拓竹、eSUN 與 Polymaker 原廠正品。全線通過 ±0.02mm 雙軸測徑檢驗，採用密封袋防潮包裝當日寄出。'}
+                  </p>
+                </div>
+
+                {/* Crisp Dual CTAs */}
+                <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 pt-1 lg:pt-0">
+                  <button
+                    id="hero-scroll-catalog-btn"
+                    onClick={() => {
+                      const el = document.getElementById('storefront-product-grid');
+                      el?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="flex-1 sm:flex-initial justify-center px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap shadow-xs"
+                  >
+                    <span>
+                      {lang === 'en'
+                        ? `Browse Catalog (${products.length})`
+                        : lang === 'ja'
+                        ? `全商品を見る (${products.length})`
+                        : `瀏覽全館耗材 (${products.length})`}
+                    </span>
+                    <ArrowRight className="w-4 h-4 shrink-0" />
+                  </button>
+
+                  <button
+                    id="hero-ai-advisor-cta-btn"
+                    onClick={() => setIsAIAdvisorOpen(true)}
+                    className="flex-1 sm:flex-initial justify-center px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                  >
+                    <Compass className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span>{lang === 'en' ? 'Match Printer' : lang === 'ja' ? '機種別選材' : '依機型選材'}</span>
+                  </button>
+                </div>
+              </div>
 
                   {/* Unified Bottom Spec & Guarantee Strip (Consolidated to eliminate redundant boxes) */}
                   <div className="border-t border-slate-200/80 dark:border-slate-800 bg-slate-200/70 dark:bg-slate-800 grid grid-cols-2 lg:grid-cols-4 gap-px">
@@ -1904,10 +1809,8 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  </div>
-                </section>
-              );
-            })()}
+              </div>
+            </section>
 
             {/* Crisp Floating Quick-Tool Cards (2x2 mobile, 4-across desktop) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">

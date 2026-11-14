@@ -161,6 +161,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         if (parsed && typeof parsed.senderAddress === 'string' && (parsed.senderAddress.includes('1-50') || parsed.senderAddress.includes('福樂村'))) {
           parsed.senderAddress = '台灣線上物流集貨中心';
         }
+        if (parsed && parsed.newebpayLogisticsHashKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ') {
+          parsed.newebpayLogisticsHashKey = 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ';
+        }
         return parsed;
       } catch (e) {
         console.error(e);
@@ -180,7 +183,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
       newebpayLogisticsMerchantId: 'MS1843364339',
-      newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ',
+      newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ',
       newebpayLogisticsHashIV: 'P4rlxhbNjCyiK5qC',
       newebpayLogisticsTestMode: false,
       senderName: '神狗勾 3D 台灣官方旗艦店',
@@ -195,16 +198,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setLogisticsSettings((prev) => ({
           ...prev,
           ...remote,
+          newebpayLogisticsHashKey:
+            remote.newebpayLogisticsHashKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ'
+              ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ'
+              : remote.newebpayLogisticsHashKey,
         }));
       }
     });
   }, []);
 
   const handleSaveLogisticsSettings = (newSettings: LogisticsSettings) => {
+    const rawKey = (newSettings.newebpayLogisticsHashKey || '').trim();
     const cleaned: LogisticsSettings = {
       ...newSettings,
       newebpayLogisticsMerchantId: (newSettings.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
-      newebpayLogisticsHashKey: (newSettings.newebpayLogisticsHashKey || '').trim(),
+      newebpayLogisticsHashKey:
+        rawKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ' : rawKey,
       newebpayLogisticsHashIV: (newSettings.newebpayLogisticsHashIV || '').trim(),
     };
     setLogisticsSettings(cleaned);

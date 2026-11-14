@@ -52,7 +52,10 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
     packagingSpecs: settings.packagingSpecs || '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
     ecpayLogisticsMerchantId: settings.ecpayLogisticsMerchantId || '3002607',
     newebpayLogisticsMerchantId: settings.newebpayLogisticsMerchantId || 'MS1843364339',
-    newebpayLogisticsHashKey: settings.newebpayLogisticsHashKey || 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ',
+    newebpayLogisticsHashKey:
+      settings.newebpayLogisticsHashKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' || !settings.newebpayLogisticsHashKey
+        ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ'
+        : settings.newebpayLogisticsHashKey,
     newebpayLogisticsHashIV: settings.newebpayLogisticsHashIV || 'P4rlxhbNjCyiK5qC',
     newebpayLogisticsTestMode: settings.newebpayLogisticsTestMode ?? false,
     senderName: settings.senderName || '神狗勾 3D 台灣官方旗艦店',
@@ -77,7 +80,16 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onSaveSettings(formData);
+    const rawKey = (formData.newebpayLogisticsHashKey || '').trim();
+    const normalized = {
+      ...formData,
+      newebpayLogisticsMerchantId: (formData.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
+      newebpayLogisticsHashKey:
+        rawKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ' : rawKey,
+      newebpayLogisticsHashIV: (formData.newebpayLogisticsHashIV || '').trim(),
+    };
+    setFormData(normalized);
+    onSaveSettings(normalized);
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3000);
   };
@@ -97,7 +109,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
       packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
       newebpayLogisticsMerchantId: 'MS1843364339',
-      newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ',
+      newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ',
       newebpayLogisticsHashIV: 'P4rlxhbNjCyiK5qC',
       newebpayLogisticsTestMode: false,
       senderName: '神狗勾 3D 台灣官方旗艦店',
@@ -116,7 +128,8 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
 
     try {
       const mId = (formData.newebpayLogisticsMerchantId || '').trim();
-      const hKey = (formData.newebpayLogisticsHashKey || '').trim();
+      const rawKey = (formData.newebpayLogisticsHashKey || '').trim();
+      const hKey = rawKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ' : rawKey;
       const hIv = (formData.newebpayLogisticsHashIV || '').trim();
 
       if (!mId || !hKey || !hIv) {
