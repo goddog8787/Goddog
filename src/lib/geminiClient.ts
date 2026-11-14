@@ -1,5 +1,3 @@
-import { EcommerceCopyResult } from '../types';
-
 export type SupportedChatLang = 'zh-TW' | 'en' | 'ja';
 
 export function getBackendApiBase(): string {
@@ -176,53 +174,6 @@ export async function generateClientGeminiChat(
   const reply = await callDirectBrowserGemini(prompt, [], 'gemini-3.8-flash', undefined, undefined, lang);
   if (reply) return reply;
   return generateSmart3DExpertReply(prompt, undefined, lang).reply;
-}
-
-export async function generateClientEcommerceCopy(params: {
-  productName: string;
-  material: string;
-  features?: string;
-  targetAudience?: string;
-  promotion?: string;
-}): Promise<EcommerceCopyResult> {
-  const apiBase = getBackendApiBase();
-  try {
-    const res = await fetch(`${apiBase}/api/ai/ecommerce-copy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json?.success && json?.data) {
-        return json.data;
-      }
-    }
-  } catch {}
-
-  const { productName, material, features = '', targetAudience = '3D列印創客與工作室', promotion = '滿NT$999免運' } = params;
-  const seoTitle = `【台灣現貨】${productName}｜${material} 1.75mm 高精度線材｜相容拓竹 Bambu AMS`;
-  const specBulletPoints = [
-    `光學雷射雙軸測徑，線徑公差嚴控 ±0.02mm，排線整齊不纏繞`,
-    `100% 原生相容 Bambu Lab AMS 多色系統與 Creality K1 / Voron 高速機`,
-    `針對 ${targetAudience} 調校高流率配方，支援 300-600mm/s 高速列印`,
-    `${features || '極低收縮率、首層抓地力強、層間結合度優異'}`,
-    `全館 ${promotion}，隨貨附贈密封防潮袋與乾燥劑`,
-  ];
-  const buyerNotice = [
-    '超商取貨單筆上限 4 捲 1kg 線材（含包裝約 4.8kg），超過 5 捲請選擇宅配出貨。',
-    '拆封後若長時間未使用，請放回鋁箔夾鏈袋並搭配乾燥劑保存，維持最佳列印品質。',
-  ];
-  const hashtags = ['#3D列印', '#3D列印耗材', `#${material}`, '#BambuLab', '#拓竹AMS', '#創客工具', '#神狗勾耗材'];
-  const fullFormattedDescription = `${seoTitle}\n\n【核心特色】\n• ${specBulletPoints.join('\n• ')}\n\n【購買與保存提醒】\n• ${buyerNotice.join('\n• ')}\n\n${hashtags.join(' ')}`;
-
-  return {
-    seoTitle,
-    specBulletPoints,
-    buyerNotice,
-    hashtags,
-    fullFormattedDescription,
-  };
 }
 
 /**

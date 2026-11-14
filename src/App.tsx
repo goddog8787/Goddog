@@ -22,12 +22,6 @@ import {
   TrackingModal 
 } from './components/Storefront/TrackingModal';
 import { 
-  SubscriptionModal 
-} from './components/Storefront/SubscriptionModal';
-import { 
-  LoyaltyModal 
-} from './components/Storefront/LoyaltyModal';
-import { 
   CustomerSupportModal 
 } from './components/Storefront/CustomerSupportModal';
 import { 
@@ -40,6 +34,7 @@ import {
 import {
   DraggableChatWidget
 } from './components/Storefront/DraggableChatWidget';
+import { FlyToCartOverlay } from './components/Storefront/FlyToCartOverlay';
 
 // Lazy-loaded heavy secondary modals & routes to reduce initial bundle payload
 const AdminDashboard = React.lazy(() => import('./components/Admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
@@ -50,7 +45,6 @@ const SpoolRecycleModal = React.lazy(() => import('./components/Storefront/Spool
 const HistoryModal = React.lazy(() => import('./pages/Profile/ProfileModals').then(m => ({ default: m.HistoryModal })));
 import { 
   INITIAL_PRODUCTS, 
-  SUBSCRIPTION_PLANS, 
   INITIAL_MEMBER 
 } from './data/mockData';
 import { 
@@ -72,7 +66,8 @@ import {
   ProductReview
 } from './types';
 import confetti from 'canvas-confetti';
-import { translations, translateMaterial, translateProductName } from './utils/i18n';
+import { translations, translateMaterial, translateProductName, formatPrice } from './utils/i18n';
+import { getSafeProductImageUrl, handleProductImageError } from './utils/productImage';
 import { processDomSubtree } from './utils/domAutoTranslator';
 import { subscribeToProductStats } from './lib/reviewPersistence';
 import {
@@ -125,11 +120,8 @@ import {
 } from './lib/customerPersistence';
 import { AdSenseBanner, FloatingSkyscraperAd, NativeProductAdCard, HILLTOPADS_DEFAULT_SCRIPT } from './components/Monetization/AdSenseBanner';
 import { 
-  Sparkles, Gift, 
-  Flame, 
-  Truck, 
+  Gift, 
   ShieldCheck, 
-  RotateCcw, 
   MessageSquare, 
   Filter, 
   Check,
@@ -148,7 +140,8 @@ import {
   BookOpen,
   Settings,
   ExternalLink,
-  ArrowRight
+  ArrowRight,
+  Truck
 } from 'lucide-react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 const PrivacyPolicy = React.lazy(() => import('./pages/Legal/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
@@ -471,7 +464,6 @@ export default function App() {
     recordRealVisitor();
   }, []);
 
-  const [subscriptions, setSubscriptions] = useState(SUBSCRIPTION_PLANS);
   const [member, setMember] = useState<MemberProfile>(() => {
     try {
       const session = getStoredCustomerSession();
@@ -582,8 +574,6 @@ export default function App() {
   const [isAIAdvisorOpen, setIsAIAdvisorOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
-  const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
-  const [isLoyaltyOpen, setIsLoyaltyOpen] = useState(false);
   const [isCustomerSupportOpen, setIsCustomerSupportOpen] = useState(false);
   const [supportInitialPrompt, setSupportInitialPrompt] = useState('');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -712,7 +702,6 @@ export default function App() {
     showFooterBanner: false,
     showArticleAd: true,
     showSidebarAd: false,
-    showMobileStickyAd: false,
     estimatedStats: {
       dailyImpressions: 120,
       dailyClicks: 8,
@@ -738,7 +727,6 @@ export default function App() {
             showFooterBanner: false,
             showArticleAd: true,
             showSidebarAd: false,
-            showMobileStickyAd: false,
           };
           setAdSenseConfig((prev) => ({
             ...prev,
@@ -765,7 +753,6 @@ export default function App() {
               showFooterBanner: false,
               showArticleAd: true,
               showSidebarAd: false,
-              showMobileStickyAd: false,
             };
             setAdSenseConfig((prev) => ({
               ...prev,
@@ -1547,7 +1534,7 @@ export default function App() {
   };
 
   // Filter and sort products
-  const materials = ['All', 'High-Speed PLA', 'PLA Matte', 'PETG', 'PETG Matte', 'ABS', 'TPU', 'PLA-CF', 'Resin', 'Accessories'];
+  const materials = ['All', 'High-Speed PLA', 'PLA Matte', 'PLA Silk', 'PETG', 'PETG Matte', 'ABS', 'TPU', 'PLA-CF', 'Resin', 'Accessories'];
 
   const filteredAndSortedProducts = useMemo(() => {
     const hasActiveQuery = searchQuery.trim().length > 0;
@@ -1605,8 +1592,10 @@ export default function App() {
           setTrackingNumberInput(genuineOrder?.trackingNumber || '');
           setIsTrackingOpen(true);
         }}
-        onOpenLoyalty={() => setIsLoyaltyOpen(true)}
-        onOpenSubscription={() => setIsSubscriptionOpen(true)}
+        openMemberModal={() => {
+          setActiveTab('store');
+          navigate('/profile');
+        }}
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenFilamentLab={() => setIsFilamentLabOpen(true)}
         onOpenCompare={() => setIsCompareModalOpen(true)}
@@ -1625,7 +1614,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8 pb-32 sm:pb-36 lg:pb-8 overflow-x-hidden">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3 sm:py-8 pb-32 sm:pb-36 lg:pb-14 overflow-x-hidden">
         <Suspense
           fallback={
             <div className="py-24 flex items-center justify-center">
@@ -1654,7 +1643,6 @@ export default function App() {
             onLogout={handleLogout}
             lang={lang}
             onLoginClick={() => setIsAuthOpen(true)} 
-            onOpenSubscription={() => setIsSubscriptionOpen(true)} 
             onOpenTracking={(trk) => {
               if (trk && trk !== '77391829310' && !trk.includes('77391829310')) {
                 setTrackingNumberInput(trk);
@@ -1686,297 +1674,325 @@ export default function App() {
           /* ================================================================= */
           /* CUSTOMER STOREFRONT VIEW                                          */
           /* ================================================================= */
-          <div className="space-y-4 sm:space-y-5 lg:space-y-6">
-            {/* Guest Welcome & Sign-In Reward Banner */}
+          <div className="space-y-3.5 sm:space-y-4 lg:space-y-5">
+            {/* Compact Member Sign-in Strip */}
             {!isLoggedIn && (
-              <div className="bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-purple-500/10 border border-amber-500/25 rounded-2xl p-3 sm:px-5 sm:py-3.5 flex flex-col sm:flex-row items-center justify-between gap-2.5 shadow-sm backdrop-blur-xs">
-                <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
-                  <div className="w-9 h-9 rounded-xl bg-amber-400/20 text-amber-500 flex items-center justify-center shrink-0 border border-amber-400/30 shadow-xs">
-                    <Gift className="w-4.5 h-4.5" />
+              <div className="bg-amber-50/75 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 rounded-xl px-3.5 py-2.5 sm:px-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                    <Gift className="w-3.5 h-3.5" />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                      {lang === 'en' ? 'New Member Gift: Sign in for 100 G-Coins & Free Shipping!' : lang === 'ja' ? '新規特典：ログインで100 G-Coin＆送料無料進呈！' : '新客專屬好禮：登入即領 100 點積分與免運優惠'}
-                    </div>
-                    <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                      {lang === 'en' ? '1-click Google login, cash discount points & live package tracking.' : lang === 'ja' ? 'Googleログインでポイント即時付与＆配送追跡。' : '一鍵 Google 登入，享購物現金折抵與超商包裹即時追蹤'}
-                    </p>
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className="text-xs sm:text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate">
+                      {lang === 'en' ? 'New member perk: 100 G-Coins on sign-in' : lang === 'ja' ? '初回特典：ログインで100 G-Coin進呈' : '新會員登入即贈 100 點紅利積分'}
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden md:inline truncate">
+                      {lang === 'en' ? '· Redeem at checkout & track shipments live' : lang === 'ja' ? '· 決済利用・配送リアルタイム追跡に対応' : '· 結帳直接折抵現金，支援超商物流即時追蹤'}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
-                  <button
-                    onClick={() => setIsAuthOpen(true)}
-                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-amber-500 hover:from-indigo-500 hover:to-amber-400 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
-                  >
-                    <User className="w-3.5 h-3.5 shrink-0" />
-                    <span>{lang === 'en' ? 'Sign In / Claim' : lang === 'ja' ? 'ログインして受取' : '立即登入領取'}</span>
-                  </button>
-                </div>
+                <button
+                  onClick={() => setIsAuthOpen(true)}
+                  className="px-3.5 py-1.5 rounded-lg bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                >
+                  {lang === 'en' ? 'Sign In' : lang === 'ja' ? 'ログイン' : '登入領取'}
+                </button>
               </div>
             )}
-            
-            {/* Hero Banner (Responsive: Mobile sleek card & Desktop grand layout) */}
-            <section className="relative rounded-2xl sm:rounded-3xl overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 text-white p-5 sm:p-8 lg:p-10 shadow-xl border border-slate-800">
-              <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
-                {/* Left Column: Heading & Description */}
-                <div className="lg:col-span-7 flex flex-col justify-center space-y-3 sm:space-y-4">
-                  <div className="inline-flex items-center gap-1.5 text-indigo-300 text-[11px] sm:text-xs font-bold tracking-wider uppercase">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>
-                      {lang === 'en' ? '2026 600mm/s Bambu AMS & Creality K1 Verified' : lang === 'ja' ? '2026最新 600mm/s Bambu AMS＆K1公式対応' : '2026 拓竹 AMS・Creality K1 高速專用線材'}
-                    </span>
+
+            {/* Daylight Flagship Storefront Cover */}
+            {(() => {
+              const preferredIds = ['maker-bambu-petg-matte', 'fil-01', 'fil-02'];
+              const pickedFeatured = preferredIds
+                .map((id) => products.find((p) => p.id === id))
+                .filter((p): p is FilamentProduct => Boolean(p));
+              const heroSpotlight = pickedFeatured.length >= 3
+                ? pickedFeatured
+                : products.slice(0, 3);
+              const primarySpot = heroSpotlight[0];
+              const secondarySpots = heroSpotlight.slice(1, 3);
+
+              return (
+                <section className="rounded-2xl sm:rounded-3xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs">
+                  <div className="grid grid-cols-1 lg:grid-cols-12">
+                    {/* Left Editorial Column */}
+                    <div className="lg:col-span-6 px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10 flex flex-col justify-between gap-6">
+                      <div className="space-y-3.5 sm:space-y-4">
+                        <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                          <span>
+                            {lang === 'en'
+                              ? 'Taiwan Local Stock · Same-Day Dispatch'
+                              : lang === 'ja'
+                              ? '国内在庫即納 · 最短当日発送'
+                              : '台灣現貨倉儲 · 拓竹 AMS 與高速機適用'}
+                          </span>
+                        </div>
+
+                        <h1 className="text-[26px] sm:text-4xl lg:text-[40px] font-extrabold tracking-tight leading-[1.14] text-slate-900 dark:text-white text-balance">
+                          {lang === 'en'
+                            ? 'Precision 3D Filaments for High-Speed Printing'
+                            : lang === 'ja'
+                            ? '高速造形を安定させる 3D 専門フィラメント'
+                            : '為穩定高速列印而生的 3D 專業線材'}
+                        </h1>
+
+                        <p className="text-xs sm:text-[15px] text-slate-600 dark:text-slate-300 leading-relaxed max-w-lg text-pretty">
+                          {lang === 'en'
+                            ? 'Authentic GodDog, Bambu Lab, eSUN & Polymaker stock. Laser-checked to ±0.02mm and dispatched in moisture-sealed bags.'
+                            : lang === 'ja'
+                            ? 'GodDog・Bambu Lab・eSUN・Polymaker 正規在庫。±0.02mm レーザー管理と防湿密封袋包装でお届け。'
+                            : '嚴選神狗勾、Bambu Lab 拓竹、eSUN 與 Polymaker 原廠正品。全線通過 ±0.02mm 雙軸測徑檢驗，採用密封袋防潮包裝當日寄出。'}
+                        </p>
+                      </div>
+
+                      {/* Crisp Dual CTAs */}
+                      <div className="flex items-center gap-2.5 sm:gap-3 pt-1">
+                        <button
+                          id="hero-scroll-catalog-btn"
+                          onClick={() => {
+                            const el = document.getElementById('storefront-product-grid');
+                            el?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="flex-1 sm:flex-initial justify-center px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap shadow-xs"
+                        >
+                          <span>
+                            {lang === 'en'
+                              ? `Browse Catalog (${products.length})`
+                              : lang === 'ja'
+                              ? `全商品を見る (${products.length})`
+                              : `瀏覽全館耗材 (${products.length})`}
+                          </span>
+                          <ArrowRight className="w-4 h-4 shrink-0" />
+                        </button>
+
+                        <button
+                          id="hero-ai-advisor-cta-btn"
+                          onClick={() => setIsAIAdvisorOpen(true)}
+                          className="flex-1 sm:flex-initial justify-center px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                        >
+                          <Compass className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>{lang === 'en' ? 'Match Printer' : lang === 'ja' ? '機種別選材' : '依機型選材'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Right Daylight Featured Spools Gallery */}
+                    <div className="lg:col-span-6 bg-[#F6F8FB] dark:bg-slate-950/60 border-t lg:border-t-0 lg:border-l border-slate-200/80 dark:border-slate-800 p-3.5 sm:p-5 lg:p-6 flex flex-col justify-center">
+                      {primarySpot && (
+                        <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+                          {/* Primary Spotlight Horizontal Card */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProductDetail(primarySpot)}
+                            className="col-span-2 group bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 p-3 sm:p-4 flex items-center gap-3.5 sm:gap-4 text-left transition-all hover:shadow-sm cursor-pointer"
+                          >
+                            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                              <img
+                                src={getSafeProductImageUrl(primarySpot.imageUrl, primarySpot.material, primarySpot.name)}
+                                alt={translateProductName(primarySpot.name, lang)}
+                                referrerPolicy="no-referrer"
+                                onError={(e) => handleProductImageError(e, primarySpot.material, primarySpot.name)}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                            </div>
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 truncate">
+                                  {translateMaterial(primarySpot.material, lang)}
+                                </span>
+                                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium shrink-0">
+                                  {primarySpot.maxSpeed || '300 mm/s'}
+                                </span>
+                              </div>
+                              <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                {translateProductName(primarySpot.name, lang)}
+                              </div>
+                              <div className="flex items-center justify-between pt-0.5">
+                                <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
+                                  {formatPrice(primarySpot.price, currency)}
+                                </span>
+                                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white flex items-center gap-0.5 transition-colors">
+                                  {lang === 'en' ? 'View' : lang === 'ja' ? '詳細' : '查看規格'}
+                                  <ArrowRight className="w-3 h-3" />
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+
+                          {/* Two Secondary Spool Quick-Picks */}
+                          {secondarySpots.map((spot) => (
+                            <button
+                              key={spot.id}
+                              type="button"
+                              onClick={() => handleOpenProductDetail(spot)}
+                              className="group bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600 p-2.5 sm:p-3 flex items-center gap-2.5 sm:gap-3 text-left transition-all hover:shadow-sm cursor-pointer min-w-0"
+                            >
+                              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 overflow-hidden shrink-0">
+                                <img
+                                  src={getSafeProductImageUrl(spot.imageUrl, spot.material, spot.name)}
+                                  alt={translateProductName(spot.name, lang)}
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => handleProductImageError(e, spot.material, spot.name)}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                                  {translateMaterial(spot.material, lang)}
+                                </div>
+                                <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                  {translateProductName(spot.name, lang)}
+                                </div>
+                                <div className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white font-mono tabular-nums mt-0.5">
+                                  {formatPrice(spot.price, currency)}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <h1 className="text-2xl sm:text-4xl lg:text-[42px] xl:text-5xl font-black tracking-tight leading-[1.15] text-balance">
-                    {lang === 'en' ? (
-                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">Ultra-Smooth</span> 3D Filaments & Slicing Solutions</>
-                    ) : lang === 'ja' ? (
-                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">超高速・高精度</span> 3Dプリント線材＆造形ソリューション</>
-                    ) : (
-                      <><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-300 to-blue-400">極速流暢</span> 3D 列印耗材與智能選材</>
+                  {/* Unified Bottom Spec & Guarantee Strip (Consolidated to eliminate redundant boxes) */}
+                  <div className="border-t border-slate-200/80 dark:border-slate-800 bg-slate-200/70 dark:bg-slate-800 grid grid-cols-2 lg:grid-cols-4 gap-px">
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                      <Truck className="w-4 h-4 text-slate-700 dark:text-slate-300 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {lang === 'en' ? '24H Store Dispatch' : lang === 'ja' ? '24時間スピード出荷' : '24H 超商快速出貨'}
+                        </div>
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {lang === 'en' ? 'Free over NT$999' : lang === 'ja' ? 'NT$999以上送料無料' : '滿 NT$999 即享免運'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                      <Package className="w-4 h-4 text-slate-700 dark:text-slate-300 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {lang === 'en' ? 'Moisture-Sealed Bag' : lang === 'ja' ? '防湿密封袋包装' : '密封袋防潮出貨'}
+                        </div>
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {lang === 'en' ? 'Unopened warranty' : lang === 'ja' ? '未開封吸湿保証' : '未拆封吸濕雙重保固'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                      <ShieldCheck className="w-4 h-4 text-slate-700 dark:text-slate-300 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                          {lang === 'en' ? 'NewebPay SSL' : lang === 'ja' ? '暗号化安全決済' : '藍新 SSL 安全金流'}
+                        </div>
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {lang === 'en' ? 'Card / Apple Pay / ATM' : lang === 'ja' ? 'カード / Apple Pay' : '信用卡 / Apple Pay'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                      <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 font-mono tabular-nums truncate">
+                          ±0.02mm · 600mm/s
+                        </div>
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {lang === 'en' ? 'Dual-axis laser QC' : lang === 'ja' ? '両軸レーザー品質管理' : '雙軸測徑與高速相容'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()}
+
+            {/* Crisp Floating Quick-Tool Cards (2x2 mobile, 4-across desktop) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+              <button
+                id="quick-action-ai-bot"
+                onClick={() => setIsCustomerSupportOpen(true)}
+                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-sky-300 dark:hover:border-sky-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
+              >
+                <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                    {lang === 'en' ? 'Tech Support' : lang === 'ja' ? '技術サポート' : '技術與選材客服'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {lang === 'en' ? 'Print guidance' : lang === 'ja' ? '造形トラブル相談' : '參數與列印諮詢'}
+                  </div>
+                </div>
+              </button>
+
+              <button
+                id="quick-action-filament-lab"
+                onClick={() => setIsFilamentLabOpen(true)}
+                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
+              >
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Wrench className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                    {lang === 'en' ? 'Maker Lab' : lang === 'ja' ? '計算ツール' : '耗材實驗與試算'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {lang === 'en' ? 'Cost & length' : lang === 'ja' ? 'コスト・残量計算' : '長度與成本估算'}
+                  </div>
+                </div>
+              </button>
+
+              <button
+                id="quick-action-recycle"
+                onClick={() => setIsRecycleOpen(true)}
+                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
+              >
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Recycle className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                    {lang === 'en' ? 'Spool Recycle' : lang === 'ja' ? '空スプール還元' : '空盤回收換幣'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                    {lang === 'en' ? 'Earn store credit' : lang === 'ja' ? 'ポイント還元' : '空盤折抵購物金'}
+                  </div>
+                </div>
+              </button>
+
+              <button
+                id="quick-action-compare"
+                onClick={() => setIsCompareModalOpen(true)}
+                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
+              >
+                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Scale className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+                      {lang === 'en' ? 'Spec Compare' : lang === 'ja' ? '物性・規格比較' : '耗材規格對比'}
+                    </span>
+                    {comparisonIds.length > 0 && (
+                      <span className="text-[11px] font-mono tabular-nums font-bold text-indigo-600 dark:text-indigo-400">
+                        ({comparisonIds.length})
+                      </span>
                     )}
-                  </h1>
-
-                  <p className="text-xs sm:text-sm lg:text-[15px] text-slate-300 leading-relaxed max-w-xl text-pretty">
-                    {lang === 'en' ? 'All spools pass ±0.02mm laser inspection with vacuum foil packaging. Supports NewebPay checkout and Free Shipping over NT$999.' : lang === 'ja' ? '全品±0.02mmレーザー検品＆アルミ真空包装。NewebPay決済対応、NT$999以上で送料無料。' : '全館通過 ±0.02mm 光學線徑檢驗與鋁箔真空防潮包裝。支援藍新安全金流與超商取貨，滿 NT$999 享免運優惠。'}
-                  </p>
-
-                  {/* Action CTA Buttons */}
-                  <div className="pt-1 flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                    <button
-                      id="hero-ai-advisor-cta-btn"
-                      onClick={() => setIsAIAdvisorOpen(true)}
-                      className="flex-1 sm:flex-initial justify-center px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-indigo-600/30 flex items-center gap-2 cursor-pointer transition-all active:scale-98 whitespace-nowrap"
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-                      <span>{lang === 'en' ? 'AI Filament Advisor' : lang === 'ja' ? 'AI機種別マッチング' : 'AI 耗材智能配對'}</span>
-                    </button>
-
-                    <button
-                      id="hero-scroll-catalog-btn"
-                      onClick={() => {
-                        const el = document.getElementById('storefront-product-grid');
-                        el?.scrollIntoView({ behavior: 'smooth' });
-                      }}
-                      className="flex-1 sm:flex-initial justify-center px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-xs text-white border border-white/20 text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
-                    >
-                      <span>{lang === 'en' ? 'Browse Catalog ↓' : lang === 'ja' ? '商品一覧を見る ↓' : '選購全部耗材 ↓'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Right Column: Desktop Spec Highlights Badge Grid */}
-                <div className="hidden lg:grid lg:col-span-5 grid-cols-2 gap-3.5 content-center">
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-indigo-500/30 hover:border-indigo-400/60 transition-colors flex flex-col justify-between">
-                    <div className="text-indigo-400 text-[11px] font-bold uppercase tracking-wider">High Speed</div>
-                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">600 <span className="text-xs font-sans font-semibold text-slate-400">mm/s</span></div>
-                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
-                      {lang === 'en' ? 'High-flow extrusion, strong bonding' : lang === 'ja' ? '高速吐出でも層間密着強度抜群' : '高速出膠不碳化・層間結合強'}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-cyan-500/30 hover:border-cyan-400/60 transition-colors flex flex-col justify-between">
-                    <div className="text-cyan-400 text-[11px] font-bold uppercase tracking-wider">Precision</div>
-                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">±0.02 <span className="text-xs font-sans font-semibold text-slate-400">mm</span></div>
-                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
-                      {lang === 'en' ? 'Laser-calibrated, zero nozzle clogs' : lang === 'ja' ? '高精度真円度でノズル詰まりゼロ' : '光學校準同心度・列印不卡料'}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-amber-500/30 hover:border-amber-400/60 transition-colors flex flex-col justify-between">
-                    <div className="text-amber-400 text-[11px] font-bold uppercase tracking-wider">AMS Ready</div>
-                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">100% <span className="text-xs font-sans font-semibold text-slate-400">{lang === 'en' ? 'Compatible' : lang === 'ja' ? '対応' : '相容'}</span></div>
-                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
-                      {lang === 'en' ? 'Standard 200mm spools for AMS' : lang === 'ja' ? '標準200mm径でAMS多色対応' : '標準 200mm 盤徑・多色順暢進料'}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-900/80 backdrop-blur-md p-4 xl:p-5 rounded-2xl border border-emerald-500/30 hover:border-emerald-400/60 transition-colors flex flex-col justify-between">
-                    <div className="text-emerald-400 text-[11px] font-bold uppercase tracking-wider">Local Fast</div>
-                    <div className="text-2xl xl:text-3xl font-black text-white mt-1.5 font-mono tabular-nums">24H <span className="text-xs font-sans font-semibold text-slate-400">{lang === 'en' ? 'Dispatch' : lang === 'ja' ? '発送' : '出貨'}</span></div>
-                    <p className="text-xs text-slate-400 mt-1.5 leading-snug">
-                      {lang === 'en' ? 'Taiwan warehouse rapid dispatch' : lang === 'ja' ? '台湾国内倉庫より24Hスピード発送' : '台灣現貨・7-11/全家快速發貨'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Decorative background glow */}
-              <div className="absolute right-0 top-0 bottom-0 w-1/2 opacity-20 pointer-events-none hidden lg:block bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-indigo-500 via-cyan-500/20 to-transparent"></div>
-            </section>
-
-            {/* App Services Matrix ("金剛區" - Stacked on Mobile, Sleek Horizontal Tool Strip on Desktop) */}
-            <div className="bg-white dark:bg-slate-800 rounded-2xl p-2.5 sm:p-3 lg:p-3.5 border border-slate-200 dark:border-slate-700/80 shadow-2xs">
-              <div className="grid grid-cols-4 gap-1.5 sm:gap-3 lg:gap-4">
-                {/* 1. AI Bot Chat */}
-                <button
-                  id="quick-action-ai-bot"
-                  onClick={() => setIsCustomerSupportOpen(true)}
-                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-indigo-50/70 dark:hover:bg-indigo-950/40 border border-transparent hover:border-indigo-200/60 dark:hover:border-indigo-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3"
-                >
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-700 to-sky-500 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20 group-hover:scale-105 transition-transform relative shrink-0">
-                    <Bot className="w-5 h-5 text-sky-200" />
-                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-800" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 whitespace-nowrap">
-                      {lang === 'en' ? 'AI Support' : lang === 'ja' ? 'AIサポート' : 'AI 機器人'}
-                    </span>
-                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
-                      {lang === 'en' ? 'Smart Support' : lang === 'ja' ? 'スマート診断' : '智能客服與技術排查'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* 2. Maker Lab */}
-                <button
-                  id="quick-action-filament-lab"
-                  onClick={() => setIsFilamentLabOpen(true)}
-                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-cyan-50/70 dark:hover:bg-cyan-950/40 border border-transparent hover:border-cyan-200/60 dark:hover:border-cyan-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3"
-                >
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-cyan-600 to-blue-500 flex items-center justify-center text-white shadow-sm shadow-cyan-500/20 group-hover:scale-105 transition-transform shrink-0">
-                    <Wrench className="w-5 h-5 text-cyan-100" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 whitespace-nowrap">
-                      {lang === 'en' ? 'Maker Lab' : lang === 'ja' ? '計算ツール' : '創客工具'}
-                    </span>
-                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
-                      {lang === 'en' ? 'Cost & Volume' : lang === 'ja' ? '見積・残量' : '成本試算 / 線材餘量'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* 3. Spool Recycling */}
-                <button
-                  id="quick-action-recycle"
-                  onClick={() => setIsRecycleOpen(true)}
-                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 border border-transparent hover:border-emerald-200/60 dark:hover:border-emerald-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3"
-                >
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-500/20 group-hover:scale-105 transition-transform shrink-0">
-                    <Recycle className="w-5 h-5 text-emerald-100" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 whitespace-nowrap">
-                      {lang === 'en' ? 'Eco Spool' : lang === 'ja' ? '空盤還元' : '空盤換幣'}
-                    </span>
-                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
-                      {lang === 'en' ? 'Cash Rewards' : lang === 'ja' ? 'ポイント還元' : '空盤回收折抵現金'}
-                    </span>
-                  </div>
-                </button>
-
-                {/* 4. Product Compare */}
-                <button
-                  id="quick-action-compare"
-                  onClick={() => setIsCompareModalOpen(true)}
-                  className="flex flex-col lg:flex-row items-center justify-center lg:justify-start p-1.5 sm:p-2.5 lg:px-3.5 lg:py-3 rounded-xl hover:bg-purple-50/70 dark:hover:bg-purple-950/40 border border-transparent hover:border-purple-200/60 dark:hover:border-purple-800/60 transition-all cursor-pointer group active:scale-95 text-center lg:text-left lg:gap-3 relative"
-                >
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-sm shadow-purple-500/20 group-hover:scale-105 transition-transform shrink-0">
-                    <Scale className="w-5 h-5 text-purple-100" />
-                  </div>
-                  {comparisonIds.length > 0 && (
-                    <span className="absolute top-1.5 right-2 bg-rose-500 text-white text-[9px] font-extrabold h-4 min-w-4 px-1 rounded-full flex items-center justify-center shadow-xs tabular-nums">
-                      {comparisonIds.length}
-                    </span>
-                  )}
-                  <div className="min-w-0">
-                    <span className="mt-1.5 lg:mt-0 block text-[11px] sm:text-xs lg:text-sm font-bold text-slate-800 dark:text-slate-100 group-hover:text-purple-600 dark:group-hover:text-purple-400 whitespace-nowrap">
-                      {lang === 'en' ? 'Compare' : lang === 'ja' ? 'スペック比較' : '規格對比'}
-                    </span>
-                    <span className="text-[10px] lg:text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block whitespace-nowrap">
-                      {lang === 'en' ? 'Side-by-side' : lang === 'ja' ? 'スペック横断' : '多款耗材橫向 PK'}
-                    </span>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Feature Guarantees Strip (Responsive: Single row ticker on Mobile, 4 Cards on Desktop) */}
-            <div className="block sm:hidden bg-slate-100 dark:bg-slate-800/90 py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700/80 overflow-x-auto scrollbar-none">
-              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap gap-3">
-                <span className="flex items-center gap-1">
-                  <Truck className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>{lang === 'en' ? 'Free Shipping $999+' : lang === 'ja' ? 'NT$999以上で送料無料' : '滿 $999 免運'}</span>
-                </span>
-                <span className="text-slate-300">•</span>
-                <span className="flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{lang === 'en' ? 'NewebPay Secured' : lang === 'ja' ? '安全決済 NewebPay' : '藍新安全金流'}</span>
-                </span>
-                <span className="text-slate-300">•</span>
-                <span className="flex items-center gap-1">
-                  <Flame className="w-3.5 h-3.5 text-amber-500" />
-                  <span>{lang === 'en' ? 'AMS Verified' : lang === 'ja' ? 'AMS 完全対応' : 'AMS 相容'}</span>
-                </span>
-                <span className="text-slate-300">•</span>
-                <span className="flex items-center gap-1">
-                  <RotateCcw className="w-3.5 h-3.5 text-cyan-600" />
-                  <span>{lang === 'en' ? 'Moisture Warranty' : lang === 'ja' ? '防湿品質保証' : '原廠防潮保固'}</span>
-                </span>
-              </div>
-            </div>
-
-            <div className="hidden sm:grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
-              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                  <Truck className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
-                    {lang === 'en' ? 'Real-Time Logistics' : lang === 'ja' ? 'リアルタイム配送追跡' : '即時物流追蹤'}
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? 'CVS 24H Rapid Dispatch' : lang === 'ja' ? '24時間以内スピード発送' : '超商交貨便 24H 快速出貨'}
+                    {lang === 'en' ? 'Datasheet specs' : lang === 'ja' ? '物性データ比較' : '物性強度比較'}
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
-                    {lang === 'en' ? 'NewebPay Secured Gateway' : lang === 'ja' ? '安全決済ゲートウェイ' : '藍新安全金流'}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? 'Cards / Apple Pay / ATM' : lang === 'ja' ? '各種カード / Apple Pay / ATM' : '信用卡 / Apple Pay / ATM'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                  <Flame className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
-                    {lang === 'en' ? 'Bambu AMS 100% Ready' : lang === 'ja' ? 'Bambu AMS 完全対応' : 'Bambu AMS 完美相容'}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? 'Anti-binding spool geometry' : lang === 'ja' ? '噛み込み防止エコ設計' : '防卡線環保卷軸設計'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white dark:bg-slate-800 p-3.5 lg:p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0">
-                  <RotateCcw className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="font-bold text-xs text-slate-900 dark:text-slate-100">
-                    {lang === 'en' ? 'Moisture-Free Warranty' : lang === 'ja' ? '防湿品質保証' : '原廠防潮保固'}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? '100% Replacement if unsealed' : lang === 'ja' ? '未開封不良は100%無償交換' : '未拆封破損 100% 免費換新'}
-                  </div>
-                </div>
-              </div>
+              </button>
             </div>
 
             {/* Search Autocomplete & Filter Chips Bar */}
-            <div className="bg-white dark:bg-slate-800 p-3.5 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs space-y-3.5">
+            <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3.5">
               {/* Top Row: Search Autocomplete with Material and Brand suggestions + Sort */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div className="flex-1 max-w-2xl">
@@ -1985,7 +2001,7 @@ export default function App() {
                     searchQuery={searchQuery}
                     setSearchQuery={setSearchQuery}
                     products={products}
-                    placeholder={t.searchPlaceholderInput || (lang === 'en' ? 'Search filaments (PLA+, Carbon Fiber, PETG, TPU) or brand...' : lang === 'ja' ? 'フィラメント材質 (PLA+, カーボン, PETG, TPU) やブランドで検索...' : '搜尋耗材材質 (PLA+, 碳纖維, PETG, TPU) 或品牌 (Bambu, eSUN)...')}
+                    placeholder={t.searchPlaceholderInput || (lang === 'en' ? 'Search filament, brand or material (PLA+, PETG)...' : lang === 'ja' ? '材質 (PLA+, カーボン, PETG) やブランドを検索...' : '搜尋耗材材質、型號或品牌 (PLA+ / 碳纖維)...')}
                     onSelectProduct={handleOpenProductDetail}
                     onSelectMaterial={(m) => setSelectedMaterial(m)}
                   />
@@ -2003,7 +2019,7 @@ export default function App() {
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as any)}
-                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/20"
                     >
                       <option value="popular">{lang === 'en' ? 'Most Popular (Default)' : lang === 'ja' ? '人気順 (デフォルト)' : '熱銷排行 (預設)'}</option>
                       <option value="price_low">{lang === 'en' ? 'Price: Low to High' : lang === 'ja' ? '価格: 安い順' : '價格：由低至高'}</option>
@@ -2014,10 +2030,10 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Bottom Row: Category Material Filter Chips + Reset Filter */}
-              <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-700/80 flex-wrap lg:flex-nowrap">
-                <div className="flex items-center gap-1.5 overflow-x-auto lg:flex-wrap lg:overflow-visible pb-1 lg:pb-0 scrollbar-none w-full lg:w-auto">
-                  <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1 select-none">
+              {/* Bottom Row: Category Material Filter Chips + Reset Filter (Clean wrap, never squeezes chips or reset button on desktop) */}
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto sm:flex-wrap sm:overflow-visible pb-1 sm:pb-0 scrollbar-none flex-1 min-w-0">
+                  <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-0.5 select-none">
                     {lang === 'en' ? 'Material:' : lang === 'ja' ? '材質:' : '材質：'}
                   </span>
                   {materials.map((mat) => {
@@ -2028,30 +2044,27 @@ export default function App() {
                         key={mat}
                         id={`filter-material-${mat}`}
                         onClick={() => setSelectedMaterial(mat)}
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.94 }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                        className={`relative px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap select-none flex items-center gap-1.5 ${
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.96 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+                        className={`relative px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none flex items-center gap-1.5 ${
                           isSelected
-                            ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/20'
-                            : 'bg-slate-100 dark:bg-slate-900/70 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white border border-transparent dark:border-slate-700/60'
+                            ? 'text-white dark:text-slate-900 shadow-xs'
+                            : 'bg-slate-100/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200/80 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white border border-transparent dark:border-slate-700/60'
                         }`}
                       >
                         {isSelected && (
                           <motion.span
                             layoutId="activeMaterialIndicator"
-                            className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 -z-0"
+                            className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-white -z-0"
                             transition={{ type: 'spring', stiffness: 450, damping: 30 }}
                           />
                         )}
                         <span className="relative z-10 flex items-center gap-1.5">
-                          {isSelected && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-300" />
-                          )}
                           <span>{mat === 'All' ? t.allCategories : translateMaterial(mat, lang)}</span>
                           <span
                             className={`text-[10px] font-mono tabular-nums px-1 rounded-md transition-colors ${
-                              isSelected ? 'bg-white/25 text-white' : 'bg-slate-200 dark:bg-slate-700/80 text-slate-500 dark:text-slate-400'
+                              isSelected ? 'bg-white/20 dark:bg-slate-900/15 text-white dark:text-slate-900' : 'bg-slate-200/80 dark:bg-slate-700/80 text-slate-500 dark:text-slate-400'
                             }`}
                           >
                             {count}
@@ -2073,7 +2086,7 @@ export default function App() {
                       setSearchQuery('');
                       setSelectedMaterial('All');
                     }}
-                    className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-800/60 transition-colors cursor-pointer shrink-0 ml-auto whitespace-nowrap"
+                    className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-2.5 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800/60 transition-colors cursor-pointer shrink-0 self-end lg:self-start whitespace-nowrap"
                   >
                     {lang === 'en' ? 'Reset Filters ✕' : lang === 'ja' ? '条件をクリア ✕' : '重設所有篩選 ✕'}
                   </motion.button>
@@ -2182,7 +2195,6 @@ export default function App() {
             setProducts={setProducts}
             orders={orders}
             setOrders={setOrders}
-            subscriptions={subscriptions}
             analytics={analytics}
             lang={lang}
             currency={currency}
@@ -2247,7 +2259,7 @@ export default function App() {
       {/* Global Toast Notification - Top floating non-blocking layer (z-[110]) so it never occludes CartDrawer or bottom buttons */}
       <AnimatePresence>
         {toastMsg && (
-          <div className="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-[110] pointer-events-none w-[calc(100%-2rem)] max-w-sm flex justify-center">
+          <div className="fixed top-16 sm:top-20 lg:top-28 left-1/2 -translate-x-1/2 z-[110] pointer-events-none w-[calc(100%-2rem)] max-w-sm flex justify-center">
             <motion.div
               key={toastMsg.id}
               initial={{ opacity: 0, y: -20 }}
@@ -2360,33 +2372,6 @@ export default function App() {
         />
       )}
 
-      {isSubscriptionOpen && (
-        <SubscriptionModal
-          isOpen={isSubscriptionOpen}
-          onClose={() => setIsSubscriptionOpen(false)}
-          member={member}
-          setMember={setMember}
-          lang={lang}
-          currency={currency}
-        />
-      )}
-
-      {isLoyaltyOpen && (
-        <LoyaltyModal
-          isOpen={isLoyaltyOpen}
-          onClose={() => setIsLoyaltyOpen(false)}
-          member={member}
-          currency={currency}
-          lang={lang}
-          orders={currentCustomerOrders}
-          onOpenTrackingWithCode={(trackingCode) => {
-            setTrackingNumberInput(trackingCode);
-            setIsTrackingOpen(true);
-          }}
-          onLogout={handleLogout}
-        />
-      )}
-
       <CustomerSupportModal
         isOpen={isCustomerSupportOpen}
         onClose={() => {
@@ -2413,9 +2398,9 @@ export default function App() {
         />
       )}
 
-      {/* Persistent Sync & Status Toast Notification */}
+      {/* Persistent Sync & Status Toast Notification (Positioned clear of bottom-right floating chat widget) */}
       {toastNotification && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-sm w-full px-4 animate-fade-in pointer-events-none">
+        <div className="fixed bottom-24 lg:bottom-24 right-4 sm:right-6 z-50 max-w-sm w-full px-2 sm:px-4 animate-fade-in pointer-events-none">
           <div className="bg-slate-900/95 text-white backdrop-blur-md px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center justify-between gap-3 text-xs pointer-events-auto">
             <div className="flex items-center gap-2.5">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
@@ -2659,6 +2644,7 @@ export default function App() {
           </button>
         </nav>
       )}
+      <FlyToCartOverlay />
     </div>
   );
 }

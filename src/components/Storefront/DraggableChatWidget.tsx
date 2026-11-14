@@ -23,9 +23,10 @@ export const DraggableChatWidget: React.FC<DraggableChatWidgetProps> = ({
     } catch {
       // ignore
     }
-    // Default: bottom-right corner, comfortably above bottom nav bar
-    const defaultX = typeof window !== 'undefined' ? Math.max(16, window.innerWidth - 130) : 300;
-    const defaultY = typeof window !== 'undefined' ? Math.max(80, window.innerHeight - 150) : 550;
+    // Default: bottom-right corner — safely above bottom tab bar on mobile, and clean bottom-right corner on desktop
+    const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 1024;
+    const defaultX = typeof window !== 'undefined' ? Math.max(16, window.innerWidth - (isDesktop ? 156 : 130)) : 300;
+    const defaultY = typeof window !== 'undefined' ? Math.max(80, window.innerHeight - (isDesktop ? 84 : 150)) : 550;
     return { x: defaultX, y: defaultY };
   });
 

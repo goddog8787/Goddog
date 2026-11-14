@@ -33,7 +33,7 @@ interface ProductImageStudioModalProps {
   onApplyImage: (newImageUrl: string) => void;
 }
 
-type AspectRatioOption = 'standard_800' | '1:1' | '4:3' | '16:9' | 'free' | 'shopee_800';
+type AspectRatioOption = 'standard_800' | '1:1' | '4:3' | '16:9' | 'free';
 
 interface FilterAdjustments {
   brightness: number; // -50 to 50
@@ -96,7 +96,7 @@ const WATERMARK_OPTIONS = [
   { id: 'ams', label: 'Bambu AMS 相容' },
   { id: 'speed', label: '600mm/s 超高速認證' },
   { id: 'stock', label: '現貨直發 • 24H 出貨' },
-  { id: 'vacuum', label: '雙層鋁箔真空防潮' },
+  { id: 'vacuum', label: '加厚密封袋防潮包裝' },
 ];
 
 const QUICK_AI_PROMPTS = [
@@ -251,7 +251,7 @@ export const ProductImageStudioModal: React.FC<ProductImageStudioModalProps> = (
       let cropX = 0;
       let cropY = 0;
 
-      if (aspectRatio === 'standard_800' || aspectRatio === 'shopee_800' || aspectRatio === '1:1') {
+      if (aspectRatio === 'standard_800' || aspectRatio === '1:1') {
         const minSide = Math.min(sourceWidth, sourceHeight);
         cropWidth = minSide;
         cropHeight = minSide;
@@ -280,7 +280,7 @@ export const ProductImageStudioModal: React.FC<ProductImageStudioModalProps> = (
       }
 
       // Output size (Fixed 800x800 for square ecommerce standard)
-      const targetSize = (aspectRatio === 'standard_800' || aspectRatio === 'shopee_800' || aspectRatio === '1:1') ? 800 : 900;
+      const targetSize = (aspectRatio === 'standard_800' || aspectRatio === '1:1') ? 800 : 900;
       let outW = targetSize;
       let outH = targetSize;
 

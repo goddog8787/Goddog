@@ -118,7 +118,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
   const [shippingFamilyMart, setShippingFamilyMart] = useState(true);
   const [shippingBlackCat, setShippingBlackCat] = useState(true);
   const [leadTime, setLeadTime] = useState('24H 快速出貨 (現貨直發)');
-  const [packagingNote, setPackagingNote] = useState('真空鋁箔袋 + 變色乾燥劑 + 防撞外盒');
+  const [packagingNote, setPackagingNote] = useState('加厚密封袋 + 變色乾燥劑 + 防撞外盒');
   const [customShippingFee, setCustomShippingFee] = useState(0);
 
   // Description & Features
@@ -156,7 +156,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
       setShippingFamilyMart(product.shippingMethods ? product.shippingMethods.includes('familymart') : true);
       setShippingBlackCat(product.shippingMethods ? product.shippingMethods.includes('blackcat') : true);
       setLeadTime(product.leadTime || '24H 快速出貨 (現貨直發)');
-      setPackagingNote(product.packagingNote || '真空鋁箔袋 + 變色乾燥劑 + 防撞外盒');
+      setPackagingNote(product.packagingNote || '加厚密封袋 + 變色乾燥劑 + 防撞外盒');
       setCustomShippingFee(product.customShippingFee || 0);
 
       setDescription(product.description || '');
@@ -888,7 +888,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
                     type="text"
                     value={packagingNote}
                     onChange={(e) => setPackagingNote(e.target.value)}
-                    placeholder="真空鋁箔袋 + 變色乾燥劑 + 防撞外盒"
+                    placeholder="加厚密封袋 + 變色乾燥劑 + 防撞外盒"
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-medium"
                   />
                   <span className="text-[10px] text-slate-400 mt-1 block">

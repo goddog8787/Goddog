@@ -63,7 +63,6 @@ import {
 import { 
   FilamentProduct, 
   Order, 
-  SubscriptionPlan, 
   AnalyticsData, 
   LanguageCode, 
   CurrencyCode,
@@ -102,7 +101,6 @@ interface AdminDashboardProps {
   setProducts: React.Dispatch<React.SetStateAction<FilamentProduct[]>>;
   orders: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
-  subscriptions: SubscriptionPlan[];
   analytics: AnalyticsData;
   lang: LanguageCode;
   currency: CurrencyCode;
@@ -118,7 +116,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   setProducts,
   orders,
   setOrders,
-  subscriptions,
   analytics,
   lang,
   currency,
@@ -178,7 +175,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       enablePrepaidCVS: true,
       enableHomeDelivery: true,
       dispatchLeadTime: '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
-      packagingSpecs: '雙層鋁箔真空包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
+      packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
       newebpayLogisticsMerchantId: 'MS1843364339',
       newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ',

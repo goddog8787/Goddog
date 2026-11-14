@@ -1915,7 +1915,7 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
     } else if (isPriceOrDiscountInquiry) {
       dynamicReply = `商城目前優惠活動：\n1. 輸入折扣代碼【PRINTCORE10】結帳享 9 折\n2. 新會員註冊即贈 120 點紅利（結帳可直接折抵 NT$120）\n3. 全館消費滿 NT$999 即享超商與宅配免運費。`;
     } else if (isShippingInquiry) {
-      dynamicReply = `全館消費滿 NT$999 即享免運！工作日 15:00 前下單皆於 24 小時內快速出貨。每卷線材皆採用雙層鋁箔真空包裝並附變色防潮劑，確保到手即開即印。`;
+      dynamicReply = `全館消費滿 NT$999 即享免運！工作日 15:00 前下單皆於 24 小時內快速出貨。每卷線材皆採用加厚密封袋防潮包裝並附變色防潮劑，確保到手即開即印。`;
     } else if (/拉絲|牽絲|stringing/i.test(lower)) {
       dynamicReply = `3D 列印拉絲改善方案：\n1. 線材烘乾：受潮是拉絲主因，建議以 50°C 烘烤 4 小時。\n2. 降溫：將噴嘴溫度調降 5°C。\n3. 回抽最佳化：近端擠出機設定 0.8mm @ 35mm/s，遠端機型 4-5mm。\n4. 空跑加速：切片中將空跑速度提高至 350mm/s 以上。`;
     } else if (/翹邊|黏|脫落|第一層|warping/i.test(lower)) {
@@ -1957,146 +1957,6 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
       reply: '您好！我是神狗勾 3D 列印智能顧問。全館滿 NT$999 免運，如有任何 3D 列印材料選用、切片參數或常見故障排查問題，請隨時告訴我！',
       modelUsed: finalModelUsed,
       contextualMemoryActive: true,
-    });
-  }
-});
-
-// -------------------------------------------------------------
-// 1.8 垂直專欄電商高轉化文案生成 API
-// 嚴格遵循產出規範：
-// 1. 60字內 SEO 標題 (長度嚴格 <= 60 字，符合電商演算法與搜尋權重)
-// 2. 條列式特色與產品規格
-// 3. 買家須知
-// 4. 10 個專屬 #Hashtag
-// -------------------------------------------------------------
-app.post(['/api/ai/ecommerce-copy', '/api/ai/shopee-copy'], async (req, res) => {
-  try {
-    const { 
-      productName, 
-      material = 'PLA', 
-      features = '', 
-      targetAudience = '', 
-      promotion = '滿999免運',
-      apiKey: clientApiKey
-    } = req.body;
-
-    const effectiveApiKey = ((clientApiKey || '').trim() || runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-    const ai = getAIClient(effectiveApiKey);
-
-    // Default high-converting fallbacks if AI offline or key missing
-    const defaultSeoTitle = `【神狗勾 3D】${productName || '高速 PLA 3D列印耗材'} 1.75mm 雙層真空 拓竹AMS相容 免運現貨`.slice(0, 60);
-    const defaultSpecs = [
-      `• 線徑規格：標準 1.75mm (公差嚴格控制 ±0.02mm，進料極致滑順)`,
-      `• 淨重規格：淨重 1.0kg 整卷 (含盤約 1.18kg)`,
-      `• 適用材質：${material || '高韌性高速 PLA+'}，高剛性低收縮，層紋細緻無異味`,
-      `• 建議列印溫度：噴嘴 200°C - 230°C / 熱床 50°C - 60°C`,
-      `• 推薦列印速度：50 - 600 mm/s (完美支援拓竹 Bambu、K1C 等超高速旗艦機)`,
-      `• 多色相容性：全尺寸相容 Bambu Lab AMS & AMS Lite 多色供料系統`
-    ];
-    const defaultNotices = [
-      `1. 【台灣現貨直送】：平日 15:00 前下單當日安排出貨，全館滿 NT$999 即享超商與宅配免運費。`,
-      `2. 【工業級雙層防潮】：每卷皆採鋁箔夾鏈密封包裝並內附變色高活性乾燥劑，出廠到手即開即印。`,
-      `3. 【耗材保存指引】：拆封後若長期不使用，強烈建議存入神狗勾防潮密封箱或電子防潮箱保存。`,
-      `4. 【安心售後保證】：出貨享 7 天新品瑕疵無條件換貨，提供專屬工程師線上切片參數支援。`
-    ];
-    const defaultHashtags = [
-      '#3D列印耗材', '#拓竹AMS相容', '#高速PLA', '#PETG線材', '#神狗勾3D', 
-      '#台灣現貨', '#3D列印線材', '#創客必備', '#模型代印', '#3DPrinterFilament'
-    ];
-
-    if (!ai || !effectiveApiKey) {
-      return res.json({
-        success: true,
-        source: 'local_rules',
-        data: {
-          seoTitle: defaultSeoTitle,
-          specBulletPoints: defaultSpecs,
-          buyerNotice: defaultNotices,
-          hashtags: defaultHashtags,
-          fullFormattedDescription: `${defaultSeoTitle}\n\n【產品特色與規格】\n${defaultSpecs.join('\n')}\n\n【買家購買須知】\n${defaultNotices.join('\n')}\n\n${defaultHashtags.join(' ')}`
-        }
-      });
-    }
-
-    const shopeePrompt = `你是一位精通台灣主流電商通路的頂尖營運操盤手與 3D 列印耗材文案專家。
-請為以下商品撰寫完全合規、高轉化率的商品詳情文案：
-商品名稱：${productName || '神狗勾高速 3D 列印線材'}
-線材材質：${material}
-特色賣點：${features || '600mm/s 高速列印、AMS多色相容、雙層真空鋁箔、不卡料'}
-目標客群：${targetAudience || '3D 列印創客、代印工作室、公仔手辦愛好者'}
-促銷政策：${promotion}
-
-【非常嚴格的產出規範】：
-1. 電商 SEO 標題 (seoTitle)：字數嚴格限制在 60 個正體中文字元以內！包含品牌詞、材質、核心賣點與促銷，嚴禁超過 60 字。
-2. 條列式特色與規格 (specBulletPoints)：陣列格式，列出 5-6 點具體參數（線徑 1.75mm、淨重 1kg、噴嘴/熱床溫度、推薦速度、AMS 相容）。
-3. 買家須知 (buyerNotice)：陣列格式，列出 4 點（現貨出貨時效、雙層真空防潮、受潮烘烤提醒、售後換貨保證）。
-4. 10 個專屬 Hashtags (hashtags)：陣列格式，必須恰好 10 個最熱門的繁體中文標籤，每個皆以 # 開頭。
-
-請僅輸出合法的 JSON 物件，格式如下：
-{
-  "seoTitle": "60字以內的電商SEO標題",
-  "specBulletPoints": ["條列特色 1", "條列特色 2", "條列規格 3"],
-  "buyerNotice": ["須知 1", "須知 2", "須知 3", "須知 4"],
-  "hashtags": ["#標籤1", "#標籤2", "#標籤3", "#標籤4", "#標籤5", "#標籤6", "#標籤7", "#標籤8", "#標籤9", "#標籤10"]
-}`;
-
-    let parsed: any = null;
-    try {
-      const aiRes = await callWithTimeout(
-        ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: shopeePrompt,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.4,
-          },
-        }),
-        8000
-      );
-      if (aiRes?.text) {
-        parsed = JSON.parse(aiRes.text);
-      }
-    } catch (aiErr: any) {
-      console.warn('[Shopee Copy Generator] AI call notice, using local rule engine:', String(aiErr?.message || '').slice(0, 80));
-    }
-
-    if (parsed && parsed.seoTitle) {
-      const finalTitle = parsed.seoTitle.trim().slice(0, 60);
-      const specs = Array.isArray(parsed.specBulletPoints) ? parsed.specBulletPoints : defaultSpecs;
-      const notices = Array.isArray(parsed.buyerNotice) ? parsed.buyerNotice : defaultNotices;
-      const tags = Array.isArray(parsed.hashtags) && parsed.hashtags.length >= 8 ? parsed.hashtags.slice(0, 10) : defaultHashtags;
-
-      const fullFormatted = `${finalTitle}\n\n【神狗勾 3D 原廠規格與特點】\n${specs.join('\n')}\n\n【買家購買須知與售後保障】\n${notices.join('\n')}\n\n${tags.join(' ')}`;
-
-      return res.json({
-        success: true,
-        source: 'gemini-3.8-flash',
-        data: {
-          seoTitle: finalTitle,
-          specBulletPoints: specs,
-          buyerNotice: notices,
-          hashtags: tags,
-          fullFormattedDescription: fullFormatted
-        }
-      });
-    }
-
-    return res.json({
-      success: true,
-      source: 'local_rules',
-      data: {
-        seoTitle: defaultSeoTitle,
-        specBulletPoints: defaultSpecs,
-        buyerNotice: defaultNotices,
-        hashtags: defaultHashtags,
-        fullFormattedDescription: `${defaultSeoTitle}\n\n【產品特色與規格】\n${defaultSpecs.join('\n')}\n\n【買家購買須知】\n${defaultNotices.join('\n')}\n\n${defaultHashtags.join(' ')}`
-      }
-    });
-  } catch (err: any) {
-    console.warn('[Shopee Copy Generator] Error:', String(err?.message || '').slice(0, 80));
-    return res.status(500).json({
-      success: false,
-      error: '生成商品文案時伺服器發生異常',
     });
   }
 });
@@ -2506,7 +2366,7 @@ app.post('/api/ads/auto-launch', async (req, res) => {
           ? `航太級碳纖維加固，啞光質感耐磨抗衝擊。公差 ±0.02mm，支援工程打樣與精密機構件製作，真空乾燥盒出貨。`
           : isCart
           ? `您挑選的 3D 列印工程級耗材庫存告急！支援綠界、LINE Pay 一鍵秒結，加贈 100 創客積分。`
-          : `專為 Bambu Lab AMS 與高階高速機調校，公差 ±0.02mm 業界頂規。真空鋁箔雙重防潮，台灣現貨 24H 快速出貨！`,
+          : `專為 Bambu Lab AMS 與高階高速機調校，公差 ±0.02mm 業界頂規。加厚密封袋防潮包裝，台灣現貨 24H 快速出貨！`,
         headlines: [
           '高速 PLA+ 耗材｜現貨秒出',
           '公差 ±0.02mm 業界頂規',
@@ -2514,7 +2374,7 @@ app.post('/api/ads/auto-launch', async (req, res) => {
           '滿 NT$999 超商免運送到家'
         ],
         descriptions: [
-          '採用頂級聚乳酸原料，流動性大幅提升 300%，真空防潮鋁箔包裝附乾燥劑。',
+          '採用頂級聚乳酸原料，流動性大幅提升 300%，防潮密封袋包裝附乾燥劑。',
           '專業創客一致好評推薦！支援綠界科技信用卡分期與 LINE Pay 即時點數折抵。'
         ],
         targetKeywords: [
@@ -2636,252 +2496,7 @@ app.post('/api/ads/auto-optimize', (req, res) => {
 });
 
 // -------------------------------------------------------------
-const EXCHANGE_RATES: Record<string, { rate: number; symbol: string; decimals: number }> = {
-  TWD: { rate: 1.0, symbol: 'NT$', decimals: 0 },
-  USD: { rate: 0.0317, symbol: '$', decimals: 2 },
-  JPY: { rate: 4.68, symbol: '¥', decimals: 0 },
-  EUR: { rate: 0.0292, symbol: '€', decimals: 2 },
-};
-
-app.get('/api/currency/rates', (_req, res) => {
-  res.json({
-    success: true,
-    base: 'TWD',
-    timestamp: new Date().toISOString(),
-    rates: EXCHANGE_RATES,
-    note: '即時外匯牌價定期自國際央行金流資料庫同步更新',
-  });
-});
-
-app.post('/api/currency/convert', (req, res) => {
-  const { amount, from = 'TWD', to = 'USD' } = req.body;
-  const numAmount = Number(amount);
-
-  if (isNaN(numAmount) || numAmount < 0) {
-    return res.status(400).json({ success: false, error: '請輸入合法的金額數值' });
-  }
-
-  const fromConfig = EXCHANGE_RATES[from] || EXCHANGE_RATES.TWD;
-  const toConfig = EXCHANGE_RATES[to] || EXCHANGE_RATES.USD;
-
-  // Convert to TWD first, then to target currency
-  const amountInTwd = numAmount / fromConfig.rate;
-  const convertedRaw = amountInTwd * toConfig.rate;
-  
-  // Format based on currency decimal rules (JPY/TWD 0 decimals, USD/EUR 2 decimals)
-  const finalConverted = toConfig.decimals === 0 
-    ? Math.round(convertedRaw) 
-    : Number(convertedRaw.toFixed(toConfig.decimals));
-
-  res.json({
-    success: true,
-    original: { amount: numAmount, currency: from, symbol: fromConfig.symbol },
-    converted: {
-      amount: finalConverted,
-      currency: to,
-      symbol: toConfig.symbol,
-      formatted: `${toConfig.symbol} ${finalConverted.toLocaleString()}`
-    },
-    rateUsed: Number((toConfig.rate / fromConfig.rate).toFixed(6)),
-    timestamp: new Date().toISOString()
-  });
-});
-
-// -------------------------------------------------------------
-// 5. 綠界科技 (ECPay) 金流建立、SHA-256 壓碼運算與驗證 API
-// -------------------------------------------------------------
-// Official ECPay CheckMacValue algorithm:
-// 1. Sort parameters alphabetically
-// 2. Prepend HashKey & append HashIV
-// 3. URL encode & convert special chars
-// 4. To lowercase -> SHA256 -> To uppercase
-function generateECPayCheckMacValue(params: Record<string, any>, hashKey: string, hashIV: string): string {
-  const sortedKeys = Object.keys(params).filter(k => k !== 'CheckMacValue').sort();
-  let rawString = `HashKey=${hashKey}&` + sortedKeys.map(k => `${k}=${params[k]}`).join('&') + `&HashIV=${hashIV}`;
-  
-  // ECPay compliant URL encoding
-  let encoded = encodeURIComponent(rawString);
-  encoded = encoded
-    .replace(/%2d/g, '-')
-    .replace(/%5f/g, '_')
-    .replace(/%2e/g, '.')
-    .replace(/%21/g, '!')
-    .replace(/%2a/g, '*')
-    .replace(/%28/g, '(')
-    .replace(/%29/g, ')')
-    .replace(/%20/g, '+');
-
-  const lower = encoded.toLowerCase();
-  return crypto.createHash('sha256').update(lower).digest('hex').toUpperCase();
-}
-
-const ECPAY_CONFIG = {
-  MerchantID: '3002607', // 綠界測試特店編號
-  HashKey: 'pwFHCqoQZGmho4w6', // 測試 HashKey
-  HashIV: 'EkRm7iFT261dpevs', // 測試 HashIV
-  AioCheckoutUrl: 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5',
-};
-
-app.post('/api/payments/ecpay/checkout', (req, res) => {
-  const { orderId, amount, paymentMethod, itemName } = req.body;
-  const merchantTradeNo = `EC${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 1000)}`;
-  const tradeDate = new Date().toISOString().replace('T', ' ').slice(0, 19);
-
-  const choosePayment = paymentMethod === 'atm' ? 'ATM' : paymentMethod === 'cvs' ? 'CVS' : 'Credit';
-
-  const baseParams: Record<string, any> = {
-    MerchantID: ECPAY_CONFIG.MerchantID,
-    MerchantTradeNo: merchantTradeNo,
-    MerchantTradeDate: tradeDate,
-    PaymentType: 'aio',
-    TotalAmount: Math.round(Number(amount)),
-    TradeDesc: encodeURIComponent(`神狗勾 3D耗材 - ${itemName || '高品質耗材'}`),
-    ItemName: itemName || '神狗勾 3D 列印工程級耗材',
-    ReturnURL: 'https://payment.printcore3d.tw/api/payments/ecpay/notify',
-    ClientBackURL: 'https://payment.printcore3d.tw/store',
-    ChoosePayment: choosePayment,
-    EncryptType: 1,
-  };
-
-  if (choosePayment === 'Credit') {
-    baseParams.NeedExtraPaidInfo = 'Y';
-  } else if (choosePayment === 'ATM') {
-    baseParams.ExpireDate = 3; // 3 天內繳費
-  } else if (choosePayment === 'CVS') {
-    baseParams.StoreExpireDate = 10080; // 7 天
-  }
-
-  // Calculate real CheckMacValue
-  const checkMacValue = generateECPayCheckMacValue(baseParams, ECPAY_CONFIG.HashKey, ECPAY_CONFIG.HashIV);
-  baseParams.CheckMacValue = checkMacValue;
-
-  res.json({
-    success: true,
-    gateway: 'ECPay 綠界科技',
-    aioUrl: ECPAY_CONFIG.AioCheckoutUrl,
-    data: baseParams,
-    security: {
-      algorithm: 'SHA-256 (CheckMacValue)',
-      hashKeyMasked: `${ECPAY_CONFIG.HashKey.slice(0, 4)}****${ECPAY_CONFIG.HashKey.slice(-4)}`,
-      hashIVMasked: `${ECPAY_CONFIG.HashIV.slice(0, 4)}****${ECPAY_CONFIG.HashIV.slice(-4)}`,
-      checkMacValue,
-    },
-    message: '綠界金流授權請求已生成 (包含 SHA-256 CheckMacValue 壓碼校驗與 256-bit SSL 安全防護)'
-  });
-});
-
-// ECPay Webhook Notification Simulator
-app.post('/api/payments/ecpay/notify', (req, res) => {
-  const receivedData = req.body || {};
-  const clientMac = receivedData.CheckMacValue;
-  const calculatedMac = generateECPayCheckMacValue(receivedData, ECPAY_CONFIG.HashKey, ECPAY_CONFIG.HashIV);
-
-  const isVerified = clientMac === calculatedMac || true; // Always allow in sandbox mode
-  console.log(`[ECPay Notify] TradeNo: ${receivedData.MerchantTradeNo}, Verified: ${isVerified}`);
-
-  // ECPay expects 1|OK on successful acknowledgement
-  res.send('1|OK');
-});
-
-// -------------------------------------------------------------
-// 6. LINE Pay 金流建立、HMAC-SHA256 簽名與支付授權 API
-// -------------------------------------------------------------
-const LINE_PAY_CONFIG = {
-  ChannelId: '2001883921',
-  ChannelSecret: 'c891f74819d9b4892c2193e8a1f8e219',
-  ApiUrl: 'https://sandbox-api-pay.line.me/v3/payments/request',
-};
-
-function generateLinePaySignature(channelSecret: string, uri: string, requestBody: string, nonce: string): string {
-  const message = channelSecret + uri + requestBody + nonce;
-  return crypto.createHmac('sha256', channelSecret).update(message).digest('base64');
-}
-
-app.post('/api/payments/linepay/request', (req, res) => {
-  const { orderId, amount, linePointsUsed = 0, currency = 'TWD', itemName = '神狗勾 3D 列印耗材' } = req.body;
-  const transactionId = `LP${Date.now()}${Math.floor(Math.random() * 10000)}`;
-  const finalAmount = Math.max(0, amount - linePointsUsed);
-  const nonce = crypto.randomUUID();
-
-  const requestBody = JSON.stringify({
-    amount: finalAmount,
-    currency,
-    orderId: orderId || `ORD-${Date.now()}`,
-    packages: [
-      {
-        id: 'pkg-01',
-        amount: finalAmount,
-        name: '神狗勾 耗材訂單',
-        products: [
-          {
-            name: itemName,
-            quantity: 1,
-            price: finalAmount,
-          }
-        ]
-      }
-    ],
-    redirectUrls: {
-      confirmUrl: `https://payment.printcore3d.tw/api/payments/linepay/confirm?orderId=${orderId}&txnId=${transactionId}`,
-      cancelUrl: `https://payment.printcore3d.tw/cart?cancelled=true`,
-    },
-    options: {
-      extra: {
-        promotionRestriction: {
-          useLimit: linePointsUsed > 0 ? 1 : 0,
-        }
-      }
-    }
-  });
-
-  const uri = '/v3/payments/request';
-  const signature = generateLinePaySignature(LINE_PAY_CONFIG.ChannelSecret, uri, requestBody, nonce);
-
-  res.json({
-    success: true,
-    gateway: 'LINE Pay 行動支付 (V3 API)',
-    transactionId,
-    originalAmount: amount,
-    linePointsDeduction: linePointsUsed,
-    amountToPay: finalAmount,
-    currency,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-LINE-ChannelId': LINE_PAY_CONFIG.ChannelId,
-      'X-LINE-Authorization-Nonce': nonce,
-      'X-LINE-Authorization': signature,
-    },
-    paymentUrl: {
-      web: `https://sandbox-payment-api.line.me/payment-redirect/${transactionId}?orderId=${orderId}`,
-      app: `line://pay/payment/${transactionId}`,
-    },
-    qrCodeData: `linepay://payment/auth?orderId=${orderId}&txnId=${transactionId}&amount=${finalAmount}`,
-    message: 'LINE Pay V3 支付請求建立成功，已生成 HMAC-SHA256 驗證簽章與一鍵跳轉授權'
-  });
-});
-
-app.post('/api/payments/linepay/confirm', (req, res) => {
-  const { transactionId, amount } = req.body;
-  res.json({
-    success: true,
-    returnCode: '0000',
-    returnMessage: 'Success',
-    info: {
-      orderId: `ORD-CONFIRMED-${Date.now()}`,
-      transactionId: transactionId || `LP${Date.now()}`,
-      payInfo: [
-        {
-          method: 'BALANCE',
-          amount: amount || 520,
-        }
-      ]
-    },
-    message: 'LINE Pay 付款確認完成，款項已成功撥付'
-  });
-});
-
-// -------------------------------------------------------------
-// 7. 物流服務說明 (真實對接 NewebPay 物流 API)
+// 金流與物流服務 (統一對接藍新金流 NewebPay API)
 // -------------------------------------------------------------
 
 // -------------------------------------------------------------
@@ -4600,7 +4215,7 @@ function generateLogisticsTrackingInfo(params: {
     timeline.push({
       time: formatStepTime(3.5),
       title: '智慧倉儲理貨與防潮抽真空包裝',
-      desc: '耗材出庫品質檢驗無誤、充填高分子變色矽膠乾燥劑、雙層鋁箔防潮袋抽真空密封完成。',
+      desc: '耗材出庫品質檢驗無誤、充填高分子變色矽膠乾燥劑、加厚防潮密封袋封口完成。',
       location: '神狗勾 3D 台灣自動化耗材發貨倉',
       status: isProc ? 'current' : 'done'
     });

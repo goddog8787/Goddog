@@ -298,18 +298,6 @@ export interface SubscriptionRecord {
   paymentGateway: PaymentGateway;
 }
 
-export interface SubscriptionPlan {
-  id: string;
-  name: string;
-  badge?: string;
-  pricePerMonth: number;
-  spoolsCount: number;
-  frequency: '每月' | '雙月';
-  description: string;
-  perks: string[];
-  recommendedFor: string;
-}
-
 export interface MemberProfile {
   id: string;
   name: string;
@@ -490,7 +478,6 @@ export interface AdSenseConfig {
   showFooterBanner: boolean;
   showArticleAd?: boolean;
   showSidebarAd?: boolean;
-  showMobileStickyAd?: boolean;
   estimatedStats?: {
     dailyImpressions: number;
     dailyClicks: number;
@@ -558,16 +545,6 @@ export const SUPPORTED_AI_MODELS: AIModelOption[] = [
     minTier: 'FREE',
   },
 ];
-
-export interface EcommerceCopyResult {
-  seoTitle: string;
-  specBulletPoints: string[];
-  buyerNotice: string[];
-  hashtags: string[];
-  fullFormattedDescription: string;
-}
-
-export type ShopeeCopyResult = EcommerceCopyResult;
 
 export interface StoreCoupon {
   id: string;

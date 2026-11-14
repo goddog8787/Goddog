@@ -80,7 +80,6 @@ export const DEFAULT_ADSENSE_CONFIG: AdSenseConfig = {
   showFooterBanner: false,
   showArticleAd: true,
   showSidebarAd: false,
-  showMobileStickyAd: false,
 };
 
 // Safe isolated iframe renderer for Adsterra and HilltopAds script ad tags
@@ -385,11 +384,4 @@ export const FloatingSkyscraperAd: React.FC<{
       </div>
     </aside>
   );
-};
-
-// =============================================================================
-// MOBILE STICKY BOTTOM AD (Permanently disabled)
-// =============================================================================
-export const MobileStickyAd: React.FC = () => {
-  return null;
 };

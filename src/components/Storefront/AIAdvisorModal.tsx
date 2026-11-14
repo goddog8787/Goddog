@@ -26,6 +26,7 @@ import { FilamentProduct, ColorOption, LanguageCode } from '../../types';
 import { PRINTER_PROFILES, PRINTER_BRANDS, PrinterProfile, findPrinterProfile, getPrintersByBrand } from '../../data/printerProfiles';
 import { computeFilamentMatchByFunction } from '../../utils/filamentFunctionEngine';
 import { loadCustomerUserData, getStoredCustomerSession } from '../../lib/customerPersistence';
+import { triggerFlyToCart } from './FlyToCartOverlay';
 
 function extractValidNozzleSize(rawNozzle?: string): '0.4mm' | '0.2mm' | '0.6mm' | '0.8mm' {
   const s = String(rawNozzle || '');
@@ -279,7 +280,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                 ...(liveMatch.alerts.length > 0
                   ? liveMatch.alerts
                   : [`GodDog 1kg spools (±0.02mm laser tolerance) drop straight into ${currentPrinter.name} for smooth feeding.`]),
-                'Store opened spools in a dry box or resealable foil bag with desiccant when not in use.',
+                'Store opened spools in a dry box or resealable moisture-sealed bag with desiccant when not in use.',
               ]
             : lang === 'ja'
             ? [
@@ -1134,7 +1135,14 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                   <button
                     type="button"
                     id="ai-add-matched-to-cart-btn"
-                    onClick={() => {
+                    onClick={(e) => {
+                      triggerFlyToCart({
+                        sourceEl: e.currentTarget,
+                        imageUrl: finalMatchedProduct.imageUrl,
+                        material: finalMatchedProduct.material,
+                        productName: finalMatchedProduct.name,
+                        accentColor: finalMatchedProduct.colors?.[0]?.hex,
+                      });
                       onAddToCart(finalMatchedProduct, finalMatchedProduct.colors[0], finalMatchedProduct.diameter);
                       onClose();
                     }}

@@ -47,11 +47,23 @@ export function getMaterialFallbackImage(material?: string, name?: string): stri
   if (text.includes('petg') && (text.includes('esd') || text.includes('靜電'))) {
     return '/images/products/petg_esd.webp';
   }
+  if (text.includes('vacuum') || text.includes('真空') || text.includes('密封袋') || text.includes('乾燥劑')) {
+    return '/images/products/filament_vacuum_kit.jpg';
+  }
+  if (text.includes('ptfe') || text.includes('鐵氟龍') || text.includes('導料管') || text.includes('斜口剪')) {
+    return '/images/products/bambu_hotend_nozzle.png';
+  }
+  if (text.includes('petg-hf') || (text.includes('petg') && text.includes('hf'))) {
+    return '/images/products/petg_hf_spool.jpg';
+  }
   if (text.includes('petg')) {
     return '/images/products/petg_blue.webp';
   }
   if (text.includes('pc-abs') || (text.includes('pc') && text.includes('abs'))) {
     return '/images/products/pc_abs.webp';
+  }
+  if (text.includes('abs+')) {
+    return '/images/products/abs_plus_spool.jpg';
   }
   if (text.includes('abs')) {
     return '/images/products/abs_black.webp';
@@ -74,17 +86,26 @@ export function getMaterialFallbackImage(material?: string, name?: string): stri
   if (text.includes('peek') || text.includes('ultem')) {
     return '/images/products/peek_ultem.webp';
   }
+  if (text.includes('marble') || text.includes('大理石') || text.includes('石材')) {
+    return '/images/products/pla_marble_spool.jpg';
+  }
   if (text.includes('wood') || text.includes('木')) {
     return '/images/products/pla_wood.webp';
   }
   if (text.includes('glow') || text.includes('夜光')) {
     return '/images/products/pla_glow.webp';
   }
+  if (text.includes('tri-color') || text.includes('tricolor') || text.includes('三色')) {
+    return '/images/products/pla_tricolor_silk.jpg';
+  }
   if (text.includes('silk') || text.includes('絲綢')) {
     return '/images/products/pla_silk.webp';
   }
   if (text.includes('lw-pla') || text.includes('發泡') || text.includes('輕量')) {
     return '/images/products/lw_pla.webp';
+  }
+  if (text.includes('refill') || text.includes('補充包')) {
+    return '/images/products/refill_bambu.webp';
   }
   if (text.includes('dry') || text.includes('乾燥') || text.includes('烘乾')) {
     return '/images/products/dryer_box_s2.png';
@@ -184,6 +205,13 @@ if (typeof window !== 'undefined') {
     '/images/products/dryer_box_s2.png',
     '/images/products/bambu_pei_plate.png',
     '/images/products/bambu_hotend_nozzle.png',
+    '/images/products/abs_plus_spool.jpg',
+    '/images/products/pla_marble_spool.jpg',
+    '/images/products/pla_tricolor_silk.jpg',
+    '/images/products/petg_hf_spool.jpg',
+    '/images/products/filament_vacuum_kit.jpg',
+    '/images/products/refill_bambu.webp',
+    '/images/products/cardboard_spool.webp',
   ];
   setTimeout(() => {
     for (const src of CORE_PRODUCT_IMAGES) {

@@ -153,8 +153,8 @@ export const SEO: React.FC<SEOProps> = ({
     activeLang === 'en'
       ? 'High-precision ±0.02mm 3D printing filaments (PLA, PETG, ABS, ASA, TPU, PA-CF) verified for Bambu Lab AMS, Creality K1 & Prusa. Same-day dispatch & Free Shipping over NT$999.'
       : activeLang === 'ja'
-      ? 'Bambu Lab AMS・Creality K1対応の±0.02mm高精度3Dプリントフィラメント専門店（PLA, PETG, ABS, ASA, TPU, PA-CF）。アルミ真空防湿包装・NT$999以上で送料無料。'
-      : '專為 Bambu Lab 拓竹 AMS、Creality K1/K2/K3、Prusa 打造的高精度 ±0.02mm 3D列印耗材（PLA, PETG, ABS, ASA, TPU, PA-CF 碳纖維）。全館真空防潮包裝，滿 NT$999 超商免運當日出貨。';
+      ? 'Bambu Lab AMS・Creality K1対応の±0.02mm高精度3Dプリントフィラメント専門店（PLA, PETG, ABS, ASA, TPU, PA-CF）。防湿密封袋包装・NT$999以上で送料無料。'
+      : '專為 Bambu Lab 拓竹 AMS、Creality K1/K2/K3、Prusa 打造的高精度 ±0.02mm 3D列印耗材（PLA, PETG, ABS, ASA, TPU, PA-CF 碳纖維）。全館密封袋防潮包裝，滿 NT$999 超商免運當日出貨。';
 
   const productDesc = product
     ? `${product.name} — ${product.description || ''} 特色特點：${(product.features || []).join('、')}。台灣現貨 NT$${product.price}，支援 7-11/全家取貨滿 $999 免運。`.slice(

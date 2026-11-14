@@ -32,6 +32,7 @@ import {
 import { FilamentProduct, CurrencyCode, LanguageCode } from '../../types';
 import { formatPrice, translateProduct, translateMaterial, translations } from '../../utils/i18n';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { triggerFlyToCart } from './FlyToCartOverlay';
 
 interface ProductComparisonModalProps {
   isOpen: boolean;
@@ -366,7 +367,7 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
     setShowPickerInTable(false);
   };
 
-  const handleAdd = (p: FilamentProduct) => {
+  const handleAdd = (p: FilamentProduct, e?: React.MouseEvent<HTMLButtonElement>) => {
     const rawProduct = products.find((item) => item.id === p.id) || p;
     const defaultColor = rawProduct.colors?.find((c) => (c.stock ?? 0) > 0) || rawProduct.colors?.[0] || {
       name: '經典黑',
@@ -376,6 +377,13 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
     if ((rawProduct.stock ?? 0) <= 0 || (defaultColor.stock ?? rawProduct.stock ?? 0) <= 0) {
       return;
     }
+    triggerFlyToCart({
+      sourceEl: e?.currentTarget,
+      imageUrl: rawProduct.imageUrl,
+      material: rawProduct.material,
+      productName: rawProduct.name,
+      accentColor: defaultColor.hex,
+    });
     onAddToCart(rawProduct, defaultColor, rawProduct.diameter || '1.75mm', 1);
   };
 
@@ -1383,7 +1391,7 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                               <button
                                 type="button"
                                 disabled={(p.stock ?? 0) <= 0}
-                                onClick={() => handleAdd(p)}
+                                onClick={(e) => handleAdd(p, e)}
                                 className={`mt-2.5 w-full min-h-[36px] py-1.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-xs touch-manipulation ${
                                   (p.stock ?? 0) <= 0
                                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'

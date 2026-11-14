@@ -9,6 +9,7 @@ import {
 import { FilamentProduct, CurrencyCode, LanguageCode } from '../../types';
 import { formatPrice, translateProductName, translateMaterial } from '../../utils/i18n';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { triggerFlyToCart } from './FlyToCartOverlay';
 
 interface WishlistDrawerProps {
   isOpen: boolean;
@@ -139,7 +140,14 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                       </span>
 
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          triggerFlyToCart({
+                            sourceEl: e.currentTarget,
+                            imageUrl: p.imageUrl,
+                            material: p.material,
+                            productName: displayName,
+                            accentColor: p.colors?.[0]?.hex,
+                          });
                           onAddToCart(p);
                           onRemoveFromWishlist(p.id);
                         }}
@@ -160,7 +168,14 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
         {savedProducts.length > 0 && (
           <div className="px-4 py-3.5 sm:px-5 sm:py-4 pb-24 lg:pb-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 space-y-2 shrink-0">
             <button
-              onClick={() => {
+              onClick={(e) => {
+                triggerFlyToCart({
+                  sourceEl: e.currentTarget,
+                  imageUrl: savedProducts[0]?.imageUrl,
+                  material: savedProducts[0]?.material,
+                  productName: savedProducts[0]?.name,
+                  accentColor: savedProducts[0]?.colors?.[0]?.hex,
+                });
                 onAddAllToCart(savedProducts);
                 onClose();
               }}

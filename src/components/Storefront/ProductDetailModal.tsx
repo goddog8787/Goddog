@@ -27,6 +27,7 @@ import { subscribeToProductReviews } from '../../lib/reviewPersistence';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { triggerFlyToCart } from './FlyToCartOverlay';
 
 interface ProductDetailModalProps {
   product: FilamentProduct | null;
@@ -179,8 +180,15 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
     ? Number((liveReviews.reduce((acc, r) => acc + Number(r.rating || 5), 0) / liveReviews.length).toFixed(1))
     : displayProduct.rating;
 
-  const handleAdd = () => {
+  const handleAdd = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (isOutOfStock) return;
+    triggerFlyToCart({
+      sourceEl: e.currentTarget,
+      imageUrl: displayProduct.imageUrl || product.imageUrl,
+      material: product.material,
+      productName: displayProduct.name,
+      accentColor: selectedColor?.hex,
+    });
     onAddToCart(displayProduct, selectedColor, selectedDiameter, Math.min(colorStock, quantity));
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1500);

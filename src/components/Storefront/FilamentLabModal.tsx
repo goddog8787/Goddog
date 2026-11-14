@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { FilamentProduct, CurrencyCode, LanguageCode } from '../../types';
 import { formatPrice } from '../../utils/i18n';
+import { triggerFlyToCart } from './FlyToCartOverlay';
 
 interface FilamentLabModalProps {
   isOpen: boolean;
@@ -538,8 +539,15 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                       return (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(e) => {
                             if (onAddToCart) {
+                              triggerFlyToCart({
+                                sourceEl: e.currentTarget,
+                                imageUrl: matched.imageUrl,
+                                material: matched.material,
+                                productName: matched.name,
+                                accentColor: firstColor.hex,
+                              });
                               onAddToCart(matched, firstColor, matched.diameter || '1.75mm', 1);
                             } else if (onSelectProductToCart) {
                               onSelectProductToCart(matched);
@@ -910,8 +918,15 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                       return (
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={(e) => {
                             if (onAddToCart) {
+                              triggerFlyToCart({
+                                sourceEl: e.currentTarget,
+                                imageUrl: matched.imageUrl,
+                                material: matched.material,
+                                productName: matched.name,
+                                accentColor: firstColor.hex,
+                              });
                               onAddToCart(matched, firstColor, matched.diameter || '1.75mm', 1);
                             } else if (onSelectProductToCart) {
                               onSelectProductToCart(matched);

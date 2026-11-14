@@ -34,16 +34,16 @@ import {
   Clock
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { LanguageCode, CurrencyCode, MemberProfile, FilamentProduct, StoreAnnouncementConfig } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
 import { SearchAutocomplete } from './Storefront/SearchAutocomplete';
+import { FLY_TO_CART_LANDED_EVENT } from './Storefront/FlyToCartOverlay';
 
 interface NavbarProps {
   announcement?: StoreAnnouncementConfig;
   isDarkMode?: boolean;
   toggleDarkMode?: () => void;
-  currentTab?: 'store' | 'subscription' | 'ai-advisor' | 'logistics' | 'member' | 'admin';
-  setCurrentTab?: (tab: 'store' | 'subscription' | 'ai-advisor' | 'logistics' | 'member' | 'admin') => void;
   activeTab?: 'store' | 'admin';
   setActiveTab?: (tab: 'store' | 'admin') => void;
   lang: LanguageCode;
@@ -56,8 +56,6 @@ interface NavbarProps {
   onOpenAIAdvisor?: () => void;
   onOpenSupport?: () => void;
   onOpenTracking?: () => void;
-  onOpenLoyalty?: () => void;
-  onOpenSubscription?: () => void;
   onOpenAuth?: () => void;
   onOpenFilamentLab?: () => void;
   onOpenCompare?: () => void;
@@ -78,8 +76,6 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({
   announcement,
-  currentTab,
-  setCurrentTab,
   activeTab,
   setActiveTab,
   lang,
@@ -92,8 +88,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAIAdvisor,
   onOpenSupport,
   onOpenTracking,
-  onOpenLoyalty,
-  onOpenSubscription,
   onOpenAuth,
   onOpenFilamentLab,
   onOpenCompare,
@@ -120,30 +114,51 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
+      const y = window.scrollY;
+      setIsScrolled((prev) => (y > 36 ? true : y < 12 ? false : prev));
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const [isCartPulsing, setIsCartPulsing] = useState(false);
+
+  useEffect(() => {
+    let pulseTimer: number | undefined;
+    const handleLanded = () => {
+      setIsCartPulsing(true);
+      if (pulseTimer) window.clearTimeout(pulseTimer);
+      pulseTimer = window.setTimeout(() => setIsCartPulsing(false), 320);
+    };
+    window.addEventListener(FLY_TO_CART_LANDED_EVENT, handleLanded);
+    return () => {
+      window.removeEventListener(FLY_TO_CART_LANDED_EVENT, handleLanded);
+      if (pulseTimer) window.clearTimeout(pulseTimer);
+    };
+  }, []);
+
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const effectiveCartOpen = onOpenCart || openCart || (() => {});
-  const effectiveMemberOpen = onOpenLoyalty || openMemberModal || (() => {});
-  const effectiveActiveTab = activeTab || currentTab || 'store';
+  const effectiveMemberOpen =
+    openMemberModal ||
+    (() => {
+      setActiveTab?.('store');
+      navigate('/profile');
+    });
+  const effectiveActiveTab = activeTab || 'store';
   const isOwnerAdmin = Boolean(
     isLoggedIn &&
     member?.email &&
     member.email.trim().toLowerCase() === 'babe0615@gmail.com'
   );
 
-  const location = useLocation();
-  const navigate = useNavigate();
-
   const handleNavClick = (id: string) => {
     if (id === 'store') {
       if (location.pathname !== '/') navigate('/');
       setActiveTab?.('store');
-      setCurrentTab?.('store');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (id === 'blog') {
       navigate('/blog');
@@ -158,15 +173,12 @@ export const Navbar: React.FC<NavbarProps> = ({
     } else if (id === 'admin') {
       if (!isOwnerAdmin) return;
       setActiveTab?.('admin');
-      setCurrentTab?.('admin');
     } else if (id === 'subscription') {
       navigate('/subscription');
     } else if (id === 'ai-advisor') {
-      if (onOpenAIAdvisor) onOpenAIAdvisor();
-      else setCurrentTab?.('ai-advisor');
+      onOpenAIAdvisor?.();
     } else if (id === 'logistics') {
-      if (onOpenTracking) onOpenTracking();
-      else setCurrentTab?.('logistics');
+      onOpenTracking?.();
     } else if (id === 'member') {
       effectiveMemberOpen();
     }
@@ -189,15 +201,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className={`sticky top-0 z-40 transition-colors duration-300 ${
-      isScrolled 
-        ? 'bg-white/98 dark:bg-slate-900/98 backdrop-blur-md shadow-md shadow-slate-900/5 border-b border-slate-200/80 dark:border-slate-800' 
-        : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800'
-    }`}>
-      {/* Top Announcement Bar - Collapses smoothly on mobile when scrolled to let the main nav row pop right to the top */}
-      <div className={`bg-slate-900 text-white text-xs font-medium flex items-center transition-all duration-300 relative overflow-hidden ${
-        isScrolled ? 'max-h-0 py-0 opacity-0 sm:max-h-9 sm:py-1.5 sm:opacity-100' : 'max-h-12 py-1.5 opacity-100'
-      }`}>
+    <>
+      {/* Top Announcement Bar - Lives naturally above the sticky header so it scrolls away cleanly without height-transition feedback jitter */}
+      <div className="bg-slate-900 text-white text-xs font-medium flex items-center py-1.5 relative overflow-hidden border-b border-slate-800/80">
         
         {/* Full-width Marquee Container - Continuous edge-to-edge flow on all screens */}
         <div className="flex-1 w-full overflow-hidden flex items-center relative h-full">
@@ -369,9 +375,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      {/* Main Header Bar - Proportioned and mobile-optimized */}
+      <header className={`sticky top-0 z-40 transition-[background-color,box-shadow,border-color] duration-200 ${
+        isScrolled 
+          ? 'bg-white/98 dark:bg-slate-900/98 backdrop-blur-md shadow-md shadow-slate-900/5 border-b border-slate-200/80 dark:border-slate-800' 
+          : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800'
+      }`}>
+      {/* Main Header Bar - Proportioned for Mobile & Spacious Desktop (No crowded inline nav squeezing search) */}
       <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16 gap-1.5 sm:gap-3">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
           {/* Brand Logo */}
           <div 
             className="flex items-center gap-2 sm:gap-2.5 cursor-pointer min-w-0 flex-1 lg:flex-initial shrink-0" 
@@ -404,43 +415,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1 shrink-0">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive =
-                (item.id === 'store' && location.pathname === '/' && effectiveActiveTab === 'store') ||
-                (item.id === 'blog' && location.pathname.startsWith('/blog')) ||
-                (item.id === 'guide' && location.pathname === '/guide') ||
-                (item.id === 'faq' && location.pathname === '/faq') ||
-                (item.id === 'about' && location.pathname === '/about');
-              return (
-                <button
-                  key={item.id}
-                  id={`nav-tab-${item.id}`}
-                  onClick={() => {
-                    if (item.id === 'filament-lab') {
-                      onOpenFilamentLab?.();
-                    } else {
-                      handleNavClick(item.id);
-                    }
-                  }}
-                  className={`relative flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    isActive
-                      ? 'bg-slate-900 dark:bg-sky-500 text-white shadow-xs'
-                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-sky-400 dark:text-white' : 'text-slate-400 dark:text-slate-400'}`} />
-                  <span className="whitespace-nowrap">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Desktop Header Search Autocomplete (Visible from lg 1024px+ so desktop users always have header search) */}
+          {/* Spacious Desktop Header Search Autocomplete (Centered with ample room, never squeezed) */}
           {setSearchQuery && (
-            <div className="hidden lg:block flex-1 max-w-[210px] xl:max-w-xs 2xl:max-w-sm mx-1 xl:mx-2 shrink min-w-[160px]">
+            <div className="hidden lg:block flex-1 max-w-md xl:max-w-lg mx-2 xl:mx-6 min-w-[240px]">
               <SearchAutocomplete
                 id="header-nav-search"
                 searchQuery={searchQuery || ''}
@@ -569,7 +546,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 id="btn-member-profile"
                 onClick={effectiveMemberOpen}
                 className="hidden md:flex items-center gap-1.5 h-9 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/80 px-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                title={lang === 'en' ? 'View Perks & Points' : lang === 'ja' ? '会員ランク・ポイント確認' : '查看會員等級與積分明細'}
+                title={lang === 'en' ? 'Member Center' : lang === 'ja' ? 'マイページへ' : '前往會員中心'}
               >
                 <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                 <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded font-bold leading-none">
@@ -591,19 +568,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                 </svg>
                 <span>{t.login || "登入"}</span>
-              </button>
-            )}
-
-            {/* AI Technical Advisor / Chat Button (Desktop Single Clean Action) */}
-            {onOpenSupport && (
-              <button
-                id="btn-nav-ai-chat"
-                onClick={onOpenSupport}
-                className="hidden lg:flex items-center gap-1.5 h-9 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                title={t.supportTitle || "開啟 AI 智能客服與 3D 技術排查視窗"}
-              >
-                <Bot className="w-4 h-4 text-sky-200 shrink-0" />
-                <span>{t.aiSupport || 'AI 客服'}</span>
               </button>
             )}
 
@@ -669,21 +633,35 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
 
             {/* Shopping Cart Button */}
-            <button
+            <motion.button
               id="btn-open-cart"
               onClick={effectiveCartOpen}
+              animate={isCartPulsing ? { scale: [1, 1.13, 0.96, 1] } : { scale: 1 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
               className="relative flex items-center justify-center w-9 h-9 sm:w-[90px] sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 dark:bg-sky-500 text-white hover:bg-slate-800 dark:hover:bg-sky-400 transition-colors duration-200 shadow-xs cursor-pointer shrink-0 overflow-visible"
               aria-label={t.cart || "購物車"}
               title={t.cart || "購物車"}
             >
-              <ShoppingCart className="w-4 h-4 text-white shrink-0" />
+              <motion.span
+                animate={isCartPulsing ? { rotate: [0, -12, 8, 0] } : { rotate: 0 }}
+                transition={{ duration: 0.3 }}
+                className="inline-flex items-center justify-center shrink-0"
+              >
+                <ShoppingCart className="w-4 h-4 text-white shrink-0" />
+              </motion.span>
               <span className="text-xs font-bold hidden sm:inline ml-1.5 whitespace-nowrap">{t.cart || "購物車"}</span>
               {cartCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums leading-none">
+                <motion.span
+                  key={cartCount}
+                  initial={{ scale: 0.78 }}
+                  animate={{ scale: isCartPulsing ? 1.18 : 1 }}
+                  transition={{ type: 'spring', stiffness: 460, damping: 20 }}
+                  className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums leading-none"
+                >
                   {cartCount > 99 ? '99+' : cartCount}
-                </span>
+                </motion.span>
               )}
-            </button>
+            </motion.button>
 
             {/* Mobile Menu Toggle (三條橫線 - Always visible & prominent on the far right) */}
             <button
@@ -703,6 +681,79 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Menu className="w-4.5 h-4.5" />
               )}
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop Sub-Navigation Bar (lg: 1024px+): Zero crowding, ample breathing room for all nav tabs and AI/Logistics quick actions */}
+      <div className="hidden lg:block border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-900/70">
+        <div className="max-w-7xl mx-auto px-6 lg:px-8 h-11 flex items-center justify-between gap-4">
+          <nav className="flex items-center gap-1 xl:gap-1.5 shrink-0">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                (item.id === 'store' && location.pathname === '/' && effectiveActiveTab === 'store') ||
+                (item.id === 'blog' && location.pathname.startsWith('/blog')) ||
+                (item.id === 'guide' && location.pathname === '/guide') ||
+                (item.id === 'faq' && location.pathname === '/faq') ||
+                (item.id === 'about' && location.pathname === '/about');
+              return (
+                <button
+                  key={item.id}
+                  id={`nav-tab-${item.id}`}
+                  onClick={() => {
+                    if (item.id === 'filament-lab') {
+                      onOpenFilamentLab?.();
+                    } else {
+                      handleNavClick(item.id);
+                    }
+                  }}
+                  className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    isActive
+                      ? 'bg-slate-900 dark:bg-sky-500 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-sky-400 dark:text-white' : 'text-slate-400 dark:text-slate-400'}`} />
+                  <span className="whitespace-nowrap">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Desktop Right Utility Links (Spaciously separated from main action cluster) */}
+          <div className="flex items-center gap-2 shrink-0">
+            {onOpenTracking && (
+              <button
+                id="btn-nav-tracking"
+                onClick={onOpenTracking}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Truck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span>{lang === 'en' ? 'Track Order' : lang === 'ja' ? '配送追跡' : '物流追蹤'}</span>
+              </button>
+            )}
+            {onOpenAIAdvisor && (
+              <button
+                id="btn-nav-ai-advisor"
+                onClick={onOpenAIAdvisor}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/90 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 border border-indigo-200/70 dark:border-indigo-800 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span>{lang === 'en' ? 'Printer Match' : lang === 'ja' ? '機種別選材' : '依機型選材'}</span>
+              </button>
+            )}
+            {onOpenSupport && (
+              <button
+                id="btn-nav-ai-chat"
+                onClick={onOpenSupport}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                title={t.supportTitle || "開啟 AI 智能客服與 3D 技術排查視窗"}
+              >
+                <Bot className="w-3.5 h-3.5 text-sky-200 shrink-0" />
+                <span>{t.aiSupport || 'AI 客服'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1033,6 +1084,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
       )}
-    </header>
+      </header>
+    </>
   );
 };

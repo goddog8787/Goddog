@@ -65,9 +65,9 @@ const PHRASE_MAP: Record<string, TransEntry> = {
     en: ' 3D Filaments & Slicing Solutions',
     ja: ' 3Dフィラメント＆AI素材選定',
   },
-  '全館通過 ±0.02mm 光學線徑檢驗與鋁箔真空防潮包裝。支援藍新安全金流與超商取貨，滿 NT$999 享免運優惠。': {
-    en: 'All spools pass ±0.02mm laser inspection with vacuum foil packaging. Supports NewebPay checkout and Free Shipping over NT$999.',
-    ja: '全製品±0.02mm光学線径検査クリア＆アルミ真空防湿パック採用。安全決済対応・NT$999以上で送料無料。',
+  '全館通過 ±0.02mm 光學線徑檢驗與密封袋防潮包裝。支援藍新安全金流與超商取貨，滿 NT$999 享免運優惠。': {
+    en: 'All spools pass ±0.02mm laser inspection with moisture-sealed bag packaging. Supports NewebPay checkout and Free Shipping over NT$999.',
+    ja: '全製品±0.02mm光学線径検査クリア＆防湿密封袋パック採用。安全決済対応・NT$999以上で送料無料。',
   },
   'AI 耗材智能配對': { en: 'AI Filament Advisor', ja: 'AI フィラメント診断' },
   '選購全部耗材 ↓': { en: 'Browse Catalog ↓', ja: '全商品を見る ↓' },
@@ -304,9 +304,9 @@ const PHRASE_MAP: Record<string, TransEntry> = {
     en: 'Order before 15:00 on weekdays for same-day local warehouse dispatch',
     ja: '平日15:00までのご注文で当日スピード発送',
   },
-  '鋁箔真空防潮包裝，拆封前受潮無條件免費換新': {
-    en: 'Vacuum foil barrier packaging — free replacement if moisture-compromised',
-    ja: 'アルミ真空防湿包装・未開封時の吸湿は無償交換保証',
+  '密封袋防潮包裝，拆封前受潮無條件免費換新': {
+    en: 'Moisture-sealed bag packaging — free replacement if moisture-compromised',
+    ja: '防湿密封袋包装・未開封時の吸湿は無償交換保証',
   },
   '藍新金流 NewebPay 256-bit SSL 安全加密結帳': {
     en: 'NewebPay 256-bit SSL encrypted secure payment gateway',

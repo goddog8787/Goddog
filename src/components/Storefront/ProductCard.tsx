@@ -7,6 +7,7 @@ import { WriteReviewModal } from './WriteReviewModal';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
+import { triggerFlyToCart } from './FlyToCartOverlay';
 
 interface ProductCardProps {
   product: FilamentProduct;
@@ -49,6 +50,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const [selectedDiameter] = useState<'1.75mm' | '2.85mm'>(liveProduct.diameter);
   const [isAddedAnimation, setIsAddedAnimation] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const sheetThumbRef = React.useRef<HTMLImageElement>(null);
 
   // 清理品牌顯示：完整且精煉的品牌名稱，絕不出現「...」截斷
   const cleanBrand = useMemo(() => {
@@ -111,8 +113,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setIsColorSheetOpen(true);
   };
 
-  const handleConfirmAddFromSheet = (e: React.MouseEvent) => {
+  const handleConfirmAddFromSheet = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    triggerFlyToCart({
+      sourceEl: sheetThumbRef.current || e.currentTarget,
+      imageUrl: activeImageUrl,
+      material: product.material,
+      productName: cleanTitle,
+      accentColor: pickedColor?.hex,
+    });
     saveCustomerRecentlyViewed(auth.currentUser?.uid, liveProduct).catch(() => {});
     onAddToCart(liveProduct, pickedColor, selectedDiameter, pickedQty);
     setIsColorSheetOpen(false);
@@ -142,9 +151,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     >
       {/* 純淨無遮擋商品圖片區（1:1 比例完整呈現線盤與盒裝，不裁切上下資訊） */}
       <div className="relative aspect-square w-full bg-slate-50 dark:bg-slate-800/40 overflow-hidden flex items-center justify-center cursor-pointer">
-        {/* 右上角懸浮小巧功能鈕（查看詳情、比較、收藏） */}
+        {/* 右上角懸浮小巧功能鈕（手機版保留對比與收藏保持圖面乾淨，桌機版懸停顯示快覽） */}
         <div
-          className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1 lg:opacity-85 lg:group-hover:opacity-100 transition-opacity"
+          className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 z-10 flex items-center gap-1 lg:opacity-85 lg:group-hover:opacity-100 transition-opacity"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -153,7 +162,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               e.stopPropagation();
               onViewDetail(liveProduct);
             }}
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
+            className="hidden sm:flex w-8 h-8 rounded-full items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
             title={lang === 'en' ? 'Quick View' : lang === 'ja' ? '詳細を見る' : '查看詳情'}
           >
             <Eye className="w-3.5 h-3.5" />
@@ -259,10 +268,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </h3>
         </div>
 
-        {/* 第 4 列：價格與快速加入購物車（固定按鈕寬度，防止動畫改變文字長度而推擠旁邊價格） */}
-        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-1.5 mt-auto">
-          <div className="flex items-baseline gap-1 min-w-0 flex-wrap">
-            <span className="text-sm sm:text-base lg:text-lg font-extrabold text-slate-900 dark:text-white font-mono tracking-tight tabular-nums">
+        {/* 第 4 列：價格與快速加入購物車（固定按鈕與價格不折行，確保桌機 4 欄排版下互不擠壓） */}
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 mt-auto">
+          <div className="flex items-baseline gap-1 min-w-0 shrink-0 whitespace-nowrap">
+            <span className="text-sm sm:text-base lg:text-lg font-extrabold text-slate-900 dark:text-white font-mono tracking-tight tabular-nums whitespace-nowrap">
               {formatPrice(liveProduct.price, currency)}
             </span>
           </div>
@@ -325,6 +334,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 <div className="flex items-center gap-3 min-w-0">
                   {activeImageUrl ? (
                     <img
+                      ref={sheetThumbRef}
                       src={activeImageUrl}
                       alt={cleanTitle}
                       className="w-14 h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-50"

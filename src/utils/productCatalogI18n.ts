@@ -253,7 +253,7 @@ export const PRODUCT_CATALOG_I18N: Record<string, { en: ProductTranslationOverri
         'Supports up to 500mm/s high-speed printing without clogging',
         'High-mobility formula ensures rock-solid first-layer adhesion',
         'Rigid eco cardboard spool compatible with Bambu AMS',
-        'Laser-checked ±0.02mm diameter tolerance in vacuum foil pack'
+        'Laser-checked ±0.02mm diameter tolerance in moisture-sealed bag'
       ]
     },
     ja: {
@@ -266,7 +266,7 @@ export const PRODUCT_CATALOG_I18N: Record<string, { en: ProductTranslationOverri
         '最高500mm/sの高速プリントでもノズル詰まりや吐出不足なし',
         '高流動性フォーミュラで第1層の定着が安定し反りを防止',
         '高剛性エコ紙スプール採用でBambu AMS 4色システムに対応',
-        'レーザー測定公差±0.02mm、アルミ真空防湿パッケージ封入'
+        'レーザー測定公差±0.02mm、防湿密封袋パッケージ封入'
       ]
     }
   },
@@ -1145,6 +1145,364 @@ export const PRODUCT_CATALOG_I18N: Record<string, { en: ProductTranslationOverri
         '精密造形用0.4mmと大流量複合材用0.6mmの2種類を同梱'
       ]
     }
+  },
+  'fil-28': {
+    en: {
+      name: 'eSUN ABS+ High-Toughness Low-Warp Engineering Filament (1kg)',
+      brand: 'eSUN',
+      badge: 'Low-Warp Tough ABS+',
+      spoolType: 'High-Temp Reusable Spool',
+      description: 'Modified high-toughness ABS+ formulated to cut shrinkage and odor versus standard ABS. Delivers 35% higher impact strength and 90°C heat resistance for functional housings and mechanical brackets.',
+      features: [
+        'Low-odor modified formula reduces indoor printing fumes',
+        'Reduced thermal shrinkage minimizes warping & layer splitting',
+        '90°C heat deflection; supports acetone vapor smoothing',
+        '±0.02mm laser-calibrated diameter; enclosed printer recommended'
+      ]
+    },
+    ja: {
+      name: 'eSUN ABS+ 高靭性・低反り・低臭気エンジニアリング線材 (1kg)',
+      brand: 'eSUN',
+      badge: '低反り・高靭性ABS+',
+      spoolType: '耐熱リユーススプール',
+      description: '従来のABSより収縮反りと臭気を大幅に低減した改質ABS+。耐衝撃強度35%向上、耐熱90°Cを実現し、機能部品やメカニカル筐体に最適です。',
+      features: [
+        '低揮発・低臭気改質処方で室内プリントの不快感を軽減',
+        '低収縮と層間密着強化により大型モデルでも層間剥離しにくい',
+        '耐熱約90°C、アセトン蒸気による表面鏡面仕上げに対応',
+        'レーザー計測±0.02mm精度、密閉型チャンバープリンター推奨'
+      ]
+    }
+  },
+  'fil-29': {
+    en: {
+      name: 'Bambu Lab PLA Basic Spool-less Refill Pack 1.75mm (with RFID)',
+      brand: 'Bambu Lab',
+      badge: 'Eco Spool-less Refill',
+      spoolType: 'Spool-less Refill Pack',
+      description: 'Genuine Bambu Lab PLA Basic spool-less refill pack with factory RFID tag. Snaps onto reusable Bambu spools in 10 seconds to cut plastic waste and save on high-volume color printing.',
+      features: [
+        'Embedded Bambu RFID chip auto-loads color and print profiles in AMS',
+        'Drops straight onto Bambu Reusable Spools in 10 seconds',
+        'Supports up to 500mm/s high-speed printing with rich satin colors',
+        'Reduces spool waste while keeping costs lower for heavy makers'
+      ]
+    },
+    ja: {
+      name: 'Bambu Lab PLA Basic リフィル補充パック 1.75mm (RFID付)',
+      brand: 'Bambu Lab',
+      badge: 'エコ詰替えパック',
+      spoolType: 'リフィル補充用パック',
+      description: 'Bambu Lab純正PLA Basicのスプールレス詰替えパック（純正RFIDチップ付）。再利用可能スプールに10秒で装着でき、プラスチック廃棄物とコストを同時に削減します。',
+      features: [
+        '純正RFIDタグ内蔵によりAMS装着時にカラーと造形設定を自動認識',
+        'Bambu純正再利用スプールへ10秒で簡単にセット可能',
+        '最高500mm/s高速プリント対応、発色が鮮やかで靭性も優秀',
+        '空スプール廃棄を減らし、多色大量造形ユーザーに最も経済的'
+      ]
+    }
+  },
+  'fil-30': {
+    en: {
+      name: 'GodDog Eco Cardboard Spool Hyper PLA+ 1.75mm (600mm/s)',
+      brand: 'GodDog',
+      badge: 'Sealed Rim Cardboard Spool',
+      spoolType: 'Eco Cardboard Spool',
+      description: 'Reinforced dust-sealed rim cardboard spool loaded with GodDog 600mm/s Hyper PLA+. Runs smoothly in AMS rollers without paper dust while offering unbeatable daily value.',
+      features: [
+        'Hardened sealed-rim cardboard spool prevents paper dust in AMS',
+        '600mm/s high-melt-flow formula prints sharp corners without gaps',
+        'Toughened PLA+ blend resists snapping during long storage',
+        'Taiwan ready stock packed in moisture-barrier sealed bags'
+      ]
+    },
+    ja: {
+      name: 'GodDog 環境配慮紙スプール 高速 Hyper PLA+ 1.75mm',
+      brand: 'GodDog',
+      badge: '紙粉防止エッジ・AMS対応',
+      spoolType: '環境配慮型 紙スプール',
+      description: 'エッジ硬化コーティングを施した紙スプール採用の600mm/s高速Hyper PLA+。AMSローラー上で紙粉が出ず滑らかに回転し、毎日の造形に最適な高コスパを実現。',
+      features: [
+        '硬化エッジ処理済み紙スプールで紙屑が出ずAMSにそのまま対応',
+        '600mm/s高流動配合により高速コーナー造形でも欠け・糸引きゼロ',
+        '耐衝撃改質PLA+により保管中の脆性破断を防止',
+        '防湿密封袋パックで工場出荷状態を維持したままお届け'
+      ]
+    }
+  },
+  'fil-31': {
+    en: {
+      name: 'Polymaker PolyTerra PLA Marble Stone Matte Filament 1.75mm',
+      brand: 'Polymaker',
+      badge: 'Stone Finish Zero Layer Lines',
+      spoolType: 'Eco Cardboard Spool',
+      description: 'Infused with fine natural mineral speckles to replicate authentic Carrara marble texture. Ultra-matte surface hides layer lines completely for architectural models and sculpture art.',
+      features: [
+        'Uniform mineral speckles flow smoothly through standard 0.4mm nozzles',
+        'Ultra-matte stone-like surface renders sculptures seamless',
+        'Signature PolyTerra easy-snap supports leave clean overhangs',
+        '100% recycled cardboard spool supporting global reforestation'
+      ]
+    },
+    ja: {
+      name: 'Polymaker PolyTerra PLA 大理石ストーンマット線材 1.75mm',
+      brand: 'Polymaker',
+      badge: '天然石風質感・積層痕ゼロ',
+      spoolType: '環境配慮型 紙スプール',
+      description: '厳選天然ミネラル粒子を配合し、本物のカラーラ大理石のような斑点模様と極上マット質感を再現。彫像、花瓶、建築模型で積層痕を完全に隠します。',
+      features: [
+        '均一なミネラル粒子設計で標準0.4mmノズルでも目詰まりなく造形',
+        '石膏彫刻のような超マット表面が側面の積層痕を徹底カバー',
+        'サポート材が手で軽く折れるように綺麗に剥がれる設計',
+        '100%再生紙スプール採用、1本販売ごとに植林活動へ貢献'
+      ]
+    }
+  },
+  'fil-32': {
+    en: {
+      name: 'GodDog Tri-Color Silk Co-Extrusion PLA 1.75mm (360° Metallic)',
+      brand: 'GodDog',
+      badge: '3-Color 360° Shimmer',
+      spoolType: 'High-Temp Reusable Spool',
+      description: 'Precision three-strand co-extrusion blends gold, magenta, and cyan silk into a single filament—even single-nozzle printers create dazzling iridescent color shifts from every angle.',
+      features: [
+        'Three-way co-extrusion shifts hues dramatically as you rotate parts',
+        'Mirror-like metallic silk luster straight off the build plate',
+        'Reinforced interlayer bonding prevents delamination on vases & dragons',
+        'Vacuum sealed; print outer walls at 50–120mm/s for peak gloss'
+      ]
+    },
+    ja: {
+      name: 'GodDog 3色シルク共押出 PLA Silk Tri-Color 1.75mm',
+      brand: 'GodDog',
+      badge: '単線3色360°金属光沢',
+      spoolType: '耐熱リユーススプール',
+      description: 'ゴールド・マゼンタ・シアンの3色シルクを1本に精密共押出！マルチカラー機がなくても、シングルノズル機で角度によって色が変わる幻想的な金属光沢モデルが出力できます。',
+      features: [
+        '精密3色共押出構造により、見る角度に応じてドラマチックに変色',
+        '後加工や研磨なしで鏡面のようなメタリックシルク光沢を実現',
+        '層間密着を強化し、ドラゴンや花瓶モデルでも割れにくい',
+        '外周速度50〜120mm/s設定で最も鮮やかな金属光沢を発揮'
+      ]
+    }
+  },
+  'fil-33': {
+    en: {
+      name: 'Polymaker PolyLite PETG-HF High-Speed Translucent Weatherproof',
+      brand: 'Polymaker',
+      badge: 'High-Speed Low-String PETG',
+      spoolType: 'Eco Cardboard Spool',
+      description: 'Next-gen high-flow PETG-HF engineered to eliminate nozzle sticking and stringing at 350mm/s+ speeds while preserving 78°C heat resistance and outdoor UV/weather durability.',
+      features: [
+        'Tuned high-melt-flow rheology extrudes cleanly up to 350mm/s',
+        'Drastically reduces oozing, blobbing & nozzle buildup',
+        '78°C heat deflection with moisture, UV & chemical resistance',
+        'Crystal-rich colors ideal for light diffusers and outdoor mounts'
+      ]
+    },
+    ja: {
+      name: 'Polymaker PolyLite PETG-HF 高速・高透明・高耐候線材 1.75mm',
+      brand: 'Polymaker',
+      badge: '高速PETG・糸引き低減',
+      spoolType: '環境配慮型 紙スプール',
+      description: '次世代高流動PETG-HF配合。350mm/s以上の高速印刷時でもノズル付着や糸引きを大幅に抑制しつつ、78°Cの耐熱性と屋外耐UV・耐候性を維持します。',
+      features: [
+        '高速機向けに粘度を最適化し、350mm/sでも安定した吐出を実現',
+        '従来PETGの課題だった糸引きとサポート癒着を大幅改善',
+        '耐熱78°Cに加え防水・耐UV・耐薬品性に優れる',
+        'ランプシェード・機械カバー・屋外固定具に最適'
+      ]
+    }
+  },
+  'fil-34': {
+    en: {
+      name: 'eSUN ePETG-Matte Impact & Weather Resistant Matte PETG 1.75mm',
+      brand: 'eSUN',
+      badge: 'Industrial Matte PETG',
+      spoolType: 'Eco Cardboard Spool',
+      description: 'Replaces glossy plastic sheen with a refined industrial matte finish. ePETG-Matte combines outdoor UV durability and impact toughness with much cleaner bridging and less stringing.',
+      features: [
+        'Satin-matte surface hides layer lines for injection-molded looks',
+        'UV-resistant and waterproof for long-term outdoor enclosures',
+        'Far less stringing and nozzle carbon buildup than glossy PETG',
+        'Prints reliably on open or enclosed printers without warping'
+      ]
+    },
+    ja: {
+      name: 'eSUN ePETG-Matte マット艶消し・高耐衝撃・耐候性線材 1.75mm',
+      brand: 'eSUN',
+      badge: '工業級マットPETG',
+      spoolType: '環境配慮型 紙スプール',
+      description: '従来の光沢あるPETGから脱却し、上品な工業用マット仕上げを実現。屋外耐UV性・防水性と高耐衝撃性を兼ね備え、糸引きも大幅に抑えています。',
+      features: [
+        '繊細なマット質感で積層痕が目立たず、射出成形品のような仕上がり',
+        '耐UV性と防水性を備え、屋外設置ケースでも劣化しにくい',
+        '光沢PETGに比べてノズル周りのこびりつきや糸引きが大幅に少ない',
+        'エンクロージャー不要で各種FDMプリンターで反りなく安定造形'
+      ]
+    }
+  },
+  'fil-35': {
+    en: {
+      name: 'Polymaker PolySonic PLA-CF High-Speed Carbon Fiber 1.75mm',
+      brand: 'Polymaker',
+      badge: 'High-Speed Carbon Fiber',
+      spoolType: 'Eco Cardboard Spool',
+      description: 'Combines PolySonic high-flow chemistry with short-chopped carbon fiber so you can print rigid CF parts at up to 300mm/s with stealthy matte carbon aesthetics.',
+      features: [
+        'High-speed CF rheology prints up to 300mm/s without under-extrusion',
+        'High flexural modulus ideal for drone frames, jigs & rigid brackets',
+        'Stealth matte carbon texture conceals layer seams almost completely',
+        'Use with a 0.4mm or 0.6mm hardened steel nozzle to prevent wear'
+      ]
+    },
+    ja: {
+      name: 'Polymaker PolySonic PLA-CF 高速・高剛性カーボン複合材 1.75mm',
+      brand: 'Polymaker',
+      badge: '超高速カーボンファイバー',
+      spoolType: '環境配慮型 紙スプール',
+      description: 'PolySonic高流動技術と短繊維カーボンを融合し、カーボン複合材でありながら最高300mm/sの高速出力に対応。優れた曲げ剛性と重厚なカーボンマット質感を実現。',
+      features: [
+        '高速高流動カーボン処方で従来CF材の速度制限を突破',
+        '高い曲げ弾性率と寸法安定性でドローンフレームや治具に最適',
+        '積層痕をほぼ消すシックなマットカーボンテクスチャ',
+        'ノズル摩耗を防ぐため0.4mm/0.6mm焼入鋼ノズルの使用を推奨'
+      ]
+    }
+  },
+  'fil-36': {
+    en: {
+      name: 'eSUN eTPU-95A HF High-Speed Flexible Shockproof Filament 1.75mm',
+      brand: 'eSUN',
+      badge: 'High-Speed Non-Tangling TPU',
+      spoolType: 'High-Temp Reusable Spool',
+      description: 'Tuned for direct-drive high-speed extruders, eTPU-95A HF prints up to 3x faster than standard flexible filament with extreme tear resistance and shock absorption.',
+      features: [
+        'Shore 95A hardness balances soft cushioning with crisp feeding',
+        'High-flow blend resists extruder gear tangling up to 150mm/s',
+        'Oil, abrasion, and seawater resistant for drone bumpers & gaskets',
+        'Note: Feed from an external spool holder rather than inside AMS'
+      ]
+    },
+    ja: {
+      name: 'eSUN eTPU-95A HF 高速・高反発・耐摩耗フレキシブル材 1.75mm',
+      brand: 'eSUN',
+      badge: '高速ダイレクト給紙TPU',
+      spoolType: '耐熱リユーススプール',
+      description: 'ダイレクト式高速エクストルーダー向けに最適化されたeTPU-95A HF。従来軟質フィラメント比3倍の造形速度と優れた引裂耐性・衝撃吸収性を発揮します。',
+      features: [
+        'ショア硬度95Aにより、柔軟なクッション性とスムーズな押出を両立',
+        '最高150mm/sの高速印刷でもギア絡みや詰まりが起きにくい高流動配合',
+        '耐油・耐摩耗・耐候性に優れ、ドローンガード・パッキン・保護ケースに最適',
+        '（軟質材のためAMSには入れず外部スプールホルダーからの給紙を推奨）'
+      ]
+    }
+  },
+  'fil-37': {
+    en: {
+      name: 'Anycubic Plant-Based Eco Low-Odor 8K UV Resin (1000g)',
+      brand: 'Anycubic',
+      badge: 'Soy Plant-Based Low Odor',
+      spoolType: 'UV-Blocking Eco Bottle (1000g)',
+      nozzleTemp: 'Working Temp 20°C - 30°C',
+      bedTemp: '405nm UV Curing',
+      maxSpeed: '1.8s - 2.4s / Layer',
+      description: 'Formulated from renewable soybean oil for minimal indoor odor while achieving razor-sharp 8K/12K micron resolution and ultra-low shrinkage for seamless multi-part assembly.',
+      features: [
+        'Bio-based soy resin formula dramatically lowers fumes indoors',
+        'Ultra-low shrinkage keeps keyed miniature joints fitting tightly',
+        'Cures to a dry, non-tacky finish easy to sand and airbrush',
+        'Compatible with all 365nm–405nm desktop LCD resin printers'
+      ]
+    },
+    ja: {
+      name: 'Anycubic 植物由来バイオ 8K低臭気UVレジン (1000g)',
+      brand: 'Anycubic',
+      badge: '大豆バイオ・超低臭気',
+      spoolType: 'UV遮光エコボトル (1000g)',
+      nozzleTemp: '推奨室温 20°C - 30°C',
+      bedTemp: '405nm UV光硬化',
+      maxSpeed: '1.8秒 - 2.4秒 / 層',
+      description: '天然大豆油由来のバイオ原料を採用し、室内の臭気を大幅に抑えた環境配慮型レジン。8K/12K級の高精細ディテールと極めて低い硬化収縮率を両立しています。',
+      features: [
+        '大豆バイオ処方により揮発臭が少なく室内作業でも快適',
+        '極めて低い収縮率により分割フィギュアのダボ結合がぴったり密着',
+        '二次硬化後の表面がべたつかず、ヤスリ掛けやエアブラシ塗装が容易',
+        '365nm〜405nmの各種デスクトップLCD光造形機に対応'
+      ]
+    }
+  },
+  'acc-04': {
+    en: {
+      name: '10-Pack Filament Vacuum Storage Bags + USB-C Electric Pump + Desiccant Kit',
+      brand: 'Maker Gear',
+      badge: 'Humidity Defense Kit',
+      spoolType: 'Heavy-Duty Double-Zip Vacuum Set',
+      weight: '10 Bags + USB Pump + Silica',
+      nozzleTemp: 'Fits 1kg & 0.5kg Spools',
+      bedTemp: '30x34cm Double-Seal Bags',
+      maxSpeed: '15s Electric Vacuum Seal',
+      description: 'Complete moisture protection for humid climates: 10 puncture-resistant vacuum bags, a 1-touch USB-C electric vacuum pump, and 10 reusable color-indicating silica desiccant packs.',
+      features: [
+        '10 thick PA+PE double-zipper bags reusable across dozens of cycles',
+        'USB-C rechargeable electric vacuum pump seals bags in 15 seconds',
+        '10 orange-to-green indicating silica gel packs (oven rechargeable)',
+        'Fits all 1kg/0.5kg spools—essential storage for Nylon, PETG & PLA'
+      ]
+    },
+    ja: {
+      name: 'フィラメント防湿真空バッグ 10枚＋USB電動ポンプ＋再生乾燥剤セット',
+      brand: 'メイカーパーツ',
+      badge: '湿気対策スターター一式',
+      spoolType: '厚手ダブルチャック真空袋セット',
+      weight: '真空袋10枚+電動ポンプ+乾燥剤',
+      nozzleTemp: '1kg / 0.5kg スプール対応',
+      bedTemp: '30x34cm 大型ダブルジッパー',
+      maxSpeed: 'USB-C 15秒自動排気',
+      description: '湿度の高い環境に最適なフィラメント完全防湿セット！破れにくい厚手真空袋10枚、USB-C充電式電動吸引ポンプ、電子レンジ等で再生可能な変色シリカゲル乾燥剤10個を同梱。',
+      features: [
+        'PA+PE多層厚手ダブルジッパー真空袋×10枚、繰り返し何度でも密閉可能',
+        'USB-C充電式ワンタッチ電動ポンプ付属でわずか15秒で真空パック完了',
+        '吸湿状態が色でわかるオレンジ変色乾燥剤10袋付（加熱再生で再利用可）',
+        '市販の全1kg/0.5kgスプールに対応し、ナイロン・PETG・PLA長期保管に必須'
+      ]
+    }
+  },
+  'acc-05': {
+    en: {
+      name: 'High-Flow PTFE Bowden Tube 2m + Precision Flush Cutter Maintenance Kit',
+      brand: 'Maker Gear',
+      badge: 'AMS Maintenance Essential',
+      spoolType: 'OD4mm x ID2.5mm High-Flow Kit',
+      weight: '2m PTFE + Cutter + Needles',
+      nozzleTemp: 'AMS / K1 / Direct-Drive Fit',
+      bedTemp: 'Includes Nozzle Needles',
+      maxSpeed: '40% Lower Feed Friction',
+      description: 'Routine high-speed printer & AMS maintenance bundle featuring 2m of widened ID 2.5mm low-friction PTFE tubing, hardened steel flush cutters for 45° filament tips, and 0.4mm cleaning needles.',
+      features: [
+        'OD 4.0mm / ID 2.5mm slick PTFE tube (2m) slashes AMS retraction friction',
+        'Precision hardened-steel flush cutters trim clean 45° filament tips & supports',
+        'Includes 0.4mm stainless steel nozzle unclogging needles & pneumatic couplers',
+        'Periodic tube replacement prevents AMS feed-error pauses mid-print'
+      ]
+    },
+    ja: {
+      name: '低摩擦PTFEテフロンチューブ 2m＋精密ニッパー メンテナンスセット',
+      brand: 'メイカーパーツ',
+      badge: 'AMS定期保守キット',
+      spoolType: '外径4mm・内径2.5mm 高通量仕様',
+      weight: '2mチューブ+ニッパー+清掃針',
+      nozzleTemp: 'AMS / K1 / ダイレクト機汎用',
+      bedTemp: 'ノズル掃除針・継手付属',
+      maxSpeed: '給紙抵抗 40%低減',
+      description: '高速プリンターおよびBambu AMSシステム向けの定期保守キット。内径2.5mmの高純度・低摩擦PTFEチューブ2mに加え、精密フラッシュニッパーと0.4mmノズル清掃針をセット。',
+      features: [
+        '外径4.0mm/内径2.5mmの低抵抗PTFEチューブ2mでAMS給紙エラーを大幅低減',
+        'フィラメント先端の45°カットやサポート除去に最適な精密鋼製ニッパー',
+        '0.4mmステンレス製ノズルクリーニングニードルとワンタッチ継手を同梱',
+        '摩耗したチューブの定期交換により高速多色プリントの安定性を維持'
+      ]
+    }
   }
 };
 
@@ -1232,5 +1590,9 @@ export const EXACT_COLOR_I18N: Record<string, { zh: string; en: string; ja: stri
   '經典黑曜款 Black': { zh: '經典黑曜款', en: 'Classic Obsidian Black', ja: 'クラシックブラック' },
   '雙面紋理金 Gold PEI': { zh: '雙面紋理金', en: 'Dual-Sided Gold PEI', ja: '両面テクスチャゴールドPEI' },
   '淬火黑鋼 0.4mm+0.6mm 組': { zh: '淬火黑鋼 0.4+0.6mm 組', en: 'Hardened 0.4+0.6mm Set', ja: '焼入鋼 0.4+0.6mm セット' },
+  '卡拉拉白大理石 Carrara Marble': { zh: '卡拉拉白大理石', en: 'Carrara Marble', ja: 'カラーラ大理石ホワイト' },
+  '金紫青幻彩 Gold-Magenta-Cyan': { zh: '金紫青幻彩', en: 'Gold-Magenta-Cyan Tri-Color', ja: 'ゴールド・マゼンタ・シアン3色' },
+  '10袋+電動泵+乾燥劑全配組': { zh: '10袋+電動泵+乾燥劑全配組', en: '10 Bags + Electric Pump + Silica Kit', ja: '真空袋10枚+電動ポンプ+乾燥剤セット' },
+  '標準維護套組 (2m導管+剪鉗)': { zh: '標準維護套組 (2m導管+剪鉗)', en: '2m PTFE + Flush Cutter Kit', ja: '2mチューブ+ニッパー保守セット' },
   '標準規格': { zh: '標準規格', en: 'Standard Spec', ja: '標準仕様' }
 };

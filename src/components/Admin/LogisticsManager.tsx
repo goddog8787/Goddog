@@ -48,7 +48,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
     enablePrepaidCVS: settings.enablePrepaidCVS ?? true,
     enableHomeDelivery: settings.enableHomeDelivery ?? true,
     dispatchLeadTime: settings.dispatchLeadTime || '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
-    packagingSpecs: settings.packagingSpecs || '雙層鋁箔真空包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
+    packagingSpecs: settings.packagingSpecs || '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
     ecpayLogisticsMerchantId: settings.ecpayLogisticsMerchantId || '3002607',
     newebpayLogisticsMerchantId: settings.newebpayLogisticsMerchantId || 'MS1843364339',
     newebpayLogisticsHashKey: settings.newebpayLogisticsHashKey || 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ',
@@ -93,7 +93,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
       enablePrepaidCVS: true,
       enableHomeDelivery: true,
       dispatchLeadTime: '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
-      packagingSpecs: '雙層鋁箔真空包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
+      packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
       newebpayLogisticsMerchantId: 'MS1843364339',
       newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ',
@@ -661,7 +661,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div className="text-[11px] text-emerald-900 leading-relaxed">
                   <strong>3D 列印耗材品質守護：</strong>
-                  所有出庫耗材均通過嚴格氣密鋁箔封裝檢測。若買家收到商品有受潮脆化或真空漏氣，提供 100% 免費補寄新品服務。
+                  所有出庫耗材均通過嚴格氣密密封袋封裝檢測。若買家收到商品有受潮脆化或封口漏氣，提供 100% 免費補寄新品服務。
                 </div>
               </div>
             </div>

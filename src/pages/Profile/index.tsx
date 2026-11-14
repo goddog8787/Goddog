@@ -20,7 +20,6 @@ export interface ProfilePageProps {
   orders: any[];
   setOrders?: (orders: any[]) => void;
   setMember: (m: any) => void;
-  onOpenSubscription?: () => void;
   onOpenTracking?: (trackingNumber: string) => void;
   onOpenProductDetail?: (product: any) => void;
   onAddToCart?: (product: any) => void;
@@ -36,7 +35,6 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onLoginClick,
   onLogout,
   isLoggedIn = false, 
-  onOpenSubscription, 
   onOpenTracking,
   onOpenProductDetail,
   onAddToCart,

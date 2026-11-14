@@ -552,7 +552,7 @@ export const OrderModal: React.FC<{
             className="w-full p-2.5 bg-white border border-rose-200 rounded-xl text-xs font-bold text-slate-800"
           >
             <option value="線材規格/顏色換貨申請">線材規格 / 顏色換貨申請</option>
-            <option value="真空鋁箔袋受損免費補換">真空鋁箔袋受潮或受損免費補換</option>
+            <option value="防潮密封袋受損免費補換">防潮密封袋受潮或受損免費補換</option>
             <option value="7天鑑賞期退貨退款申請">7 天鑑賞期退貨退款申請</option>
             <option value="列印卡料技術檢測與換新">列印卡料技術檢測與換新</option>
           </select>

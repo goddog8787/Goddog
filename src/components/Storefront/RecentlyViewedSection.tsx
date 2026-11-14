@@ -9,6 +9,7 @@ import {
 } from '../../lib/customerPersistence';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { auth } from '../../lib/firebase';
+import { triggerFlyToCart } from './FlyToCartOverlay';
 
 interface RecentlyViewedSectionProps {
   products: FilamentProduct[];
@@ -64,9 +65,16 @@ export const RecentlyViewedSection: React.FC<RecentlyViewedSectionProps> = ({
     setRecentItems(updated);
   };
 
-  const handleAdd = (item: any, e: React.MouseEvent) => {
+  const handleAdd = (item: any, e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     const matched = products.find((p) => p.id === item.id) || item;
+    triggerFlyToCart({
+      sourceEl: e.currentTarget,
+      imageUrl: matched.imageUrl || item.imageUrl,
+      material: matched.material || item.material,
+      productName: matched.name || item.name,
+      accentColor: matched.colors?.[0]?.hex,
+    });
     onAddToCart(matched);
     setAddedIds((prev) => ({ ...prev, [item.id]: true }));
     setTimeout(() => {
