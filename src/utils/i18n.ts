@@ -55,7 +55,7 @@ export const translations = {
     spoolRecycleBtn: '空盤換幣',
     sslEncrypted: '藍新 SSL 安全加密',
     searchPlaceholderNav: '搜尋線材 (PLA, PETG, TPU)...',
-    searchPlaceholderInput: '搜尋耗材材質 (PLA+, 碳纖維, PETG, TPU) 或品牌 (Bambu, eSUN)...',
+    searchPlaceholderInput: '搜尋 PLA+、碳纖維、PETG 或品牌型號',
     searchPlaceholder: '搜尋 3D 列印耗材 (PLA, PETG, ABS, 碳纖維, 光固化樹脂, 線徑 1.75mm...)',
 
     // Marquee Promo Bar
@@ -325,7 +325,7 @@ export const translations = {
     spoolRecycleBtn: 'Spool Return',
     sslEncrypted: '256-bit SSL Secure',
     searchPlaceholderNav: 'Search filaments (PLA, PETG, TPU)...',
-    searchPlaceholderInput: 'Search materials (PLA+, Carbon Fiber, PETG, TPU) or brands...',
+    searchPlaceholderInput: 'Search PLA+, CF, PETG or brand...',
     searchPlaceholder: 'Search 3D filaments (PLA, PETG, ABS, Carbon Fiber, Resin, 1.75mm...)',
 
     // Marquee Promo Bar
@@ -595,7 +595,7 @@ export const translations = {
     spoolRecycleBtn: 'スプール換金',
     sslEncrypted: 'SSL暗号化安全決済',
     searchPlaceholderNav: 'フィラメントを検索 (PLA, PETG, TPU)...',
-    searchPlaceholderInput: '素材名 (PLA+, カーボン, PETG, TPU) やブランドで検索...',
+    searchPlaceholderInput: 'PLA+・カーボン・PETG 等を検索',
     searchPlaceholder: '3Dフィラメントを検索 (PLA, PETG, ABS, カーボン, レジン, 1.75mm...)',
 
     // Marquee Promo Bar

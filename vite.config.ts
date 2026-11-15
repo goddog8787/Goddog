@@ -13,6 +13,9 @@ export default defineConfig(() => {
       },
     },
     build: {
+      target: 'es2020',
+      minify: 'esbuild' as const,
+      cssCodeSplit: true,
       chunkSizeWarningLimit: 1200,
       rollupOptions: {
         output: {
@@ -21,6 +24,8 @@ export default defineConfig(() => {
             'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
             'vendor-icons': ['lucide-react'],
             'vendor-motion': ['motion'],
+            'vendor-charts': ['recharts'],
+            'vendor-crypto': ['crypto-js'],
           },
         },
       },

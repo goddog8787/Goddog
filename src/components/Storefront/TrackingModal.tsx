@@ -137,13 +137,19 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            trackingNumber: matchedLocalOrder.trackingNumber || trimmed,
+            trackingNumber: matchedLocalOrder.trackingNumber || '',
             orderNumber: matchedLocalOrder.orderNumber,
             shippingMethod: matchedLocalOrder.shippingMethod,
             storeOrAddress: matchedLocalOrder.storeOrAddress,
             orderStatus: matchedLocalOrder.orderStatus,
             paymentStatus: matchedLocalOrder.paymentStatus,
+            paymentGateway: matchedLocalOrder.paymentGateway,
+            isVerifiedByNewebPay: matchedLocalOrder.isVerifiedByNewebPay,
             createdAt: matchedLocalOrder.createdAt,
+            payTime: (matchedLocalOrder as any).payTime || (matchedLocalOrder as any).paidAt,
+            shippedAt: (matchedLocalOrder as any).shippedAt,
+            deliveredAt: (matchedLocalOrder as any).deliveredAt || (matchedLocalOrder as any).completedAt,
+            cancelledAt: (matchedLocalOrder as any).cancelledAt,
             carrier: car,
             tradeNo: matchedLocalOrder.tradeNo,
           }),
@@ -419,30 +425,46 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
           {/* Current Status Card */}
           {trackingData && (
             <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/70 to-slate-50 border border-indigo-100 space-y-3 shadow-2xs">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-indigo-700 bg-indigo-100/70 px-2.5 py-1 rounded-md">
                   {trackingData.carrierName}
                 </span>
                 <span className="font-mono text-xs text-slate-500 font-semibold">
-                  {lang === 'en' ? 'Tracking #: ' : lang === 'ja' ? '追跡番号: ' : '單號：'}{trackingData.trackingNumber}
+                  {lang === 'en' ? 'Tracking #: ' : lang === 'ja' ? '追跡番号: ' : '單號：'}
+                  {trackingData.trackingNumber || (trackingData.statusCode === 'UNPAID' ? '待付款配發' : '待出貨配號')}
                 </span>
               </div>
 
               <div className="flex items-start gap-3 pt-1">
-                <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20">
+                <div
+                  className={`w-10 h-10 rounded-xl text-white flex items-center justify-center shrink-0 shadow-md ${
+                    trackingData.statusCode === 'UNPAID'
+                      ? 'bg-rose-500 shadow-rose-500/20'
+                      : trackingData.statusCode === 'CANCELLED'
+                      ? 'bg-slate-400 shadow-slate-400/20'
+                      : trackingData.statusCode === 'COLLECTED'
+                      ? 'bg-emerald-500 shadow-emerald-500/20'
+                      : 'bg-indigo-600 shadow-indigo-500/20'
+                  }`}
+                >
                   <Package className="w-5 h-5" />
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="text-sm font-extrabold text-slate-900 leading-snug">
                       {trackingData.currentStatus}
                     </h4>
-                    {trackingData.isVerifiedByNewebPay && (
+                    {trackingData.isVerifiedByNewebPay ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
                         <ShieldCheck className="w-3 h-3" />
-                        {lang === 'en' ? 'Payment Verified' : lang === 'ja' ? '決済照合済み' : '藍新入帳驗證通過'}
+                        {lang === 'en' ? 'Payment Verified' : lang === 'ja' ? '決済照合済み' : '已核帳'}
                       </span>
-                    )}
+                    ) : trackingData.statusCode === 'UNPAID' ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                        <AlertCircle className="w-3 h-3" />
+                        {lang === 'en' ? 'Unpaid' : lang === 'ja' ? '未決済' : '待付款 · 尚未核帳'}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-xs text-slate-600 mt-1">
                     {trackingData.estimatedArrival}
@@ -456,7 +478,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
               </div>
 
               {/* Official carrier verification link */}
-              {trackingData.officialInquiryUrl && (
+              {trackingData.officialInquiryUrl && trackingData.trackingNumber && (
                 <div className="pt-2 border-t border-indigo-100 flex justify-end">
                   <a
                     href={trackingData.officialInquiryUrl}
@@ -483,19 +505,25 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-slate-500" />
-                {lang === 'en' ? 'Shipment Checkpoints' : lang === 'ja' ? '配送ステータス履歴' : '配送進度明細檢索'}
+                {lang === 'en' ? 'Shipment Checkpoints' : lang === 'ja' ? '配送ステータス履歴' : '訂單與配送進度明細'}
               </h4>
 
               <div className="space-y-4 pl-2 relative before:absolute before:left-3.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
                 {trackingData.timeline.map((step: any, idx: number) => (
                   <div key={idx} className="flex items-start gap-3 relative">
-                    <div className={`w-3.5 h-3.5 rounded-full z-10 mt-1 shrink-0 ${
-                      idx === 0 
-                        ? 'bg-emerald-500 ring-4 ring-emerald-100' 
-                        : 'bg-slate-300'
-                    }`} />
+                    <div
+                      className={`w-3.5 h-3.5 rounded-full z-10 mt-1 shrink-0 ${
+                        step.status === 'done'
+                          ? 'bg-emerald-500 ring-4 ring-emerald-100'
+                          : step.status === 'current'
+                          ? trackingData.statusCode === 'UNPAID'
+                            ? 'bg-rose-500 ring-4 ring-rose-100'
+                            : 'bg-indigo-600 ring-4 ring-indigo-100'
+                          : 'bg-slate-300'
+                      }`}
+                    />
                     <div className="flex-1 bg-white p-3 rounded-xl border border-slate-200/80 shadow-2xs">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-bold text-slate-900">{step.title}</span>
                         <span className="text-[11px] font-mono text-slate-400">{step.time}</span>
                       </div>

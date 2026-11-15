@@ -153,7 +153,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   searchQuery,
   setSearchQuery,
   products = INITIAL_PRODUCTS,
-  placeholder = '搜尋商品材質、品牌或規格 (例如: PLA+, 碳纖維, Bambu, PETG, TPU)...',
+  placeholder = '搜尋 PLA+、碳纖維、PETG 或品牌型號',
   onSelectProduct,
   onSelectMaterial,
   className = '',
@@ -381,7 +381,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       <>
         {parts.map((part, i) =>
           part.isMatch ? (
-            <mark key={i} className="bg-indigo-100 text-indigo-900 font-bold px-0.5 rounded-sm">
+            <mark key={i} className="bg-indigo-100 dark:bg-indigo-500/30 text-indigo-900 dark:text-indigo-200 font-bold px-0.5 rounded-sm">
               {part.text}
             </mark>
           ) : (
@@ -397,8 +397,8 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   return (
     <div ref={containerRef} className={`relative w-full ${className}`}>
       {/* Search Input Container */}
-      <div className="relative flex items-center">
-        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+      <div className="relative flex items-center group">
+        <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 dark:text-slate-500 group-focus-within:text-slate-900 dark:group-focus-within:text-indigo-400 transition-colors">
           <Search className={size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
         </div>
 
@@ -415,8 +415,8 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className={`w-full bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-slate-900 border border-slate-200 focus:border-indigo-500 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 transition-all placeholder:text-slate-400 ${
-            size === 'sm' ? 'pl-9 pr-8 py-1.5 text-xs' : 'pl-10 pr-9 py-2.5 text-xs sm:text-sm'
+          className={`w-full bg-slate-100/75 dark:bg-slate-800/75 hover:bg-slate-100 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/80 focus:border-slate-900 dark:focus:border-indigo-400 rounded-xl focus:outline-hidden focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/15 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 text-ellipsis ${
+            size === 'sm' ? 'pl-9 pr-8 py-2 text-xs' : 'pl-10 pr-9 sm:pr-11 h-11 text-[13px] sm:text-sm'
           }`}
         />
 
@@ -427,14 +427,14 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
               setSearchQuery('');
               inputRef.current?.focus();
             }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors cursor-pointer"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-700 transition-colors cursor-pointer"
             title="清除搜尋內容"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         ) : id === 'storefront-product-search' ? (
           <kbd
-            className="hidden sm:inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-mono font-bold text-slate-400 bg-white border border-slate-200 rounded-md absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none select-none shadow-2xs"
+            className="hidden sm:inline-flex items-center justify-center w-6 h-6 text-[11px] font-mono font-semibold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-700 rounded-md absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none select-none shadow-2xs"
             title="按 / 鍵快速搜尋"
           >
             /
@@ -446,16 +446,16 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       {isOpen && (
         <div 
           id={`${id}-autocomplete-dropdown`}
-          className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden animate-in fade-in zoom-in-98 duration-150 max-h-[80vh] sm:max-h-[500px] overflow-y-auto"
+          className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 z-50 overflow-hidden animate-in fade-in zoom-in-98 duration-150 max-h-[75vh] sm:max-h-[480px] overflow-y-auto"
         >
           {/* STATE 1: Empty Query - Show Hot Trending Searches */}
           {!trimmedQuery && (
             <div className="p-4 space-y-4">
               <div>
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 mb-2.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 mb-2.5">
                   <Flame className="w-3.5 h-3.5 text-amber-500" />
                   <span>熱門搜尋關鍵字</span>
-                  <span className="text-[10px] text-slate-400 font-normal ml-auto">點擊快速篩選</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-auto">點擊快速篩選</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {TRENDING_SEARCH_TAGS.map((tag) => (
@@ -463,19 +463,19 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                       key={tag.label}
                       type="button"
                       onClick={() => handleSelectTag(tag.query)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-700 transition-all cursor-pointer group"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-700 dark:hover:text-indigo-300 border border-slate-200/70 dark:border-slate-700/70 hover:border-indigo-200 dark:hover:border-indigo-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer group"
                     >
                       <span>{tag.icon}</span>
                       <span>{tag.label}</span>
-                      <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-indigo-600 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      <ArrowUpRight className="w-3 h-3 text-slate-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                     </button>
                   ))}
                 </div>
               </div>
 
               {/* Quick Material Category Suggestions */}
-              <div className="border-t border-slate-100 pt-3">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 mb-2">
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-3">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-slate-100 mb-2">
                   <Layers className="w-3.5 h-3.5 text-sky-500" />
                   <span>常見 3D 耗材材質系列</span>
                 </div>
@@ -487,18 +487,18 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                         key={mat.key}
                         type="button"
                         onClick={() => handleSelectMaterial(mat)}
-                        className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 text-left border border-transparent hover:border-slate-200 transition-all cursor-pointer group"
+                        className="flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 text-left border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700 transition-colors cursor-pointer group"
                       >
-                        <div>
-                          <div className="text-xs font-bold text-slate-800 group-hover:text-indigo-600 flex items-center gap-1.5">
-                            <span>{mat.chineseName}</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 truncate">
+                            {mat.chineseName}
                           </div>
-                          <div className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                             {mat.description}
                           </div>
                         </div>
-                        <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md group-hover:bg-indigo-100 group-hover:text-indigo-700">
-                          {count} 款現貨
+                        <span className="text-[10px] font-mono tabular-nums font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-md group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/50 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 shrink-0">
+                          {count} 款
                         </span>
                       </button>
                     );
@@ -510,13 +510,13 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
 
           {/* STATE 2: Has Query & Has Matches */}
           {trimmedQuery && hasMatches && (
-            <div className="p-2 divide-y divide-slate-100 space-y-2">
-              {/* SECTION A: Material Suggestions (商品材質建議) */}
+            <div className="p-2 divide-y divide-slate-100 dark:divide-slate-800 space-y-2">
+              {/* SECTION A: Material Suggestions */}
               {matchedMaterials.length > 0 && (
                 <div className="pt-1">
-                  <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="px-3 py-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                     <Layers className="w-3.5 h-3.5 text-sky-500" />
-                    <span>耗材材質建議 (Material Recommendations)</span>
+                    <span>耗材材質建議</span>
                   </div>
                   <div className="mt-1 space-y-1">
                     {matchedMaterials.map((mat) => {
@@ -527,29 +527,31 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                           key={mat.key}
                           type="button"
                           onClick={() => handleSelectMaterial(mat)}
-                          className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition-all cursor-pointer ${
-                            isSelected ? 'bg-indigo-50 text-indigo-900 ring-1 ring-indigo-300' : 'hover:bg-slate-50 text-slate-800'
+                          className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-100 ring-1 ring-indigo-300 dark:ring-indigo-700'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-800 dark:text-slate-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-sky-50 text-sky-600 flex items-center justify-center shrink-0 border border-sky-100">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 border border-sky-100 dark:border-sky-800/60">
                               <Layers className="w-3.5 h-3.5" />
                             </div>
-                            <div>
-                              <div className="text-xs font-bold flex items-center gap-1.5">
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold flex items-center gap-1.5 flex-wrap">
                                 <span>{highlightMatch(mat.chineseName, trimmedQuery)}</span>
-                                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-medium">
+                                <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded font-medium">
                                   {mat.key}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-slate-500">
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                                 {mat.description}
                               </p>
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                              {mat.count} 款現貨
+                            <span className="text-[11px] font-mono tabular-nums font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-md">
+                              {mat.count} 款
                             </span>
                           </div>
                         </button>
@@ -559,12 +561,12 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 </div>
               )}
 
-              {/* SECTION B: Brand Suggestions (品牌建議) */}
+              {/* SECTION B: Brand Suggestions */}
               {matchedBrands.length > 0 && (
                 <div className="pt-2">
-                  <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="px-3 py-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                     <Tag className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>品牌專區推薦 (Brand Recommendations)</span>
+                    <span>品牌專區推薦</span>
                   </div>
                   <div className="mt-1 space-y-1">
                     {matchedBrands.map((b) => {
@@ -575,29 +577,31 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                           key={b.name}
                           type="button"
                           onClick={() => handleSelectBrand(b)}
-                          className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition-all cursor-pointer ${
-                            isSelected ? 'bg-indigo-50 text-indigo-900 ring-1 ring-indigo-300' : 'hover:bg-slate-50 text-slate-800'
+                          className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-100 ring-1 ring-indigo-300 dark:ring-indigo-700'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-800 dark:text-slate-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-800/60">
                               <Tag className="w-3.5 h-3.5" />
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <div className="text-xs font-bold flex items-center gap-1.5">
                                 <span>{highlightMatch(b.name, trimmedQuery)}</span>
-                                <span className="text-[10px] text-indigo-600 font-semibold">
+                                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
                                   {b.badge}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-slate-500">
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                                 {b.description}
                               </p>
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
-                              {b.count > 0 ? `${b.count} 款相關` : '熱銷品牌'}
+                            <span className="text-[11px] font-mono tabular-nums font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                              {b.count > 0 ? `${b.count} 款` : '熱銷品牌'}
                             </span>
                           </div>
                         </button>
@@ -607,12 +611,12 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 </div>
               )}
 
-              {/* SECTION C: Matching Product Cards (熱門相關商品) */}
+              {/* SECTION C: Matching Product Cards */}
               {matchedProducts.length > 0 && (
                 <div className="pt-2">
-                  <div className="px-3 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="px-3 py-1 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                     <Package className="w-3.5 h-3.5 text-amber-500" />
-                    <span>相關熱門商品 (Matching Products)</span>
+                    <span>相關熱門商品</span>
                   </div>
                   <div className="mt-1 space-y-1">
                     {matchedProducts.map(({ product: p, matchedFeatures }) => {
@@ -625,8 +629,10 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                           key={p.id}
                           type="button"
                           onClick={() => handleSelectProduct(p)}
-                          className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition-all cursor-pointer ${
-                            isSelected ? 'bg-indigo-50 text-indigo-900 ring-1 ring-indigo-300' : 'hover:bg-slate-50 text-slate-800'
+                          className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-900 dark:text-indigo-100 ring-1 ring-indigo-300 dark:ring-indigo-700'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-800/80 text-slate-800 dark:text-slate-200'
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
@@ -634,37 +640,37 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                               <img
                                 src={getSafeProductImageUrl(p.imageUrl, p.material, p.name)}
                                 alt={p.name}
-                                className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
+                                className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800"
                                 onError={(e) => handleProductImageError(e, p.material, p.name)}
                               />
                             ) : (
-                              <div className="w-10 h-10 rounded-lg border border-slate-200 shrink-0 bg-slate-100 flex items-center justify-center text-slate-400">
+                              <div className="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
                                 <Package className="w-5 h-5" />
                               </div>
                             )}
                             <div className="min-w-0">
-                              <div className="text-xs font-bold text-slate-900 truncate max-w-[280px] sm:max-w-md">
+                              <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate max-w-[210px] sm:max-w-md">
                                 {highlightMatch(p.name, trimmedQuery)}
                               </div>
-                              <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
-                                <span className="font-semibold text-indigo-600">{p.material}</span>
-                                <span>•</span>
+                              <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                                <span className="font-semibold text-indigo-600 dark:text-indigo-400">{p.material}</span>
+                                <span>·</span>
                                 <span>{p.brand}</span>
-                                <span>•</span>
-                                <span>現貨 {p.stock} 卷</span>
+                                <span>·</span>
+                                <span className="font-mono tabular-nums">庫存 {p.stock}</span>
                               </div>
                               {primaryFeature && (
-                                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-1.5 py-0.5 rounded-md w-fit max-w-[270px] sm:max-w-md truncate">
-                                  <Sparkles className="w-2.5 h-2.5 shrink-0 text-emerald-600" />
+                                <div className="flex items-center gap-1 mt-0.5 text-[10px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/70 dark:border-emerald-800/60 px-1.5 py-0.5 rounded-md w-fit max-w-[210px] sm:max-w-md truncate">
+                                  <Sparkles className="w-2.5 h-2.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
                                   <span className="truncate">
-                                    特點：{highlightMatch(primaryFeature, trimmedQuery)}
+                                    {highlightMatch(primaryFeature, trimmedQuery)}
                                   </span>
                                 </div>
                               )}
                             </div>
                           </div>
                           <div className="text-right shrink-0 ml-2">
-                            <span className="text-xs font-mono font-bold text-slate-900">
+                            <span className="text-xs font-mono tabular-nums font-bold text-slate-900 dark:text-slate-100">
                               NT$ {p.price.toLocaleString()}
                             </span>
                           </div>
@@ -683,13 +689,13 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                     setIsOpen(false);
                     inputRef.current?.blur();
                   }}
-                  className="w-full py-2 px-3 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-bold text-slate-700 flex items-center justify-between transition-colors cursor-pointer"
+                  className="w-full py-2 px-3 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between transition-colors cursor-pointer"
                 >
-                  <span className="flex items-center gap-1.5">
-                    <Search className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>查看所有包含「<strong className="text-indigo-600">{searchQuery}</strong>」的耗材商品</span>
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <Search className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span className="truncate">查看所有「<strong className="text-indigo-600 dark:text-indigo-400">{searchQuery}</strong>」相關耗材</span>
                   </span>
-                  <span className="text-[11px] font-mono text-slate-400">Enter 鍵確認</span>
+                  <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500 shrink-0 ml-2">Enter</span>
                 </button>
               </div>
             </div>
@@ -698,14 +704,14 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           {/* STATE 3: Has Query but NO Matches */}
           {trimmedQuery && !hasMatches && (
             <div className="p-6 text-center space-y-3">
-              <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
+              <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 flex items-center justify-center">
                 <Search className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-xs font-bold text-slate-700">
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
                   找不到符合「{searchQuery}」的材質或品牌
                 </p>
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
                   建議嘗試以下熱門規格關鍵字：
                 </p>
               </div>
@@ -715,7 +721,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                     key={kw}
                     type="button"
                     onClick={() => handleSelectTag(kw)}
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-xs font-medium text-slate-600 transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-600 dark:hover:text-indigo-300 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
                   >
                     {kw}
                   </button>

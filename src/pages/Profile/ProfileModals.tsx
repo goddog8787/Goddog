@@ -28,11 +28,15 @@ import {
   bindReferralCodeForUser,
   processReferralOrderReward,
   deleteCustomerAccountAndData,
+  loadNewebPayConfigFromFirestore,
 } from '../../lib/firebase';
 import { TaiwanAddressInput } from '../../components/Storefront/TaiwanAddressInput';
 import { getStoreCoupons, validateCoupon } from '../../utils/couponManager';
+import { createClientNewebPayCheckout, getActiveNewebPayCredentials } from '../../lib/newebpayClient';
+import { getBackendApiBase } from '../../lib/geminiClient';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { sendPasswordResetEmail } from 'firebase/auth';
@@ -74,46 +78,67 @@ import {
 import { OrderCertificateModal } from '../../components/Storefront/OrderCertificateModal';
 import { LogisticsTimelineModal } from '../../components/Storefront/LogisticsTimelineModal';
 
-const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => (
-  <AnimatePresence>
-    {isOpen && (
-      <>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50" />
-        <motion.div initial={{ opacity: 0, y: 100 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 100 }} className="fixed inset-x-0 bottom-0 z-50 bg-slate-50 dark:bg-slate-950 rounded-t-[28px] overflow-hidden flex flex-col max-w-2xl mx-auto shadow-2xl" style={{ maxHeight: '90vh' }}>
-          <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 shrink-0">
-            <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white tracking-tight text-balance truncate">{title}</h3>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="關閉視窗"
-              className="w-9 h-9 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="p-4 sm:p-6 overflow-y-auto flex-1 pb-24">
-            {children}
-          </div>
-        </motion.div>
-      </>
-    )}
-  </AnimatePresence>
-);
+const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
+  const modalNode = (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110]"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 100 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 100 }}
+            className="fixed inset-x-0 bottom-0 z-[111] bg-slate-50 dark:bg-slate-950 rounded-t-[28px] overflow-hidden flex flex-col max-w-2xl mx-auto shadow-2xl"
+            style={{ maxHeight: '88dvh' }}
+          >
+            <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white tracking-tight text-balance truncate">{title}</h3>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="關閉視窗"
+                className="w-9 h-9 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 pb-8 sm:pb-10">
+              {children}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
 
-export function classifyOrderStatusLabel(o: any): '待付款' | '待出貨' | '運送中' | '已完成' | '退換貨' {
+  if (typeof document !== 'undefined') {
+    return createPortal(modalNode, document.body);
+  }
+  return modalNode;
+};
+
+export function classifyOrderStatusLabel(o: any): '待付款' | '待出貨' | '運送中' | '已完成' | '退換貨' | '已取消' {
   const s = String(o?.orderStatus || o?.status || '').toLowerCase();
   const pay = String(o?.paymentStatus || '').toLowerCase();
+  if (s === 'cancelled' || s === 'canceled' || s === '已取消') {
+    return '已取消';
+  }
   if (
     s === 'returning' ||
     s === 'returned' ||
     s === 'return_requested' ||
     s === 'refunded' ||
-    s === 'cancelled' ||
     s === '退換貨'
   ) {
     return '退換貨';
   }
-  if (pay === 'unpaid' || s === 'unpaid' || s === 'pending_payment' || s === '待付款') {
+  if (pay === 'unpaid' || pay === 'pending' || s === 'unpaid' || s === 'pending' || s === 'pending_payment' || s === '待付款') {
     return '待付款';
   }
   if (s === 'completed' || s === 'delivered' || s === '已完成') {
@@ -237,6 +262,7 @@ export const OrderModal: React.FC<{
       const isProc = statusLabel === '待出貨';
       const isRet = statusLabel === '退換貨';
       const isUnpaid = statusLabel === '待付款';
+      const isCancelled = statusLabel === '已取消';
 
       return {
         raw: o,
@@ -251,14 +277,18 @@ export const OrderModal: React.FC<{
         }),
         items: Array.isArray(o.items) ? o.items : [],
         total: Number(o.totalAmount ?? o.total ?? o.subtotal ?? 0),
-        color: isUnpaid
+        color: isCancelled
+          ? 'text-slate-500'
+          : isUnpaid
           ? 'text-rose-600'
           : isDone
           ? 'text-emerald-600'
           : isRet
           ? 'text-amber-700'
           : 'text-indigo-600',
-        bg: isUnpaid
+        bg: isCancelled
+          ? 'bg-slate-100 border border-slate-200'
+          : isUnpaid
           ? 'bg-rose-50 border border-rose-200'
           : isDone
           ? 'bg-emerald-50 border border-emerald-200'
@@ -269,6 +299,7 @@ export const OrderModal: React.FC<{
         isDone,
         isRet,
         isUnpaid,
+        isCancelled,
       };
     });
   }, [effectiveOrders]);
@@ -281,6 +312,7 @@ export const OrderModal: React.FC<{
       shipping: mappedOrders.filter((o) => o.status === '運送中').length,
       done: mappedOrders.filter((o) => o.status === '已完成').length,
       returning: mappedOrders.filter((o) => o.status === '退換貨').length,
+      cancelled: mappedOrders.filter((o) => o.status === '已取消').length,
     };
   }, [mappedOrders]);
 
@@ -291,6 +323,7 @@ export const OrderModal: React.FC<{
     { id: 'shipping', label: '運送中', count: statusCounts.shipping },
     { id: 'done', label: '已完成', count: statusCounts.done },
     { id: 'returning', label: '退換貨', count: statusCounts.returning },
+    ...(statusCounts.cancelled > 0 ? [{ id: 'cancelled', label: '已取消', count: statusCounts.cancelled }] : []),
   ];
 
   const filtered =
@@ -302,6 +335,7 @@ export const OrderModal: React.FC<{
           if (tab === 'shipping') return o.status === '運送中';
           if (tab === 'done') return o.status === '已完成';
           if (tab === 'returning') return o.status === '退換貨';
+          if (tab === 'cancelled') return o.status === '已取消';
           return true;
         });
 
@@ -343,25 +377,195 @@ export const OrderModal: React.FC<{
     return updatedOrder;
   };
 
-  const handlePayNow = async (rawOrder: any) => {
-    setIsPayingId(rawOrder.id || rawOrder.orderNumber);
+  const handleCheckPaymentStatus = async (rawOrder: any) => {
+    const orderNo = rawOrder.orderNumber || rawOrder.id;
+    const amt = Number(rawOrder.totalAmount ?? rawOrder.total ?? rawOrder.subtotal ?? 0);
+    setIsPayingId(rawOrder.id || orderNo);
     try {
-      const updated = await persistOrderStateUpdate(rawOrder, {
-        paymentStatus: 'paid',
-        orderStatus: 'picking',
-        status: 'picking',
-        paidAt: new Date().toISOString(),
-      });
-      showToast(`✅ 訂單 ${rawOrder.orderNumber || rawOrder.id} 付款成功！已進入揀貨待出貨狀態。`);
-
-      // Also verify Stage 2 referral reward if this user was referred and just paid for their first order
-      if (member?.id && member.id !== 'guest') {
-        const refRes = await processReferralOrderReward(member, updated);
-        if (refRes?.rewarded && refRes.updatedBuyerProfile && setMember) {
-          setMember(refRes.updatedBuyerProfile);
-          showToast(`付款成功並解鎖好友首購推薦獎勵 +50 狗勾幣`);
+      const apiBase = getBackendApiBase() || window.location.origin;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(
+        `${apiBase}/api/payment/verify-status?orderId=${encodeURIComponent(orderNo)}&amt=${encodeURIComponent(amt)}`,
+        { signal: controller.signal }
+      ).finally(() => clearTimeout(timer));
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data?.success && data?.isPaid) {
+          const updated = await persistOrderStateUpdate(rawOrder, {
+            paymentStatus: 'paid',
+            orderStatus: 'picking',
+            status: 'picking',
+            isVerifiedByNewebPay: true,
+            tradeNo: data.order?.tradeNo || rawOrder.tradeNo || '',
+            payTime: data.order?.payTime || new Date().toISOString(),
+            paidAt: new Date().toISOString(),
+          });
+          showToast(`✅ 藍新金流已確認訂單 ${orderNo} 入帳，已移至「待出貨」！`);
+          if (member?.id && member.id !== 'guest') {
+            const refRes = await processReferralOrderReward(member, updated);
+            if (refRes?.rewarded && refRes.updatedBuyerProfile && setMember) {
+              setMember(refRes.updatedBuyerProfile);
+            }
+          }
+          return;
         }
       }
+      showToast(`⏳ 藍新金流尚未收到訂單 ${orderNo} 的入帳通知（若剛於超商或網銀繳費，請稍候再查詢或直接前往重新付款）。`);
+    } catch {
+      showToast('⚠️ 目前無法即時查詢入帳狀態，若尚未付款請點擊「前往藍新付款」。');
+    } finally {
+      setIsPayingId(null);
+    }
+  };
+
+  const handlePayNow = async (rawOrder: any) => {
+    const origOrderNo = rawOrder.orderNumber || rawOrder.id;
+    const amt = Number(rawOrder.totalAmount ?? rawOrder.total ?? rawOrder.subtotal ?? 0);
+    if (!amt || amt <= 0) {
+      showToast('⚠️ 此訂單金額異常，請聯繫客服協助處理。');
+      return;
+    }
+
+    setIsPayingId(rawOrder.id || origOrderNo);
+    try {
+      await loadNewebPayConfigFromFirestore().catch(() => null);
+      const activeCreds = getActiveNewebPayCredentials();
+      const freshOrderId = `GD${Date.now()}`;
+      const customerEmail = rawOrder.customerEmail || member?.email || auth.currentUser?.email || '';
+      const desc = Array.isArray(rawOrder.items) && rawOrder.items.length > 0
+        ? rawOrder.items.map((i: any) => `${i.name || '3D列印耗材'} x${i.quantity || 1}`).join(', ')
+        : `神狗勾3D列印耗材訂單 ${origOrderNo}`;
+
+      localStorage.setItem(
+        'printcore_pending_order',
+        JSON.stringify({
+          orderId: freshOrderId,
+          replacesOrderId: rawOrder.id || origOrderNo,
+          replacesOrderNumber: origOrderNo,
+          userId: rawOrder.userId || member?.id || 'guest',
+          customerName: rawOrder.customerName || member?.name || '顧客',
+          customerEmail,
+          customerPhone: rawOrder.customerPhone || member?.phone || '',
+          shippingMethod: rawOrder.shippingMethod || 'UNIMARTC2C',
+          shippingAddress: rawOrder.storeOrAddress || rawOrder.shippingAddress || '',
+          cartItems: Array.isArray(rawOrder.items)
+            ? rawOrder.items.map((it: any) => ({
+                product: {
+                  id: it.productId || 'custom',
+                  name: it.name || '3D列印耗材',
+                  price: Number(it.price) || amt,
+                },
+                selectedColor: {
+                  name: it.colorName || it.color || '預設',
+                  hex: it.colorHex || '#6366f1',
+                },
+                quantity: Number(it.quantity) || 1,
+              }))
+            : [],
+          subtotal: rawOrder.subtotal || amt,
+          shippingFee: rawOrder.shippingFee || 0,
+          paymentFee: rawOrder.paymentFee || 0,
+          discount: rawOrder.discount || 0,
+          couponCode: rawOrder.couponCode || '',
+          pointsToUse: rawOrder.pointsDeduction || 0,
+          total: amt,
+          paymentGateway: rawOrder.paymentGateway || 'credit_card',
+          invoiceType: rawOrder.invoiceType || 'cloud',
+          invoiceCarrierValue: rawOrder.invoiceCarrierValue || '',
+        })
+      );
+
+      const orderDocId = rawOrder.id || `ord-${origOrderNo}`;
+      const ownerUid = rawOrder.userId || member?.id || auth.currentUser?.uid || 'guest';
+
+      let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
+      try {
+        const apiBase = getBackendApiBase() || window.location.origin;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 1600);
+        const res = await fetch(`${apiBase}/api/payment/checkout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            orderId: freshOrderId,
+            docId: orderDocId,
+            returnFrom: 'profile',
+            userId: ownerUid,
+            customerName: rawOrder.customerName || member?.name || '顧客',
+            amount: amt,
+            email: customerEmail,
+            desc,
+            paymentMethod: rawOrder.paymentGateway || 'credit_card',
+            useSandbox: activeCreds.testMode,
+            merchantId: activeCreds.merchantId,
+            hashKey: activeCreds.hashKey,
+            hashIV: activeCreds.hashIV,
+            originUrl: window.location.origin,
+          }),
+        }).finally(() => clearTimeout(timer));
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data?.success && data?.formParams) {
+            checkoutData = data;
+          }
+        }
+      } catch {}
+
+      if (!checkoutData) {
+        checkoutData = createClientNewebPayCheckout({
+          orderId: freshOrderId,
+          docId: orderDocId,
+          returnFrom: 'profile',
+          amount: amt,
+          email: customerEmail,
+          desc,
+          paymentMethod: rawOrder.paymentGateway || 'credit_card',
+          merchantId: activeCreds.merchantId,
+          hashKey: activeCreds.hashKey,
+          hashIV: activeCreds.hashIV,
+          testMode: activeCreds.testMode,
+        });
+      }
+
+      if (checkoutData?.formParams) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = checkoutData.url;
+        if (window.self !== window.top) {
+          form.target = '_blank';
+        }
+        Object.keys(checkoutData.formParams).forEach((key) => {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = key;
+          input.value = checkoutData!.formParams[key];
+          form.appendChild(input);
+        });
+        document.body.appendChild(form);
+        form.submit();
+        return;
+      }
+      showToast('⚠️ 無法啟動藍新付款，請稍後再試。');
+    } finally {
+      setIsPayingId(null);
+    }
+  };
+
+  const handleCancelUnpaidOrder = async (rawOrder: any) => {
+    const orderNo = rawOrder.orderNumber || rawOrder.id;
+    setIsPayingId(rawOrder.id || orderNo);
+    try {
+      await persistOrderStateUpdate(rawOrder, {
+        orderStatus: 'cancelled',
+        status: 'cancelled',
+        paymentStatus: 'failed',
+        cancelledAt: new Date().toISOString(),
+      });
+      showToast(`已取消待付款訂單 ${orderNo}`);
     } finally {
       setIsPayingId(null);
     }
@@ -379,7 +583,7 @@ export const OrderModal: React.FC<{
         paymentStatus: 'paid',
         deliveredAt: new Date().toISOString(),
       });
-      showToast(`🎉 已確認收貨！訂單移至「已完成」，您現在可以評價商品領取積分！`);
+      showToast(`🎉 已確認收貨！訂單移至「已完成」，您現在可以評價商品分享心得。`);
     } finally {
       setIsConfirmingId(null);
     }
@@ -388,7 +592,6 @@ export const OrderModal: React.FC<{
   const handleSubmitOrderReview = async () => {
     if (!reviewingOrder) return;
     const newReviewsCount = Number(member?.reviewsCount || 0) + 1;
-    const rewardPts = 30;
     try {
       const localRevCount =
         parseInt(localStorage.getItem(`printcore_reviews_count_${member?.id || 'guest'}`) || '0', 10) || 0;
@@ -409,13 +612,12 @@ export const OrderModal: React.FC<{
       const updatedMember = {
         ...member,
         reviewsCount: newReviewsCount,
-        points: Number(member.points || 0) + rewardPts,
       };
       setMember(updatedMember);
       saveUserProfileToFirestore(updatedMember);
     }
 
-    showToast(`⭐ 感謝您的五星評價！已獲得 +${rewardPts} 點狗勾幣並更新「評價達人」成就進度！`);
+    showToast('⭐ 感謝您的評價！您的商品使用心得已成功送出。');
     setReviewingOrder(null);
     setReviewText('');
   };
@@ -467,129 +669,6 @@ export const OrderModal: React.FC<{
         ))}
       </div>
 
-      {/* Inline Review Form Modal */}
-      {reviewingOrder && (
-        <div className="mb-5 p-4 bg-amber-50/90 border border-amber-200 rounded-2xl space-y-3 animate-fade-in">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-              <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
-              <span>評價訂單 {reviewingOrder.orderNumber || reviewingOrder.id}（贈 +30 狗勾幣）</span>
-            </h4>
-            <button
-              onClick={() => setReviewingOrder(null)}
-              className="text-xs text-slate-400 hover:text-slate-700 font-bold cursor-pointer"
-            >
-              關閉
-            </button>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                type="button"
-                onClick={() => setReviewRating(star)}
-                className="p-1 cursor-pointer"
-              >
-                <Star
-                  className={`w-5 h-5 ${
-                    star <= reviewRating ? 'fill-amber-400 text-amber-500' : 'text-slate-300'
-                  }`}
-                />
-              </button>
-            ))}
-            <span className="text-xs font-bold text-amber-800 ml-1">{reviewRating}.0 顆星好評</span>
-          </div>
-          <textarea
-            value={reviewText}
-            onChange={(e) => setReviewText(e.target.value)}
-            rows={2}
-            placeholder="分享您的列印體驗（例如：首層附著力佳、線徑穩定無氣泡...）"
-            className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-amber-500"
-          />
-          <div className="flex justify-end gap-2">
-            {reviewingOrder.items?.[0]?.productId && onGoReview && (
-              <button
-                type="button"
-                onClick={() => {
-                  const pid = reviewingOrder.items[0].productId;
-                  setReviewingOrder(null);
-                  onClose();
-                  onGoReview(pid);
-                }}
-                className="px-3 py-1.5 bg-white border border-amber-300 text-amber-800 text-xs font-bold rounded-xl cursor-pointer"
-              >
-                前往商品頁完整曬圖
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleSubmitOrderReview}
-              className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
-            >
-              送出評價領 +30 幣
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Inline After-Sales Request Form */}
-      {afterSalesOrder && (
-        <div className="mb-5 p-4 bg-rose-50/90 border border-rose-200 rounded-2xl space-y-3 animate-fade-in">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-black text-rose-950">
-              申請售後退換貨（訂單：{afterSalesOrder.orderNumber || afterSalesOrder.id}）
-            </h4>
-            <button
-              onClick={() => setAfterSalesOrder(null)}
-              className="text-xs text-slate-400 hover:text-slate-700 font-bold cursor-pointer"
-            >
-              關閉
-            </button>
-          </div>
-          <select
-            value={afterSalesReason}
-            onChange={(e) => setAfterSalesReason(e.target.value)}
-            className="w-full p-2.5 bg-white border border-rose-200 rounded-xl text-xs font-bold text-slate-800"
-          >
-            <option value="線材規格/顏色換貨申請">線材規格 / 顏色換貨申請</option>
-            <option value="防潮密封袋受損免費補換">防潮密封袋受潮或受損免費補換</option>
-            <option value="7天鑑賞期退貨退款申請">7 天鑑賞期退貨退款申請</option>
-            <option value="列印卡料技術檢測與換新">列印卡料技術檢測與換新</option>
-          </select>
-          <textarea
-            value={afterSalesNote}
-            onChange={(e) => setAfterSalesNote(e.target.value)}
-            rows={2}
-            placeholder="請簡述欲更換的顏色或問題狀況，客服將為您安排免費逆物流收件..."
-            className="w-full p-2.5 bg-white border border-rose-200 rounded-xl text-xs text-slate-800"
-          />
-          <div className="flex justify-end gap-2">
-            {onOpenSupport && (
-              <button
-                type="button"
-                onClick={() => {
-                  const num = afterSalesOrder.orderNumber || afterSalesOrder.id;
-                  setAfterSalesOrder(null);
-                  onClose();
-                  onOpenSupport(`您好，我想針對訂單【${num}】辦理售後服務（原因：${afterSalesReason}）`);
-                }}
-                className="px-3 py-1.5 bg-white border border-rose-300 text-rose-700 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>轉接線上客服</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleSubmitAfterSales}
-              className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl cursor-pointer"
-            >
-              提交售後單
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="space-y-4">
         {filtered.length > 0 ? (
           filtered.map((order) => (
@@ -616,7 +695,20 @@ export const OrderModal: React.FC<{
                 </div>
               </div>
 
-              {order.raw?.trackingNumber &&
+              {order.status === '待付款' && (
+                <div className="mb-3 px-3 py-2 bg-rose-50/80 rounded-xl flex items-start justify-between gap-2 text-[11px] text-rose-800 border border-rose-200/80">
+                  <div className="space-y-0.5">
+                    <div className="font-bold">待藍新金流完成付款</div>
+                    <div className="text-rose-700/90 leading-relaxed">
+                      若已取得超商條碼 / 代碼或轉帳帳號並繳費完成，可點擊「核對入帳」或重新「前往藍新付款」。
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!order.isUnpaid &&
+                !order.isCancelled &&
+                order.raw?.trackingNumber &&
                 order.raw.trackingNumber !== '77391829310' &&
                 !order.raw.trackingNumber.includes('77391829310') && (
                   <div className="mb-3 px-3 py-2 bg-slate-50 rounded-xl flex items-center justify-between text-xs border border-slate-100">
@@ -723,13 +815,15 @@ export const OrderModal: React.FC<{
                 </div>
 
                 <div className="flex flex-wrap items-center justify-end gap-1.5">
-                  <button
-                    onClick={() => setSelectedLogisticsOrder(order.raw)}
-                    className="px-2.5 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200/90 text-xs font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer"
-                  >
-                    <Truck className="w-3.5 h-3.5 text-sky-600" />
-                    <span>物流詳情</span>
-                  </button>
+                  {(!order.isUnpaid && !order.isCancelled) && (
+                    <button
+                      onClick={() => setSelectedLogisticsOrder(order.raw)}
+                      className="px-2.5 py-1.5 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200/90 text-xs font-bold rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      <Truck className="w-3.5 h-3.5 text-sky-600" />
+                      <span>物流詳情</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setSelectedCertOrder(order.raw)}
                     className="px-2.5 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
@@ -739,13 +833,29 @@ export const OrderModal: React.FC<{
                   </button>
 
                   {order.status === '待付款' && (
-                    <button
-                      onClick={() => handlePayNow(order.raw)}
-                      disabled={isPayingId === (order.raw.id || order.id)}
-                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs disabled:opacity-50"
-                    >
-                      {isPayingId === (order.raw.id || order.id) ? '付款確認中...' : '立即付款'}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => handleCheckPaymentStatus(order.raw)}
+                        disabled={isPayingId === (order.raw.id || order.id)}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+                      >
+                        核對入帳
+                      </button>
+                      <button
+                        onClick={() => handleCancelUnpaidOrder(order.raw)}
+                        disabled={isPayingId === (order.raw.id || order.id)}
+                        className="px-2.5 py-1.5 bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 text-xs font-bold rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+                      >
+                        取消訂單
+                      </button>
+                      <button
+                        onClick={() => handlePayNow(order.raw)}
+                        disabled={isPayingId === (order.raw.id || order.id)}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs disabled:opacity-50"
+                      >
+                        {isPayingId === (order.raw.id || order.id) ? '前往藍新中...' : '前往藍新付款'}
+                      </button>
+                    </>
                   )}
 
                   {order.canConfirm && (
@@ -761,11 +871,15 @@ export const OrderModal: React.FC<{
 
                   {order.isDone && (
                     <button
-                      onClick={() => setReviewingOrder(order.raw)}
+                      onClick={() => {
+                        setReviewRating(5);
+                        setReviewText(order.raw?.reviewComment || '');
+                        setReviewingOrder(order.raw);
+                      }}
                       className="px-2.5 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-xs font-bold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                      <span>{order.raw?.isReviewed ? '追加評價' : '評價領 30 幣'}</span>
+                      <span>{order.raw?.isReviewed ? '追加評價' : '評價商品'}</span>
                     </button>
                   )}
 
@@ -791,6 +905,201 @@ export const OrderModal: React.FC<{
           </div>
         )}
       </div>
+
+      {/* 獨立彈出視窗：評價商品（Portal 懸浮於訂單列表正中央） */}
+      {reviewingOrder &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs animate-fade-in"
+            onClick={() => setReviewingOrder(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]"
+            >
+              <div className="flex items-center justify-between px-5 py-4 bg-amber-50/90 dark:bg-amber-950/40 border-b border-amber-200/80 dark:border-amber-900/50 shrink-0">
+                <h4 className="text-sm font-black text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                  <Star className="w-4 h-4 fill-amber-400 text-amber-500 shrink-0" />
+                  <span className="truncate">評價訂單 {reviewingOrder.orderNumber || reviewingOrder.id}</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setReviewingOrder(null)}
+                  className="w-8 h-8 rounded-full bg-white/80 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                  aria-label="關閉視窗"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                    整體列印品質評分
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setReviewRating(star)}
+                        className="p-1 cursor-pointer transition-transform hover:scale-110"
+                      >
+                        <Star
+                          className={`w-6 h-6 ${
+                            star <= reviewRating ? 'fill-amber-400 text-amber-500' : 'text-slate-300 dark:text-slate-600'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    <span className="text-xs font-bold text-amber-700 dark:text-amber-300 ml-2">
+                      {reviewRating}.0 顆星
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    列印實測心得
+                  </label>
+                  <textarea
+                    value={reviewText}
+                    onChange={(e) => setReviewText(e.target.value)}
+                    rows={3}
+                    placeholder="分享您的列印體驗（例如：首層附著力佳、線徑穩定無氣泡...）"
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2 shrink-0">
+                {reviewingOrder.items?.[0]?.productId && onGoReview && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pid = reviewingOrder.items[0].productId;
+                      setReviewingOrder(null);
+                      onClose();
+                      onGoReview(pid);
+                    }}
+                    className="px-3 py-2 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 text-xs font-bold rounded-xl cursor-pointer hover:bg-amber-50"
+                  >
+                    前往商品頁曬圖
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setReviewingOrder(null)}
+                  className="px-3.5 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitOrderReview}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+                >
+                  送出評價
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* 獨立彈出視窗：申請售後退換貨（Portal 懸浮於訂單列表正中央） */}
+      {afterSalesOrder &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs animate-fade-in"
+            onClick={() => setAfterSalesOrder(null)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]"
+            >
+              <div className="flex items-center justify-between px-5 py-4 bg-rose-50/90 dark:bg-rose-950/40 border-b border-rose-200/80 dark:border-rose-900/50 shrink-0">
+                <h4 className="text-sm font-black text-rose-950 dark:text-rose-200 truncate">
+                  申請售後退換貨（{afterSalesOrder.orderNumber || afterSalesOrder.id}）
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setAfterSalesOrder(null)}
+                  className="w-8 h-8 rounded-full bg-white/80 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                  aria-label="關閉視窗"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    售後申請類型
+                  </label>
+                  <select
+                    value={afterSalesReason}
+                    onChange={(e) => setAfterSalesReason(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 cursor-pointer"
+                  >
+                    <option value="線材規格/顏色換貨申請">線材規格 / 顏色換貨申請</option>
+                    <option value="防潮密封袋受損免費補換">防潮密封袋受潮或受損免費補換</option>
+                    <option value="7天鑑賞期退貨退款申請">7 天鑑賞期退貨退款申請</option>
+                    <option value="列印卡料技術檢測與換新">列印卡料技術檢測與換新</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    問題說明與需求備註
+                  </label>
+                  <textarea
+                    value={afterSalesNote}
+                    onChange={(e) => setAfterSalesNote(e.target.value)}
+                    rows={3}
+                    placeholder="請簡述欲更換的顏色或問題狀況，客服將為您安排免費逆物流收件..."
+                    className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-rose-500 resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-end gap-2 shrink-0">
+                {onOpenSupport && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const num = afterSalesOrder.orderNumber || afterSalesOrder.id;
+                      setAfterSalesOrder(null);
+                      onClose();
+                      onOpenSupport(`您好，我想針對訂單【${num}】辦理售後服務（原因：${afterSalesReason}）`);
+                    }}
+                    className="px-3 py-2 bg-white dark:bg-slate-800 border border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300 text-xs font-bold rounded-xl flex items-center gap-1 cursor-pointer hover:bg-rose-50"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>轉接線上客服</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setAfterSalesOrder(null)}
+                  className="px-3.5 py-2 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 cursor-pointer"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitAfterSales}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer"
+                >
+                  提交售後單
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       <OrderCertificateModal
         isOpen={!!selectedCertOrder}

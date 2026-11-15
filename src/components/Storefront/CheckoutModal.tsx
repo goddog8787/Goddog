@@ -49,6 +49,7 @@ interface CheckoutModalProps {
   pointsToUse: number;
   initialCouponCode?: string;
   onOrderCompleted: (newOrder: Order) => void;
+  onPendingOrderCreated?: (pendingOrder: Order) => Promise<void> | void;
   onOpenTracking: (trackingNumber: string) => void;
 }
 
@@ -61,6 +62,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   member,
   pointsToUse,
   initialCouponCode = '',
+  onPendingOrderCreated,
   onOpenTracking,
 }) => {
   const t = translations[lang];
@@ -382,8 +384,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       await loadNewebPayConfigFromFirestore().catch(() => null);
       const activeCreds = getActiveNewebPayCredentials();
 
+      const generatedOrderId = `GD${Date.now()}`;
+      const ownerUid = (member?.id && !member.id.startsWith('guest')) ? member.id : (auth.currentUser?.uid || 'guest');
+
       const pendingOrderInfo = {
-        userId: (member?.id && !member.id.startsWith('guest')) ? member.id : (auth.currentUser?.uid || 'guest'),
+        orderId: generatedOrderId,
+        userId: ownerUid,
         customerName,
         customerEmail,
         customerPhone,
@@ -401,16 +407,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         invoiceType,
         invoiceCarrierValue,
       };
-      localStorage.setItem('printcore_pending_order', JSON.stringify(pendingOrderInfo));
 
-      let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
+      let checkoutData: { url: string; orderId?: string; formParams: Record<string, string> } | null = null;
 
       try {
         const apiBase = getBackendApiBase() || window.location.origin;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 1800);
         const res = await fetch(`${apiBase}/api/payment/checkout`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
+            orderId: generatedOrderId,
+            docId: `ord-${generatedOrderId}`,
+            returnFrom: 'checkout',
+            userId: ownerUid,
+            customerName: customerName || member?.name || '顧客',
             amount: total,
             email: customerEmail,
             desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
@@ -421,7 +434,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             hashIV: activeCreds.hashIV,
             originUrl: window.location.origin,
           }),
-        });
+        }).finally(() => clearTimeout(timer));
         const contentType = res.headers.get('content-type') || '';
         if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
@@ -435,6 +448,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       if (!checkoutData) {
         checkoutData = createClientNewebPayCheckout({
+          orderId: generatedOrderId,
+          docId: `ord-${generatedOrderId}`,
+          returnFrom: 'checkout',
           amount: total,
           email: customerEmail,
           desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
@@ -447,6 +463,55 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       if (checkoutData && checkoutData.formParams) {
+        const effectiveOrderId = checkoutData.orderId || generatedOrderId;
+        localStorage.setItem(
+          'printcore_pending_order',
+          JSON.stringify({ ...pendingOrderInfo, orderId: effectiveOrderId })
+        );
+
+        const pendingOrderRecord: Order = {
+          id: `ord-${effectiveOrderId}`,
+          orderNumber: effectiveOrderId,
+          createdAt: new Date().toISOString(),
+          customerName: customerName || member?.name || '顧客',
+          customerEmail: customerEmail || member?.email || '',
+          customerPhone: customerPhone || member?.phone || '',
+          shippingMethod,
+          storeOrAddress: shippingAddress || '',
+          items: cartItems.map((c) => ({
+            productId: c.product.id,
+            name: c.product.name,
+            colorName: c.selectedColor.name,
+            colorHex: c.selectedColor.hex,
+            price: c.product.price,
+            quantity: c.quantity,
+          })),
+          subtotal,
+          shippingFee,
+          discount,
+          couponCode: appliedCoupon?.code || '',
+          pointsDeduction: pointsToUse,
+          pointsEarned,
+          paymentFee,
+          total,
+          paymentGateway: methodToUse,
+          paymentStatus: 'pending',
+          orderStatus: 'new',
+          trackingNumber: '',
+          invoiceNumber: `PENDING-${effectiveOrderId.slice(-6)}`,
+          invoiceType,
+          invoiceCarrierValue,
+          userId: ownerUid,
+          isVerifiedByNewebPay: false,
+        };
+
+        if (onPendingOrderCreated) {
+          await Promise.race([
+            Promise.resolve(onPendingOrderCreated(pendingOrderRecord)),
+            new Promise<void>((resolve) => setTimeout(resolve, 1100)),
+          ]).catch(() => {});
+        }
+
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = checkoutData.url;

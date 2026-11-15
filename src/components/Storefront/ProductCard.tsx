@@ -1,13 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { ShoppingCart, Check, Eye, Heart, Scale, Package, X, Plus, Minus } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview } from '../../types';
 import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
-import { WriteReviewModal } from './WriteReviewModal';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
 import { triggerFlyToCart } from './FlyToCartOverlay';
+
+const WriteReviewModal = React.lazy(() =>
+  import('./WriteReviewModal').then((m) => ({ default: m.WriteReviewModal }))
+);
 
 interface ProductCardProps {
   product: FilamentProduct;
@@ -20,9 +23,10 @@ interface ProductCardProps {
   isCompared?: boolean;
   onToggleCompare?: (productId: string) => void;
   onReviewSubmitted?: (updatedProduct: FilamentProduct, review: ProductReview) => void;
+  priority?: boolean;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({
+const ProductCardInner: React.FC<ProductCardProps> = ({
   product,
   currency,
   lang,
@@ -33,6 +37,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   isCompared = false,
   onToggleCompare,
   onReviewSubmitted,
+  priority = false,
 }) => {
   const t = translations[lang];
   const liveProduct = useMemo(() => translateProduct(product, lang), [product, lang]);
@@ -149,97 +154,99 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       onClick={() => onViewDetail(liveProduct)}
       className="group h-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer relative"
     >
-      {/* 純淨無遮擋商品圖片區（1:1 比例完整呈現線盤與盒裝，不裁切上下資訊） */}
-      <div className="relative aspect-square w-full bg-slate-50 dark:bg-slate-800/40 overflow-hidden flex items-center justify-center cursor-pointer">
-        {/* 右上角懸浮小巧功能鈕（手機版保留對比與收藏保持圖面乾淨，桌機版懸停顯示快覽） */}
-        <div
-          className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 z-10 flex items-center gap-1 lg:opacity-85 lg:group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onViewDetail(liveProduct);
-            }}
-            className="hidden sm:flex w-8 h-8 rounded-full items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
-            title={lang === 'en' ? 'Quick View' : lang === 'ja' ? '詳細を見る' : '查看詳情'}
+      {/* 純淨無遮擋商品圖片區（16px 圓角質感畫框、1:1 比例完整呈現線盤與盒裝） */}
+      <div className="p-2 pb-0">
+        <div className="relative aspect-square w-full rounded-[16px] border border-slate-200/75 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-800/40 overflow-hidden flex items-center justify-center cursor-pointer">
+          {/* 右上角懸浮小巧功能鈕（手機版保留對比與收藏保持圖面乾淨，桌機版懸停顯示快覽） */}
+          <div
+            className="absolute top-2 right-2 z-10 flex items-center gap-1 lg:opacity-85 lg:group-hover:opacity-100 transition-opacity"
+            onClick={(e) => e.stopPropagation()}
           >
-            <Eye className="w-3.5 h-3.5" />
-          </button>
-
-          {onToggleCompare && (
             <button
               type="button"
-              onClick={() => onToggleCompare(product.id)}
-              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
-                isCompared
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600'
-              }`}
-              title={
-                isCompared
-                  ? lang === 'en'
-                    ? 'Comparing'
-                    : lang === 'ja'
-                    ? '比較中'
-                    : '已在對比'
-                  : lang === 'en'
-                  ? 'Compare'
-                  : lang === 'ja'
-                  ? '比較に追加'
-                  : '加入對比'
-              }
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewDetail(liveProduct);
+              }}
+              className="hidden sm:flex w-8 h-8 rounded-full items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
+              title={lang === 'en' ? 'Quick View' : lang === 'ja' ? '詳細を見る' : '查看詳情'}
             >
-              <Scale className="w-3.5 h-3.5" />
+              <Eye className="w-3.5 h-3.5" />
             </button>
-          )}
 
-          {onToggleWishlist && (
-            <button
-              type="button"
-              onClick={() => onToggleWishlist(product.id)}
-              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
-                isWishlisted
-                  ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-600'
-                  : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-500 dark:text-slate-400 hover:text-rose-500'
-              }`}
-              title={
-                isWishlisted
-                  ? lang === 'en'
-                    ? 'Remove Wishlist'
+            {onToggleCompare && (
+              <button
+                type="button"
+                onClick={() => onToggleCompare(product.id)}
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
+                  isCompared
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600'
+                }`}
+                title={
+                  isCompared
+                    ? lang === 'en'
+                      ? 'Comparing'
+                      : lang === 'ja'
+                      ? '比較中'
+                      : '已在對比'
+                    : lang === 'en'
+                    ? 'Compare'
                     : lang === 'ja'
-                    ? 'お気に入り解除'
-                    : '從收藏移除'
-                  : lang === 'en'
-                  ? 'Wishlist'
-                  : lang === 'ja'
-                  ? 'お気に入り'
-                  : '收藏'
-              }
-            >
-              <Heart className={`w-3.5 h-3.5 ${isWishlisted ? 'fill-rose-500 text-rose-500' : ''}`} />
-            </button>
+                    ? '比較に追加'
+                    : '加入對比'
+                }
+              >
+                <Scale className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {onToggleWishlist && (
+              <button
+                type="button"
+                onClick={() => onToggleWishlist(product.id)}
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
+                  isWishlisted
+                    ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-600'
+                    : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-500 dark:text-slate-400 hover:text-rose-500'
+                }`}
+                title={
+                  isWishlisted
+                    ? lang === 'en'
+                      ? 'Remove Wishlist'
+                      : lang === 'ja'
+                      ? 'お気に入り解除'
+                      : '從收藏移除'
+                    : lang === 'en'
+                    ? 'Wishlist'
+                    : lang === 'ja'
+                    ? 'お気に入り'
+                    : '收藏'
+                }
+              >
+                <Heart className={`w-3.5 h-3.5 ${isWishlisted ? 'fill-rose-500 text-rose-500' : ''}`} />
+              </button>
+            )}
+          </div>
+
+          {/* 商品圖片本體 */}
+          {activeImageUrl && activeImageUrl.trim() !== '' ? (
+            <img
+              src={activeImageUrl}
+              alt={cleanTitle}
+              referrerPolicy="no-referrer"
+              className="w-full h-full rounded-[16px] object-cover object-center group-hover:scale-103 transition-transform duration-300"
+              loading={priority ? 'eager' : 'lazy'}
+              fetchPriority={priority ? 'high' : 'low'}
+              decoding="async"
+              onError={(e) => handleProductImageError(e, product.material, product.name)}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-400">
+              <Package className="w-10 h-10" />
+            </div>
           )}
         </div>
-
-        {/* 商品圖片本體 */}
-        {activeImageUrl && activeImageUrl.trim() !== '' ? (
-          <img
-            src={activeImageUrl}
-            alt={cleanTitle}
-            referrerPolicy="no-referrer"
-            className="w-full h-full object-cover object-center group-hover:scale-103 transition-transform duration-300"
-            loading="eager"
-            fetchPriority="high"
-            decoding="async"
-            onError={(e) => handleProductImageError(e, product.material, product.name)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-400">
-            <Package className="w-10 h-10" />
-          </div>
-        )}
       </div>
 
       {/* 簡潔有力的商品資訊內容（完整顯示品牌不截斷、標題不重複品牌名稱） */}
@@ -472,17 +479,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           document.body
         )}
 
-      {/* 評價填寫彈窗 */}
-      <WriteReviewModal
-        isOpen={isReviewModalOpen}
-        onClose={() => setIsReviewModalOpen(false)}
-        product={liveProduct}
-        onReviewSubmitted={(updated, review) => {
-          if (onReviewSubmitted) {
-            onReviewSubmitted(updated, review);
-          }
-        }}
-      />
+      {/* 評價填寫彈窗（僅在開啟時動態載入與掛載） */}
+      {isReviewModalOpen && (
+        <Suspense fallback={null}>
+          <WriteReviewModal
+            isOpen={isReviewModalOpen}
+            onClose={() => setIsReviewModalOpen(false)}
+            product={liveProduct}
+            onReviewSubmitted={(updated, review) => {
+              if (onReviewSubmitted) {
+                onReviewSubmitted(updated, review);
+              }
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 };
+
+export const ProductCard = React.memo(ProductCardInner);

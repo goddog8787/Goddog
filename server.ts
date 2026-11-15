@@ -3008,6 +3008,8 @@ interface PendingPaymentRecord {
   tradeNo?: string;
   payTime?: string;
   authCode?: string;
+  userId?: string;
+  customerName?: string;
 }
 
 interface VerifiedPaidOrder {
@@ -3020,6 +3022,9 @@ interface VerifiedPaidOrder {
   paymentType: string;
   authCode?: string;
   verifiedAt: string;
+  trackingNumber?: string;
+  orderStatus?: string;
+  storeOrAddress?: string;
   rawResult?: any;
 }
 
@@ -3031,7 +3036,7 @@ const verifiedPaidOrdersStore: Record<string, VerifiedPaidOrder> = {};
 // =============================================================
 app.post('/api/payment/checkout', (req, res) => {
   try {
-    const { amount, email, desc, paymentMethod, useSandbox, merchantId, hashKey, hashIV, originUrl } = req.body;
+    const { amount, email, desc, paymentMethod, useSandbox, merchantId, hashKey, hashIV, originUrl, orderId: requestedOrderId, docId, returnFrom, userId, customerName } = req.body;
     
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid amount' });
@@ -3044,7 +3049,10 @@ app.post('/api/payment/checkout', (req, res) => {
     const activeHashIV = (reqIv.length === 16) ? reqIv : NEWEBPAY_HASH_IV;
     const activeSandbox = typeof useSandbox === 'boolean' ? useSandbox : NEWEBPAY_IS_SANDBOX;
 
-    const orderId = `GD${Date.now()}`;
+    const cleanRequestedId = typeof requestedOrderId === 'string' && /^GD[A-Za-z0-9_]{6,22}$/.test(requestedOrderId.trim())
+      ? requestedOrderId.trim()
+      : '';
+    const orderId = cleanRequestedId || `GD${Date.now()}`;
     const { webhookBaseUrl, clientBackUrl } = resolveSafeGatewayCallbackBase(req, originUrl);
 
     // 儲存待付款紀錄
@@ -3055,7 +3063,9 @@ app.post('/api/payment/checkout', (req, res) => {
       desc: desc || '',
       paymentMethod: paymentMethod || 'credit_card',
       status: 'pending',
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      userId: typeof userId === 'string' ? userId : '',
+      customerName: typeof customerName === 'string' ? customerName : '',
     };
 
     // 根據前端傳來的 paymentMethod 動態決定藍新金流要開啟的支付方式參數 (100% 依特約商店啟用規格)
@@ -3118,6 +3128,17 @@ app.post('/api/payment/checkout', (req, res) => {
         break;
     }
 
+    const backParams = new URLSearchParams({
+      client_back: '1',
+      orderId,
+    });
+    if (typeof docId === 'string' && docId.trim()) {
+      backParams.set('docId', docId.trim());
+    }
+    if (returnFrom === 'profile' || returnFrom === 'checkout') {
+      backParams.set('from', returnFrom);
+    }
+
     const tradeInfoObj = {
       MerchantID: activeMerchantId,
       RespondType: 'JSON',
@@ -3130,7 +3151,7 @@ app.post('/api/payment/checkout', (req, res) => {
       LoginType: '0',
       ReturnURL: `${webhookBaseUrl}/api/payment/return`, // 藍新金流授權完成後，由藍新向後端 POST 付款明細驗證 (限 80/443 埠)
       NotifyURL: `${webhookBaseUrl}/api/payment/notify`, // 背景接收付款結果 (Webhook, 限 80/443 埠)
-      ClientBackURL: `${clientBackUrl}/`, // 返回商店按鈕
+      ClientBackURL: `${clientBackUrl}/?${backParams.toString()}`, // 返回商店按鈕
       ...paymentFlags
     };
 
@@ -3154,6 +3175,21 @@ app.post('/api/payment/checkout', (req, res) => {
     console.error('NewebPay Checkout Error:', error);
     res.status(500).json({ success: false, message: 'Failed to initiate checkout' });
   }
+});
+
+app.get('/api/payment/session-handoff', (req, res) => {
+  const orderId = String(req.query.orderId || '').trim();
+  const pending = orderId ? pendingPaymentsStore[orderId] : undefined;
+  if (!pending || !pending.userId || pending.userId === 'guest' || pending.userId.startsWith('guest')) {
+    return res.json({ success: false });
+  }
+  return res.json({
+    success: true,
+    orderId: pending.orderId,
+    userId: pending.userId,
+    customerName: pending.customerName || '',
+    customerEmail: pending.email || '',
+  });
 });
 
 // =============================================================
@@ -4314,7 +4350,21 @@ app.post('/api/payment/logistics/print', (req, res) => {
   res.send(html);
 });
 
-// 3. 物流包裹即時動態追蹤與時間軸生成核心 (Real-time Parcel Tracking & Timeline Engine)
+// 3. 物流包裹真實貨態查詢核心 (Strict Ground-Truth Parcel Tracking Engine — Zero Fabrication)
+function formatRealTimestamp(raw?: string): string {
+  if (!raw) return '';
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return String(raw);
+  return d.toLocaleString('zh-TW', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function generateLogisticsTrackingInfo(params: {
   trackingNumber?: string;
   orderNumber?: string;
@@ -4323,217 +4373,274 @@ function generateLogisticsTrackingInfo(params: {
   storeOrAddress?: string;
   orderStatus?: string;
   status?: string;
+  paymentStatus?: string;
+  paymentGateway?: string;
+  isVerifiedByNewebPay?: boolean;
   createdAt?: string;
+  payTime?: string;
+  paidAt?: string;
+  shippedAt?: string;
+  arrivedAt?: string;
+  deliveredAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  afterSalesRequestedAt?: string;
+  afterSalesReason?: string;
+  trackingEvents?: Array<any>;
   customerName?: string;
   carrier?: string;
   tradeNo?: string;
   amt?: number;
 }) {
   const rawTracking = String(params.trackingNumber || '').trim();
+  const isDummyTrack =
+    !rawTracking ||
+    rawTracking === '77391829310' ||
+    rawTracking.includes('77391829310') ||
+    rawTracking.startsWith('MOCK') ||
+    rawTracking.startsWith('TEST');
+  const effectiveTracking = isDummyTrack ? '' : rawTracking;
+
   const rawOrderNo = String(params.orderNumber || params.orderId || '').trim();
   const rawMethod = String(params.shippingMethod || '').toUpperCase();
   const queryCarrier = String(params.carrier || '').toLowerCase();
-  const statusStr = String(params.orderStatus || params.status || 'paid').toLowerCase();
+  const statusStr = String(params.orderStatus || params.status || 'pending').toLowerCase();
+  const payStr = String(params.paymentStatus || '').toLowerCase();
+  const gatewayStr = String(params.paymentGateway || '').toLowerCase();
+  const isCod = gatewayStr === 'cod';
 
-  // 1. 辨別超商與物流體系 (7-11, 全家, 黑貓, 萊爾富, OK)
-  let carrierName = '7-ELEVEN 交貨便 (門市店到店)';
+  // 1. 辨別物流商與官網查詢連結（僅真實配送資訊）
+  let carrierName = '7-ELEVEN 交貨便';
   let carrierCode = '7-11';
-  let officialInquiryUrl = 'https://eservice.7-11.com.tw/E-Tracking/search.aspx';
+  let baseInquiryUrl = 'https://eservice.7-11.com.tw/E-Tracking/search.aspx';
 
-  if (rawMethod === 'FAMIC2C' || queryCarrier === 'familymart' || rawTracking.startsWith('882')) {
-    carrierName = '全家便利商店 FamilyMart (店到店)';
+  if (rawMethod.includes('FAMI') || queryCarrier === 'familymart' || effectiveTracking.startsWith('882')) {
+    carrierName = '全家便利商店店到店';
     carrierCode = 'familymart';
-    officialInquiryUrl = 'https://www.famiport.com.tw/Web_Famiport/page/process.aspx';
-  } else if (rawMethod === 'HOME' || queryCarrier === 'blackcat' || rawTracking.startsWith('903')) {
-    carrierName = '黑貓宅急便 (跨溫控專車宅配)';
+    baseInquiryUrl = 'https://www.famiport.com.tw/Web_Famiport/page/process.aspx';
+  } else if (rawMethod.includes('HOME') || rawMethod.includes('TCAT') || queryCarrier === 'blackcat' || effectiveTracking.startsWith('903')) {
+    carrierName = '黑貓宅急便 / 宅配到府';
     carrierCode = 'blackcat';
-    officialInquiryUrl = 'https://www.t-cat.com.tw/Inquire/Trace.aspx';
-  } else if (rawMethod === 'HILIFEC2C' || rawTracking.startsWith('661')) {
-    carrierName = '萊爾富 Hi-Life (電子寄件)';
+    baseInquiryUrl = 'https://www.t-cat.com.tw/Inquire/Trace.aspx';
+  } else if (rawMethod.includes('HILIFE') || effectiveTracking.startsWith('661')) {
+    carrierName = '萊爾富超商取貨';
     carrierCode = 'hilife';
-    officialInquiryUrl = 'https://www.hilife.com.tw/serviceInfo_search.aspx';
-  } else if (rawMethod === 'OKMARTC2C' || rawTracking.startsWith('551')) {
-    carrierName = 'OK·MART (超商交貨)';
+    baseInquiryUrl = 'https://www.hilife.com.tw/serviceInfo_search.aspx';
+  } else if (rawMethod.includes('OKMART') || effectiveTracking.startsWith('551')) {
+    carrierName = 'OK 超商取貨';
     carrierCode = 'okmart';
-    officialInquiryUrl = 'https://www.okmart.com.tw/convenient_packet';
+    baseInquiryUrl = 'https://www.okmart.com.tw/convenient_packet';
   }
 
-  // 2. 指派有效合法格式之託運號碼
-  let effectiveTracking = rawTracking;
-  if (
-    !effectiveTracking ||
-    effectiveTracking === '77391829310' ||
-    effectiveTracking.includes('77391829310') ||
-    effectiveTracking.startsWith('MOCK') ||
-    effectiveTracking.startsWith('TEST')
-  ) {
-    const dateNum = new Date().toISOString().slice(2, 10).replace(/-/g, '');
-    const seed = String(Math.abs((rawOrderNo || 'ORDER').split('').reduce((acc, c) => acc + c.charCodeAt(0), 1000))).slice(-4).padStart(4, '8');
-    if (carrierCode === 'familymart') {
-      effectiveTracking = `882${dateNum}${seed.slice(0, 3)}`;
-    } else if (carrierCode === 'blackcat') {
-      effectiveTracking = `903${dateNum}${seed}`;
-    } else {
-      effectiveTracking = `773${dateNum}${seed}`;
-    }
-  }
+  // 2. 嚴格判斷真實訂單與金流狀態（絕對不對未付款或已取消訂單偽造已核帳或已簽收）
+  const isCancelled = statusStr === 'cancelled' || statusStr === 'canceled' || statusStr === '已取消';
+  const isReturning =
+    statusStr === 'returning' ||
+    statusStr === 'returned' ||
+    statusStr === 'return_requested' ||
+    statusStr === 'refunded' ||
+    statusStr === '退換貨';
+  const isPaidVerified =
+    !isCancelled &&
+    (Boolean(params.isVerifiedByNewebPay) || (payStr === 'paid' && !isCod) || Boolean(params.tradeNo && payStr !== 'pending' && payStr !== 'failed'));
+  const isUnpaid =
+    !isCancelled &&
+    !isReturning &&
+    !isCod &&
+    !isPaidVerified &&
+    (payStr === 'pending' ||
+      payStr === 'unpaid' ||
+      payStr === 'awaiting_payment' ||
+      payStr === 'failed' ||
+      statusStr === 'unpaid' ||
+      statusStr === 'pending' ||
+      statusStr === 'pending_payment' ||
+      statusStr === 'new' ||
+      !payStr);
 
-  // 3. 計算基準時間與各節點歷程
-  let baseTime = new Date();
-  if (params.createdAt) {
-    const parsed = new Date(params.createdAt);
-    if (!isNaN(parsed.getTime())) baseTime = parsed;
-  }
-  const formatStepTime = (offsetHours: number) => {
-    const d = new Date(baseTime.getTime() + offsetHours * 3600 * 1000);
-    const now = new Date();
-    const capped = d > now ? new Date(now.getTime() - Math.max(0, 50 - offsetHours) * 60 * 1000) : d;
-    return capped.toLocaleString('zh-TW', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-  };
+  const isDone =
+    !isCancelled &&
+    !isUnpaid &&
+    (statusStr === 'completed' || statusStr === 'delivered' || statusStr === '已完成' || statusStr === '已取貨完成');
+  const isArrived = !isCancelled && !isUnpaid && !isDone && (statusStr === 'arrived' || statusStr === '已抵達門市');
+  const isShip =
+    !isCancelled &&
+    !isUnpaid &&
+    !isDone &&
+    !isArrived &&
+    (statusStr === 'shipping' || statusStr === 'shipped' || statusStr === 'in_transit' || statusStr === '運送中');
 
-  const isDone = statusStr === 'completed' || statusStr === 'delivered' || statusStr === '已完成' || statusStr === '已取貨完成';
-  const isDelivered = statusStr === 'arrived' || statusStr === 'delivered' || statusStr === '已抵達門市';
-  const isShip = statusStr === 'shipping' || statusStr === 'shipped' || statusStr === 'in_transit' || statusStr === '運送中';
-  const isProc = statusStr === 'processing' || statusStr === 'picking' || statusStr === 'paid' || statusStr === '待出貨';
-  const isUnpaid = statusStr === 'unpaid' || statusStr === '待付款';
+  const storeInfo = params.storeOrAddress || '尚未填寫取件門市 / 地址';
+  const createdStr = formatRealTimestamp(params.createdAt) || '已於系統建檔';
+  const paidStr = formatRealTimestamp(params.payTime || params.paidAt);
 
-  const storeInfo = params.storeOrAddress || '指定超商門市';
+  let currentStatus = '待出貨（倉庫揀貨備貨中）';
+  let statusCode = 'PICKING';
+  let paymentBadge = isCod ? '貨到付款' : '已完成結帳';
+  let estimatedArrival = '付款完成後 1 - 2 個工作天內安排包裝寄出，出貨後更新真實託運單號';
 
-  let currentStatus = '已配達指定取件門市，請儘速前往領取';
-  let statusCode = 'ARRIVED_STORE';
-  let estimatedArrival = '包裹已送達取件門市，請攜帶身分證件於 7 日內領取';
-
-  if (isUnpaid) {
-    currentStatus = '待付款 (款項核銷後立即進入 24H 快速發貨流程)';
+  if (isCancelled) {
+    currentStatus = '訂單已取消（未出貨）';
+    statusCode = 'CANCELLED';
+    paymentBadge = '已取消';
+    estimatedArrival = '此訂單已取消，不會進行扣款或安排物流出貨';
+  } else if (isReturning) {
+    currentStatus = '售後 / 退換貨處理中';
+    statusCode = 'RETURNING';
+    paymentBadge = isPaidVerified ? '已核帳' : isCod ? '貨到付款' : '退換貨中';
+    estimatedArrival = '客服專員已受理售後進度，將主動聯繫確認處理方式';
+  } else if (isUnpaid) {
+    currentStatus = '待付款（尚未核帳出貨）';
     statusCode = 'UNPAID';
-    estimatedArrival = '付款完成後預計 2-3 個工作天送達';
-  } else if (isProc) {
-    currentStatus = '藍新金流已入帳，智慧倉儲理貨與抽真空包裝中';
-    statusCode = 'PICKING';
-    estimatedArrival = '預計 24-48 小時內送達超商物流集散中心';
-  } else if (isShip) {
-    currentStatus = '物流專車轉運中 (已離開大宗物流中心)';
-    statusCode = 'IN_TRANSIT';
-    estimatedArrival = '預計明日上午前抵達指定取件門市';
+    paymentBadge = '待付款 · 尚未核帳';
+    estimatedArrival = '此訂單尚未完成付款。請完成付款確認入帳後，倉庫才會進入備貨並配發物流單號';
   } else if (isDone) {
-    currentStatus = '買家已完成取件簽收';
+    currentStatus = '買家已完成確認收貨';
     statusCode = 'COLLECTED';
-    estimatedArrival = '包裹已於門市順利完成點交與付款簽收';
+    paymentBadge = isPaidVerified ? '已核帳' : isCod ? '貨到付款（已收款）' : '已完成結帳';
+    estimatedArrival = params.deliveredAt || params.completedAt
+      ? `收貨確認時間：${formatRealTimestamp(params.deliveredAt || params.completedAt)}`
+      : '買家已於訂單系統確認收貨完成';
+  } else if (isArrived) {
+    currentStatus = '包裹已抵達指定門市 / 配送地';
+    statusCode = 'ARRIVED_STORE';
+    paymentBadge = isPaidVerified ? '已核帳' : isCod ? '貨到付款' : '已完成結帳';
+    estimatedArrival = '請收件人攜帶證件前往指定門市領取或留意配送聯繫';
+  } else if (isShip) {
+    currentStatus = '包裹運送中';
+    statusCode = 'IN_TRANSIT';
+    paymentBadge = isPaidVerified ? '已核帳' : isCod ? '貨到付款' : '已完成結帳';
+    estimatedArrival = effectiveTracking
+      ? '包裹已交付物流運送中，可複製託運單號前往物流官網即時查詢'
+      : '包裹已標記為出貨配送中，待物流端同步顯示詳細進度';
+  } else if (isPaidVerified) {
+    paymentBadge = '已核帳';
   }
 
-  // 4. 建構即時時間軸配送軌跡
+  // 3. 僅依據真實存在之紀錄建構時間軸，絕不編造未來假時刻或假簽收事件
   const timeline: Array<{
     time: string;
     title: string;
     desc: string;
-    location: string;
-    status: 'done' | 'current' | 'pending';
+    location?: string;
+    status: 'done' | 'current' | 'upcoming';
   }> = [];
 
-  // Stage 1: 訂單成立與金流核銷
-  timeline.push({
-    time: formatStepTime(0),
-    title: isUnpaid ? '訂單已建立，待金流授權' : '訂單成立與藍新金流款項核銷',
-    desc: isUnpaid
-      ? `訂單編號 ${rawOrderNo || 'ORD'} 待完成付款，支援藍新信用卡、Apple Pay 與 LINE Pay。`
-      : `藍新交易序號: ${params.tradeNo || 'NB' + baseTime.getTime().toString().slice(-8)}，付款授權核銷成功，自動產生數位託運單。`,
-    location: '神狗勾 3D 線上金流授權中心 (NewebPay SSL)',
-    status: isUnpaid ? 'current' : 'done'
-  });
-
-  // Stage 2: 倉儲理貨與防潮包裝
-  if (!isUnpaid) {
+  if (Array.isArray(params.trackingEvents) && params.trackingEvents.length > 0) {
+    for (const ev of params.trackingEvents) {
+      timeline.push({
+        time: formatRealTimestamp(ev.time || ev.timestamp) || '系統紀錄',
+        title: String(ev.title || ev.status || '物流狀態更新'),
+        desc: String(ev.desc || ev.description || ''),
+        location: ev.location ? String(ev.location) : undefined,
+        status: ev.status === 'done' || ev.status === 'current' || ev.status === 'upcoming' ? ev.status : 'done',
+      });
+    }
+  } else if (isCancelled) {
     timeline.push({
-      time: formatStepTime(3.5),
-      title: '智慧倉儲理貨與防潮抽真空包裝',
-      desc: '耗材出庫品質檢驗無誤、充填高分子變色矽膠乾燥劑、加厚防潮密封袋封口完成。',
-      location: '神狗勾 3D 台灣自動化耗材發貨倉',
-      status: isProc ? 'current' : 'done'
+      time: createdStr,
+      title: '訂單已建立',
+      desc: `訂單編號 ${rawOrderNo || '（系統單號）'} 已建立。`,
+      status: 'done',
+    });
+    timeline.push({
+      time: formatRealTimestamp(params.cancelledAt) || '已取消',
+      title: '訂單已取消（未出貨）',
+      desc: '此訂單已取消，系統已停止備貨與物流派單。',
+      status: 'current',
+    });
+  } else if (isUnpaid) {
+    timeline.push({
+      time: createdStr,
+      title: '訂單已建立（等待付款中）',
+      desc: `系統已保留訂單 ${rawOrderNo || ''}，目前尚未收到款項入帳通知，倉庫尚未進行備貨或交付物流。`,
+      location: '神狗勾 3D 訂單系統',
+      status: 'current',
     });
   } else {
     timeline.push({
-      time: '待付款後啟動',
-      title: '智慧倉儲理貨與防潮抽真空包裝',
-      desc: '款項入帳後立即啟動自動化出庫揀貨與防震抗潮包裝。',
-      location: '神狗勾 3D 台灣自動化耗材發貨倉',
-      status: 'pending'
+      time: paidStr || createdStr,
+      title: isCod ? '訂單成立（貨到付款）' : isPaidVerified ? '訂單成立並完成款項核帳' : '訂單已成立',
+      desc: params.tradeNo
+        ? `藍新交易序號：${params.tradeNo}，款項已確認。`
+        : isCod
+        ? '已選擇取貨／宅配貨到付款，待倉庫安排出貨。'
+        : `訂單編號 ${rawOrderNo || ''} 已確認進入出貨排程。`,
+      location: '神狗勾 3D 訂單系統',
+      status: isShip || isArrived || isDone || isReturning ? 'done' : 'current',
     });
-  }
 
-  // Stage 3: 物流專車攬收與大宗中心分流
-  if (isShip || isDelivered || isDone) {
     timeline.push({
-      time: formatStepTime(14),
-      title: '物流專車攬收，抵達大宗物流集散轉運中心',
-      desc: `包裹條碼 ${effectiveTracking} 刷讀入庫，正分流往目的地營業所專車。`,
-      location: `${carrierName.split(' ')[0]} 台北/桃園大宗物流轉運中心`,
-      status: isShip && !isDelivered && !isDone ? 'current' : 'done'
+      time: isShip || isArrived || isDone ? '已完成備貨' : '待倉庫處理中',
+      title: isShip || isArrived || isDone ? '倉庫備貨與防潮密封包裝完成' : '倉庫揀貨與防潮密封包裝中',
+      desc:
+        isShip || isArrived || isDone
+          ? '已完成出庫品檢與防潮密封包裝。'
+          : '訂單已排入台灣現貨倉備貨流程，完成交寄後將補入真實物流託運單號。',
+      location: '神狗勾台灣現貨倉',
+      status: isShip || isArrived || isDone || isReturning ? 'done' : 'current',
     });
-  } else {
-    timeline.push({
-      time: '出庫後 2-4 小時',
-      title: '物流專車攬收與大宗中心分流',
-      desc: '物流貨車定時收件，送往大宗電子商務物流集散中心進行條碼刷讀。',
-      location: `${carrierName.split(' ')[0]} 轉運物流中心`,
-      status: 'pending'
-    });
-  }
 
-  // Stage 4: 配達取件門市
-  if (isDelivered || isDone) {
-    timeline.push({
-      time: formatStepTime(36),
-      title: '包裹已配達指定門市，系統發送取件簡訊',
-      desc: `包裹已安全抵達 ${storeInfo}，取件簡訊已同步發送至收件人手機。`,
-      location: storeInfo,
-      status: isDelivered && !isDone ? 'current' : 'done'
-    });
-  } else {
-    timeline.push({
-      time: '預估 2-3 個工作天',
-      title: '配送至指定取件門市',
-      desc: `包裹由專車送抵 ${storeInfo}，門市店員刷讀進店後將發送簡訊取件代碼。`,
-      location: storeInfo,
-      status: 'pending'
-    });
-  }
+    if (isShip || isArrived || isDone) {
+      timeline.push({
+        time: formatRealTimestamp(params.shippedAt) || (effectiveTracking ? `單號：${effectiveTracking}` : '已交寄出貨'),
+        title: `${carrierName} 配送中`,
+        desc: effectiveTracking
+          ? `包裹已交寄物流運送中（託運單號：${effectiveTracking}），請至物流官網查詢即時貨態掃描紀錄。`
+          : '包裹已標記為出貨配送中，目的地為收件人指定地點。',
+        location: storeInfo,
+        status: isArrived || isDone ? 'done' : 'current',
+      });
+    }
 
-  // Stage 5: 買家門市取件簽收
-  if (isDone) {
-    timeline.push({
-      time: formatStepTime(42),
-      title: '買家完成取件與簽收點交',
-      desc: '買家出示證件並核對包裹姓名完成取貨，感謝支持神狗勾 3D 高速列印耗材！',
-      location: storeInfo,
-      status: 'done'
-    });
-  } else {
-    timeline.push({
-      time: '抵達門市後 7 日內',
-      title: '買家門市取件簽收',
-      desc: '請攜帶取件人本人國民身分證或健保卡正本前往超商門市領取包裹。',
-      location: storeInfo,
-      status: 'pending'
-    });
+    if (isArrived) {
+      timeline.push({
+        time: formatRealTimestamp(params.arrivedAt) || '待領取',
+        title: '包裹已抵達指定取件地點',
+        desc: `包裹已抵達 ${storeInfo}，請留意簡訊通知並攜帶證件領取。`,
+        location: storeInfo,
+        status: 'current',
+      });
+    }
+
+    if (isDone) {
+      timeline.push({
+        time: formatRealTimestamp(params.deliveredAt || params.completedAt) || '已確認收貨',
+        title: '買家已完成取件／確認收貨',
+        desc: '感謝您的訂購，本筆訂單已完成收貨確認。',
+        location: storeInfo,
+        status: 'done',
+      });
+    }
+
+    if (isReturning) {
+      timeline.push({
+        time: formatRealTimestamp(params.afterSalesRequestedAt) || '受理中',
+        title: '已提交售後／退換貨申請',
+        desc: params.afterSalesReason ? `申請原因：${params.afterSalesReason}` : '客服專員正在受理此訂單售後申請。',
+        status: 'current',
+      });
+    }
   }
 
   return {
     carrierName,
     carrierCode,
     trackingNumber: effectiveTracking,
-    orderNumber: rawOrderNo || `ORD-${Date.now()}`,
-    officialInquiryUrl,
-    isVerifiedByNewebPay: !isUnpaid,
+    orderNumber: rawOrderNo || '',
+    officialInquiryUrl: effectiveTracking ? baseInquiryUrl : '',
+    isVerifiedByNewebPay: isPaidVerified,
+    paymentBadge,
     shippingMethod: rawMethod || 'UNIMARTC2C',
     storeOrAddress: storeInfo,
     currentStatus,
     statusCode,
     estimatedArrival,
-    timeline
+    timeline,
   };
 }
 
-// 3.1 支援以 POST 攜帶完整訂單資訊查詢即時配送軌跡時間軸
+// 3.1 支援以 POST 攜帶完整真實訂單資訊查詢配送狀態時間軸
 app.post('/api/logistics/track-order', (req, res) => {
   try {
     const orderData = req.body || {};
@@ -4545,40 +4652,51 @@ app.post('/api/logistics/track-order', (req, res) => {
   }
 });
 
-// 3.2 支援以 GET 攜帶單號或訂單編號進行查詢
+// 3.2 支援以 GET 查詢真實已存在資料庫的訂單或託運單號（找不到真實資料絕不編造假狀態）
 app.get('/api/logistics/track/:trackingNumber', (req, res) => {
   const rawCode = String(req.params.trackingNumber || '').trim();
   const queryCarrier = (req.query.carrier as string) || '';
 
   if (
-    !rawCode || 
-    rawCode === '77391829310' || 
-    rawCode.includes('77391829310') || 
-    rawCode.startsWith('MOCK') || 
+    !rawCode ||
+    rawCode === '77391829310' ||
+    rawCode.includes('77391829310') ||
+    rawCode.startsWith('MOCK') ||
     rawCode.startsWith('TEST')
   ) {
     return res.status(404).json({
       success: false,
-      message: '查無此包裹託運單號。本商城全面啟用真實藍新物流對接，請輸入真實付款完成後由藍新金流指派之包裹託運單號。'
+      message: '此單號為無效或過期測試單號，請輸入真實付款並出貨後配發的託運單號。',
     });
   }
 
-  // 1. 查找是否屬於真實藍新入帳訂單
-  const matchedOrder = Object.values(verifiedPaidOrdersStore).find((o: any) => 
-    o.tradeNo === rawCode || 
-    o.orderId === rawCode || 
-    (o.trackingNumber && o.trackingNumber === rawCode)
+  // 查找是否屬於真實入帳訂單紀錄
+  const matchedOrder = Object.values(verifiedPaidOrdersStore).find(
+    (o: any) =>
+      o.tradeNo === rawCode ||
+      o.orderId === rawCode ||
+      (o.trackingNumber && o.trackingNumber === rawCode)
   );
 
+  if (!matchedOrder) {
+    return res.status(404).json({
+      success: false,
+      message: '本站目前查無此單號的實際出貨紀錄（若為尚未付款訂單或超商剛寄件尚未回傳，請直接前往下方物流官網輸入單號查詢）。',
+    });
+  }
+
   const tracking = generateLogisticsTrackingInfo({
-    trackingNumber: rawCode,
-    orderNumber: matchedOrder?.orderId || rawCode,
+    trackingNumber: matchedOrder.trackingNumber || '',
+    orderNumber: matchedOrder.orderId || rawCode,
     carrier: queryCarrier,
-    tradeNo: matchedOrder?.tradeNo,
-    amt: matchedOrder?.amt,
-    orderStatus: matchedOrder ? 'processing' : (req.query.status as string) || 'shipping',
-    storeOrAddress: (req.query.store as string) || undefined,
-    createdAt: matchedOrder?.payTime || (req.query.createdAt as string) || undefined
+    tradeNo: matchedOrder.tradeNo,
+    amt: matchedOrder.amt,
+    paymentStatus: 'paid',
+    isVerifiedByNewebPay: true,
+    orderStatus: matchedOrder.orderStatus || 'picking',
+    storeOrAddress: matchedOrder.storeOrAddress || (req.query.store as string) || undefined,
+    createdAt: matchedOrder.payTime || (req.query.createdAt as string) || undefined,
+    payTime: matchedOrder.payTime,
   });
 
   return res.json({ success: true, tracking });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Navbar 
@@ -9,34 +9,20 @@ import {
 import { 
   SearchAutocomplete 
 } from './components/Storefront/SearchAutocomplete';
-import { 
-  ProductDetailModal 
-} from './components/Storefront/ProductDetailModal';
-import { 
-  CartDrawer 
-} from './components/Storefront/CartDrawer';
-import { 
-  CheckoutModal 
-} from './components/Storefront/CheckoutModal';
-import { 
-  TrackingModal 
-} from './components/Storefront/TrackingModal';
-import { 
-  CustomerSupportModal 
-} from './components/Storefront/CustomerSupportModal';
-import { 
-  AuthModal 
-} from './components/Auth/AuthModal';
-import { RecentlyViewedSection } from './components/Storefront/RecentlyViewedSection';
-import { 
-  WishlistDrawer 
-} from './components/Storefront/WishlistDrawer';
 import {
   DraggableChatWidget
 } from './components/Storefront/DraggableChatWidget';
 import { FlyToCartOverlay } from './components/Storefront/FlyToCartOverlay';
 
-// Lazy-loaded heavy secondary modals & routes to reduce initial bundle payload
+// Lazy-loaded heavy secondary modals, drawers & routes to keep initial bundle lean and taps instant
+const ProductDetailModal = React.lazy(() => import('./components/Storefront/ProductDetailModal').then(m => ({ default: m.ProductDetailModal })));
+const CartDrawer = React.lazy(() => import('./components/Storefront/CartDrawer').then(m => ({ default: m.CartDrawer })));
+const CheckoutModal = React.lazy(() => import('./components/Storefront/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
+const TrackingModal = React.lazy(() => import('./components/Storefront/TrackingModal').then(m => ({ default: m.TrackingModal })));
+const CustomerSupportModal = React.lazy(() => import('./components/Storefront/CustomerSupportModal').then(m => ({ default: m.CustomerSupportModal })));
+const AuthModal = React.lazy(() => import('./components/Auth/AuthModal').then(m => ({ default: m.AuthModal })));
+const WishlistDrawer = React.lazy(() => import('./components/Storefront/WishlistDrawer').then(m => ({ default: m.WishlistDrawer })));
+const RecentlyViewedSection = React.lazy(() => import('./components/Storefront/RecentlyViewedSection').then(m => ({ default: m.RecentlyViewedSection })));
 const AdminDashboard = React.lazy(() => import('./components/Admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 const AIAdvisorModal = React.lazy(() => import('./components/Storefront/AIAdvisorModal').then(m => ({ default: m.AIAdvisorModal })));
 const FilamentLabModal = React.lazy(() => import('./components/Storefront/FilamentLabModal').then(m => ({ default: m.FilamentLabModal })));
@@ -65,16 +51,14 @@ import {
   AdSenseConfig,
   ProductReview
 } from './types';
-import confetti from 'canvas-confetti';
-import { translations, translateMaterial, translateProductName, formatPrice } from './utils/i18n';
-import { getSafeProductImageUrl, handleProductImageError } from './utils/productImage';
-import { processDomSubtree } from './utils/domAutoTranslator';
+import { translations } from './utils/i18n';
 import { subscribeToProductStats } from './lib/reviewPersistence';
 import {
   loadPersistedProductsSync,
   subscribeToCloudCatalog,
   recordAdminProductUpsert,
 } from './lib/productPersistence';
+import { doc, getDoc } from 'firebase/firestore';
 import { 
   saveOrderToFirestore, 
   saveUserProfileToFirestore, 
@@ -83,7 +67,8 @@ import {
   logOut,
   saveMonetizationConfigToFirestore,
   loadMonetizationConfigFromFirestore,
-  auth
+  auth,
+  db
 } from './lib/firebase';
 import {
   normalizeCustomerId,
@@ -141,6 +126,8 @@ import {
   Settings,
   ExternalLink,
   ArrowRight,
+  ArrowUpRight,
+  SlidersHorizontal,
   Truck
 } from 'lucide-react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -160,6 +147,88 @@ import { SEO } from './components/SEO';
 import { evaluateProductDeepSearch } from './utils/productSearch';
 import { getStoreAnnouncementConfig } from './utils/announcementManager';
 import { StoreAnnouncementConfig } from './types';
+
+interface StorefrontMaterialFamily {
+  id: string;
+  labels: Record<LanguageCode, string>;
+  match: (material: string) => boolean;
+}
+
+const STOREFRONT_MATERIAL_FAMILIES: readonly StorefrontMaterialFamily[] = [
+  {
+    id: 'All',
+    labels: { 'zh-TW': '全部耗材', en: 'All Filaments', ja: '全フィラメント' },
+    match: () => true,
+  },
+  {
+    id: 'PLA',
+    labels: { 'zh-TW': 'PLA', en: 'PLA', ja: 'PLA' },
+    match: (m: string) => m.toUpperCase().includes('PLA'),
+  },
+  {
+    id: 'PETG',
+    labels: { 'zh-TW': 'PETG', en: 'PETG', ja: 'PETG' },
+    match: (m: string) => m.toUpperCase().includes('PETG'),
+  },
+  {
+    id: 'PA',
+    labels: { 'zh-TW': 'PA6-CF / 尼龍', en: 'PA6-CF / Nylon', ja: 'PA6-CF / ナイロン' },
+    match: (m: string) => {
+      const upper = m.toUpperCase();
+      return upper.startsWith('PA') || upper.includes('NYLON');
+    },
+  },
+  {
+    id: 'ABS',
+    labels: { 'zh-TW': 'ABS / ASA', en: 'ABS / ASA', ja: 'ABS / ASA' },
+    match: (m: string) => {
+      const upper = m.toUpperCase();
+      return upper.includes('ABS') || upper === 'ASA';
+    },
+  },
+  {
+    id: 'TPU',
+    labels: { 'zh-TW': 'TPU 彈性', en: 'TPU Flex', ja: 'TPU 軟質' },
+    match: (m: string) => m.toUpperCase().includes('TPU'),
+  },
+  {
+    id: 'Engineering',
+    labels: { 'zh-TW': 'PC / PEEK 工程', en: 'PC / PEEK / Spec', ja: 'PC / PEEK 特殊' },
+    match: (m: string) => {
+      const upper = m.toUpperCase();
+      return (
+        upper.startsWith('PC ') ||
+        upper === 'PC' ||
+        upper.includes('PP') ||
+        upper.includes('PEEK') ||
+        upper.includes('ULTEM') ||
+        upper.includes('SUPPORT')
+      );
+    },
+  },
+  {
+    id: 'Resin',
+    labels: { 'zh-TW': '光固化樹脂', en: 'Resin', ja: 'UVレジン' },
+    match: (m: string) => m.toUpperCase().includes('RESIN'),
+  },
+  {
+    id: 'Accessories',
+    labels: { 'zh-TW': '周邊配件', en: 'Accessories', ja: 'アクセサリ' },
+    match: (m: string) => m.toUpperCase() === 'ACCESSORIES',
+  },
+];
+
+function resolveMaterialFamilyId(rawMaterial: string): string {
+  if (!rawMaterial || rawMaterial === 'All') return 'All';
+  const upper = rawMaterial.toUpperCase();
+  if (upper.includes('CARBON FIBER') && !upper.includes('PA')) return 'PLA';
+  for (const fam of STOREFRONT_MATERIAL_FAMILIES) {
+    if (fam.id !== 'All' && (fam.id === rawMaterial || fam.match(rawMaterial))) {
+      return fam.id;
+    }
+  }
+  return 'All';
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -255,7 +324,10 @@ export default function App() {
     };
   }, []);
 
-  // Universal DOM & Attribute Reactive Language Adaptation (zh-TW / en / ja)
+  // Track whether non-zh-TW DOM translation has been activated so default zh-TW pays zero MutationObserver overhead
+  const hasAutoTranslatedDomRef = useRef(false);
+
+  // Universal DOM & Attribute Reactive Language Adaptation (lazy-loaded only when switching away from zh-TW)
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.documentElement.lang = lang === 'en' ? 'en' : lang === 'ja' ? 'ja' : 'zh-TW';
@@ -266,30 +338,45 @@ export default function App() {
         ? '神狗勾 3D | 高速3Dプリントフィラメント＆スマート素材選定ストア'
         : '神狗勾耗材 3D列印線材旗艦館 | PLA・PETG・高速線材與智能選材商城';
 
-    let rafId: number | null = null;
-    const runScan = () => {
+    if (lang === 'zh-TW' && !hasAutoTranslatedDomRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+    let observer: MutationObserver | null = null;
+    let timerId: number | null = null;
+
+    import('./utils/domAutoTranslator').then(({ processDomSubtree }) => {
+      if (cancelled) return;
+      hasAutoTranslatedDomRef.current = lang !== 'zh-TW';
       processDomSubtree(document.body, lang);
-    };
 
-    runScan();
+      if (lang === 'zh-TW') {
+        return;
+      }
 
-    const observer = new MutationObserver(() => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        runScan();
-        rafId = null;
+      observer = new MutationObserver((mutations) => {
+        if (timerId !== null) window.clearTimeout(timerId);
+        timerId = window.setTimeout(() => {
+          timerId = null;
+          for (const m of mutations) {
+            if (m.target instanceof HTMLElement) {
+              processDomSubtree(m.target, lang);
+            }
+          }
+        }, 60);
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
       });
     });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-
     return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      observer.disconnect();
+      cancelled = true;
+      if (timerId !== null) window.clearTimeout(timerId);
+      observer?.disconnect();
     };
   }, [lang]);
 
@@ -364,13 +451,11 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const handleReviewSubmitted = (updatedProduct: FilamentProduct, review: ProductReview) => {
+  const handleReviewSubmitted = useCallback((updatedProduct: FilamentProduct, _review: ProductReview) => {
     const updatedList = recordAdminProductUpsert(updatedProduct, INITIAL_PRODUCTS);
     setProducts(updatedList);
-    if (viewingProduct?.id === updatedProduct.id) {
-      setViewingProduct(updatedProduct);
-    }
-  };
+    setViewingProduct((prev) => (prev?.id === updatedProduct.id ? updatedProduct : prev));
+  }, []);
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
       const saved = localStorage.getItem('printcore_orders');
@@ -413,11 +498,33 @@ export default function App() {
     } catch {}
 
     fetch('/api/payment/verified-orders')
-      .then(res => res.json())
+      .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
       .then(data => {
-        if (data.success && Array.isArray(data.orders) && data.orders.length > 0) {
+        if (data?.success && Array.isArray(data.orders) && data.orders.length > 0) {
           setOrders(prev => {
-            const existingNos = new Set(prev.map(o => o.orderNumber));
+            const verifiedById = new Map<string, any>();
+            data.orders.forEach((vo: any) => {
+              if (vo.orderId) verifiedById.set(vo.orderId, vo);
+            });
+
+            let changed = false;
+            const updatedPrev = prev.map((o) => {
+              const vo = verifiedById.get(o.orderNumber);
+              if (vo && o.paymentStatus === 'pending') {
+                changed = true;
+                return {
+                  ...o,
+                  paymentStatus: 'paid' as const,
+                  orderStatus: (o.orderStatus === 'new' ? 'picking' : o.orderStatus) as Order['orderStatus'],
+                  isVerifiedByNewebPay: true,
+                  tradeNo: vo.tradeNo || o.tradeNo,
+                  payTime: vo.payTime || o.payTime,
+                };
+              }
+              return o;
+            });
+
+            const existingNos = new Set(updatedPrev.map(o => o.orderNumber));
             const newVerified: Order[] = [];
             data.orders.forEach((vo: any) => {
               if (vo.orderId && !existingNos.has(vo.orderId)) {
@@ -449,14 +556,14 @@ export default function App() {
                 });
               }
             });
-            if (newVerified.length > 0) {
-              return [...newVerified, ...prev];
+            if (newVerified.length > 0 || changed) {
+              return [...newVerified, ...updatedPrev];
             }
             return prev;
           });
         }
       })
-      .catch(err => console.warn('Could not sync verified orders:', err));
+      .catch(() => {});
   }, []);
 
   // Record genuine visitor traffic without simulation
@@ -541,8 +648,6 @@ export default function App() {
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
-  const analytics = useMemo(() => computeRealAnalytics(orders, products), [orders, products]);
-
   // Cart State: Synchronously initialize from active customer's isolated storage so items never vanish on refresh/re-login
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
@@ -567,10 +672,14 @@ export default function App() {
   const [checkoutCouponCode, setCheckoutCouponCode] = useState('');
   const [viewingProduct, setViewingProduct] = useState<FilamentProduct | null>(null);
 
-  const handleOpenProductDetail = (p: FilamentProduct) => {
+  const memberIdRef = useRef(member?.id);
+  memberIdRef.current = member?.id;
+  const isLoggedInRef = useRef(false);
+
+  const handleOpenProductDetail = useCallback((p: FilamentProduct) => {
     setViewingProduct(p);
-    saveCustomerRecentlyViewed(member?.id || auth.currentUser?.uid, p).catch(() => {});
-  };
+    saveCustomerRecentlyViewed(memberIdRef.current || auth.currentUser?.uid, p).catch(() => {});
+  }, []);
   const [isAIAdvisorOpen, setIsAIAdvisorOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
@@ -590,6 +699,11 @@ export default function App() {
     isLoggedIn &&
     ((member?.email && member.email.trim().toLowerCase() === 'babe0615@gmail.com') ||
       (auth.currentUser?.email && auth.currentUser.email.trim().toLowerCase() === 'babe0615@gmail.com'))
+  );
+
+  const analytics = useMemo(
+    () => (activeTab === 'admin' && isOwnerAdmin ? computeRealAnalytics(orders, products) : ({} as any)),
+    [activeTab, isOwnerAdmin, orders, products]
   );
 
   // Maker & Storefront Enhancement States
@@ -633,18 +747,20 @@ export default function App() {
     }
   });
 
-  const handleToggleWishlist = (id: string) => {
+  isLoggedInRef.current = isLoggedIn;
+
+  const handleToggleWishlist = useCallback((id: string) => {
     setWishlistIds((prev) => {
       const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+      const activeUid = isLoggedInRef.current ? normalizeCustomerId(memberIdRef.current) : null;
       saveCustomerWishlist(activeUid, next, { explicitClear: next.length === 0 }).catch(console.warn);
       return next;
     });
-  };
+  }, []);
 
-  const handleToggleCompare = (id: string) => {
+  const handleToggleCompare = useCallback((id: string) => {
     setComparisonIds((prev) => {
-      const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+      const activeUid = isLoggedInRef.current ? normalizeCustomerId(memberIdRef.current) : null;
       if (prev.includes(id)) {
         const next = prev.filter((x) => x !== id);
         saveCustomerComparison(activeUid, next).catch(console.warn);
@@ -658,7 +774,7 @@ export default function App() {
       saveCustomerComparison(activeUid, next).catch(console.warn);
       return next;
     });
-  };
+  }, []);
 
   const handleAddAllWishlistToCart = (savedList: FilamentProduct[]) => {
     savedList.forEach((p) => {
@@ -799,9 +915,99 @@ export default function App() {
   // Handle return from NewebPay payment gateway (Strict Non-Mock: Only verified payment creates order)
   useEffect(() => {
     const params = new URLSearchParams(location.search);
+    const isClientBack = params.get('client_back') === '1';
     const isPaymentReturn = params.get('payment_verified') === 'true' || params.get('payment_success') === 'true';
     const isPaymentFailed = params.get('payment_verified') === 'false';
     const orderId = params.get('orderId');
+    const docId = params.get('docId');
+    const returnFrom = params.get('from');
+
+    if (isClientBack) {
+      const handleClientBackReturn = async () => {
+        try {
+          const existingSession = getStoredCustomerSession();
+          const existingUid = existingSession && existingSession.isLoggedIn ? normalizeCustomerId(existingSession.id) : null;
+
+          if (!existingUid && (orderId || docId)) {
+            let recoveredUid: string | null = null;
+            let recoveredName = '';
+            let recoveredEmail = '';
+
+            try {
+              if (orderId) {
+                const handoffRes = await fetch(`/api/payment/session-handoff?orderId=${encodeURIComponent(orderId)}`);
+                const cType = handoffRes.headers.get('content-type') || '';
+                if (handoffRes.ok && cType.includes('application/json')) {
+                  const handoff = await handoffRes.json();
+                  if (handoff?.success && handoff?.userId) {
+                    recoveredUid = normalizeCustomerId(handoff.userId);
+                    recoveredName = handoff.customerName || '';
+                    recoveredEmail = handoff.customerEmail || '';
+                  }
+                }
+              }
+            } catch {}
+
+            if (!recoveredUid) {
+              const candidateDocIds = Array.from(
+                new Set([docId, orderId ? `ord-${orderId}` : null, orderId].filter(Boolean) as string[])
+              );
+              for (const candidateId of candidateDocIds) {
+                try {
+                  const snap = await getDoc(doc(db, 'orders', candidateId));
+                  if (snap.exists()) {
+                    const data = snap.data() as any;
+                    const uid = normalizeCustomerId(data?.userId);
+                    if (uid) {
+                      recoveredUid = uid;
+                      recoveredName = data?.customerName || '';
+                      recoveredEmail = data?.customerEmail || '';
+                      setOrders((prev) => {
+                        const orderObj = { ...data, id: data.id || candidateId } as Order;
+                        const exists = prev.some((o) => o.id === orderObj.id || o.orderNumber === orderObj.orderNumber);
+                        return exists ? prev : [orderObj, ...prev];
+                      });
+                      break;
+                    }
+                  }
+                } catch {}
+              }
+            }
+
+            if (recoveredUid) {
+              const restoredProfile = sanitizeCustomerProfile({
+                ...INITIAL_MEMBER,
+                id: recoveredUid,
+                name: recoveredName || recoveredEmail?.split('@')[0] || '創客會員',
+                email: recoveredEmail || '',
+              });
+              setIsLoggedIn(true);
+              setMember(restoredProfile);
+              saveStoredCustomerSession({
+                id: restoredProfile.id,
+                name: restoredProfile.name,
+                email: restoredProfile.email,
+                tier: restoredProfile.tier,
+                points: restoredProfile.points,
+                totalSpent: restoredProfile.totalSpent || 0,
+                isLoggedIn: true,
+              });
+              syncUserData(recoveredUid, restoredProfile);
+            }
+          }
+
+          setToastNotification({
+            type: 'info',
+            message: '已返回神狗勾商城，您可至「我的訂單 > 待付款」核對入帳或重新付款。',
+          });
+        } finally {
+          navigate(returnFrom === 'profile' ? '/profile' : '/', { replace: true });
+        }
+      };
+
+      handleClientBackReturn();
+      return;
+    }
 
     if (isPaymentFailed) {
       const reason = params.get('reason') || '消費者取消或授權未通過';
@@ -894,12 +1100,32 @@ export default function App() {
             };
 
             const ownerUid = normalizeCustomerId(newOrder.userId);
+            const targetMatch = (o: Order) =>
+              o.orderNumber === orderId ||
+              (pending?.replacesOrderNumber && o.orderNumber === pending.replacesOrderNumber) ||
+              (pending?.replacesOrderId && o.id === pending.replacesOrderId);
+
+            let finalizedOrderToPersist: Order = { ...newOrder, id: pending?.replacesOrderId || `ord-${orderId}` };
             setOrders(prev => {
-              // Avoid duplicates
-              if (prev.some(o => o.orderNumber === orderId)) return prev;
-              return [newOrder, ...prev];
+              const existingIdx = prev.findIndex(targetMatch);
+              if (existingIdx >= 0) {
+                const existing = prev[existingIdx];
+                finalizedOrderToPersist = {
+                  ...existing,
+                  ...newOrder,
+                  id: existing.id || newOrder.id,
+                  orderNumber: orderId,
+                  paymentStatus: 'paid',
+                  orderStatus: 'picking',
+                  isVerifiedByNewebPay: true,
+                  tradeNo: verifiedTradeNo,
+                  payTime: verifiedPayTime,
+                };
+                return prev.map((o, idx) => (idx === existingIdx ? finalizedOrderToPersist : o));
+              }
+              return [finalizedOrderToPersist, ...prev];
             });
-            saveCustomerOrderRecord(newOrder, ownerUid).catch(console.warn);
+            saveCustomerOrderRecord(finalizedOrderToPersist, ownerUid).catch(console.warn);
 
             // 成功入帳後才扣除購物車並扣減商品庫存
             setCartItems([]);
@@ -1055,11 +1281,15 @@ export default function App() {
             return updated;
           });
 
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 }
-          });
+          import('canvas-confetti')
+            .then((mod) => {
+              mod.default({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 },
+              });
+            })
+            .catch(() => {});
 
           setToastNotification({
             type: 'success',
@@ -1079,15 +1309,15 @@ export default function App() {
   // Guard against concurrent/duplicate syncUserData invocations for the same customer
   const syncingUserIdRef = React.useRef<string | null>(null);
 
-  const resolveActiveCustomerId = (): string | null => {
-    if (!isLoggedIn) return null;
+  const resolveActiveCustomerId = useCallback((): string | null => {
+    if (!isLoggedInRef.current) return null;
     return (
-      normalizeCustomerId(member?.id) ||
+      normalizeCustomerId(memberIdRef.current) ||
       normalizeCustomerId(hydratedUserIdRef.current) ||
       normalizeCustomerId(auth.currentUser?.uid) ||
       normalizeCustomerId(getStoredCustomerSession()?.id)
     );
-  };
+  }, []);
 
   // Synchronize user cart, wishlist, comparison, orders, tracking, and profile from user-scoped cache + Firestore
   const syncUserData = async (rawUserId: string, fallbackProfile?: any) => {
@@ -1185,15 +1415,22 @@ export default function App() {
 
       // 6. Reconcile Full Customer Profile (Points, Tier, Coupons, Referrals, Settings)
       const fullProfile = await loadCustomerProfileDoc(cleanUserId, fallbackProfile);
+      const safeProfile = fullProfile || sanitizeCustomerProfile({
+        ...INITIAL_MEMBER,
+        ...(fallbackProfile || {}),
+        id: cleanUserId,
+        name: fallbackProfile?.name || fallbackProfile?.email?.split('@')[0] || '創客會員',
+        email: fallbackProfile?.email || '',
+      });
       hydratedUserIdRef.current = cleanUserId;
-      setMember(fullProfile);
+      setMember(safeProfile);
       saveStoredCustomerSession({
         id: cleanUserId,
-        name: fullProfile.name,
-        email: fullProfile.email,
-        tier: fullProfile.tier,
-        points: fullProfile.points,
-        totalSpent: fullProfile.totalSpent || 0,
+        name: safeProfile.name,
+        email: safeProfile.email,
+        tier: safeProfile.tier,
+        points: safeProfile.points,
+        totalSpent: safeProfile.totalSpent || 0,
         isLoggedIn: true,
       });
 
@@ -1209,7 +1446,7 @@ export default function App() {
 
       setToastNotification({
         type: 'success',
-        message: `☁️ 歡迎回來！已為您同步【${fullProfile.name || fallbackProfile?.name || '會員'}】的專屬購物車、收藏與會員資料！`,
+        message: `☁️ 歡迎回來！已為您同步【${safeProfile.name || fallbackProfile?.name || '會員'}】的專屬購物車、收藏與會員資料！`,
       });
     } catch (e) {
       console.warn('Customer cloud data sync fallback:', e);
@@ -1315,7 +1552,7 @@ export default function App() {
     cartItemsRef.current = cartItems;
   }, [cartItems]);
 
-  const handleAddToCart = (
+  const handleAddToCart = useCallback((
     product: FilamentProduct,
     color: ColorOption,
     diameter: '1.75mm' | '2.85mm',
@@ -1352,7 +1589,7 @@ export default function App() {
     setTimeout(() => {
       setToastMsg((prev) => (prev?.id === toastId ? null : prev));
     }, 3000);
-  };
+  }, [resolveActiveCustomerId]);
 
   const handleUpdateCartQuantity = (index: number, newQty: number) => {
     if (newQty <= 0) {
@@ -1447,6 +1684,22 @@ export default function App() {
     });
   }, [orders, isLoggedIn, member?.id, member?.email]);
 
+  // Persist a newly created unpaid/pending order before redirecting to NewebPay gateway
+  const handlePendingOrderCreated = async (pendingOrder: Order) => {
+    const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : normalizeCustomerId(pendingOrder.userId);
+    const orderWithOwner: Order = {
+      ...pendingOrder,
+      userId: activeUid || 'guest',
+    };
+    setOrders((prev) => {
+      const filtered = prev.filter(
+        (o) => o.orderNumber !== orderWithOwner.orderNumber && o.id !== orderWithOwner.id
+      );
+      return [orderWithOwner, ...filtered];
+    });
+    await saveCustomerOrderRecord(orderWithOwner, activeUid);
+  };
+
   // When an order is completed:
   const handleOrderCompleted = (newOrder: Order) => {
     const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
@@ -1533,14 +1786,38 @@ export default function App() {
     });
   };
 
-  // Filter and sort products
-  const materials = ['All', 'High-Speed PLA', 'PLA Matte', 'PLA Silk', 'PETG', 'PETG Matte', 'ABS', 'TPU', 'PLA-CF', 'Resin', 'Accessories'];
+  // Filter and sort products using unified base resin families (PLA unified, PA6-CF/Nylon distinct)
+  const materialCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: products.length };
+    for (const fam of STOREFRONT_MATERIAL_FAMILIES) {
+      if (fam.id !== 'All') counts[fam.id] = 0;
+    }
+    for (const p of products) {
+      const mat = p.material || '';
+      for (const fam of STOREFRONT_MATERIAL_FAMILIES) {
+        if (fam.id !== 'All' && fam.match(mat)) {
+          counts[fam.id] += 1;
+          break;
+        }
+      }
+    }
+    return counts;
+  }, [products]);
+
+  const wishlistSet = useMemo(() => new Set(wishlistIds), [wishlistIds]);
+  const comparisonSet = useMemo(() => new Set(comparisonIds), [comparisonIds]);
 
   const filteredAndSortedProducts = useMemo(() => {
     const hasActiveQuery = searchQuery.trim().length > 0;
+    const activeFamily = STOREFRONT_MATERIAL_FAMILIES.find((f) => f.id === selectedMaterial);
     const scored = products
       .map((p) => {
-        const matchesMat = selectedMaterial === 'All' ? true : p.material === selectedMaterial;
+        const matchesMat =
+          selectedMaterial === 'All'
+            ? true
+            : activeFamily
+            ? activeFamily.match(p.material || '')
+            : p.material === selectedMaterial;
         if (!matchesMat) return null;
         const evalRes = evaluateProductDeepSearch(p, searchQuery);
         if (!evalRes.matched) return null;
@@ -1631,7 +1908,7 @@ export default function App() {
           <Route path="/faq" element={<FAQPage lang={lang} />} />
           <Route path="/blog" element={<BlogList adSenseConfig={adSenseConfig} lang={lang} />} />
           <Route path="/blog/:slug" element={<BlogPostPage adSenseConfig={adSenseConfig} lang={lang} />} />
-          <Route path="/guide" element={<MaterialGuidePage products={products} onSelectProduct={handleOpenProductDetail} onFilterCategory={(mat) => { setSelectedMaterial(mat); navigate('/'); }} lang={lang} />} />
+          <Route path="/guide" element={<MaterialGuidePage products={products} onSelectProduct={handleOpenProductDetail} onFilterCategory={(mat) => { setSelectedMaterial(resolveMaterialFamilyId(mat)); navigate('/'); }} lang={lang} />} />
           <Route path="/store" element={<Navigate to="/" replace />} />
           <Route path="/r/:code" element={<ReferralHandler />} />
           <Route path="/profile" element={<><SEO title={lang === 'en' ? 'Member Center - GodDog 3D' : lang === 'ja' ? 'マイページ - 神狗勾 3D' : '會員中心 - 神狗勾 3D'} description={lang === 'en' ? 'GodDog 3D Maker Member Center' : lang === 'ja' ? '神狗勾3Dフィラメント公式 会員マイページ' : '神狗勾耗材商城會員中心'} url="/profile" /><ProfilePage 
@@ -1812,274 +2089,261 @@ export default function App() {
               </div>
             </section>
 
-            {/* Crisp Floating Quick-Tool Cards (2x2 mobile, 4-across desktop) */}
+            {/* Studio Precision Utility Strip (2x2 mobile, 4-across desktop) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
-              <button
-                id="quick-action-ai-bot"
-                onClick={() => setIsCustomerSupportOpen(true)}
-                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-sky-300 dark:hover:border-sky-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
-              >
-                <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <MessageSquare className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                    {lang === 'en' ? 'Tech Support' : lang === 'ja' ? '技術サポート' : '技術與選材客服'}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? 'Print guidance' : lang === 'ja' ? '造形トラブル相談' : '參數與列印諮詢'}
-                  </div>
-                </div>
-              </button>
+              {[
+                {
+                  id: 'quick-action-ai-bot',
+                  onClick: () => setIsCustomerSupportOpen(true),
+                  icon: MessageSquare,
+                  title: lang === 'en' ? 'Tech Support' : lang === 'ja' ? '技術サポート' : '技術與選材客服',
+                  subtitle: lang === 'en' ? 'Slicing & print QA' : lang === 'ja' ? '造形トラブル相談' : '參數與列印諮詢',
+                  iconTone: 'bg-sky-500/10 dark:bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/15 group-hover:bg-sky-600 group-hover:text-white group-hover:border-sky-600',
+                  hoverBorder: 'hover:border-sky-300/80 dark:hover:border-sky-700/70',
+                  badgeCount: 0,
+                },
+                {
+                  id: 'quick-action-filament-lab',
+                  onClick: () => setIsFilamentLabOpen(true),
+                  icon: Wrench,
+                  title: lang === 'en' ? 'Maker Lab' : lang === 'ja' ? '計算ツール' : '耗材實驗與試算',
+                  subtitle: lang === 'en' ? 'Length & cost math' : lang === 'ja' ? 'コスト・残量計算' : '長度與成本估算',
+                  iconTone: 'bg-indigo-500/10 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/15 group-hover:bg-indigo-600 group-hover:text-white group-hover:border-indigo-600',
+                  hoverBorder: 'hover:border-indigo-300/80 dark:hover:border-indigo-700/70',
+                  badgeCount: 0,
+                },
+                {
+                  id: 'quick-action-recycle',
+                  onClick: () => setIsRecycleOpen(true),
+                  icon: Recycle,
+                  title: lang === 'en' ? 'Spool Recycle' : lang === 'ja' ? '空スプール還元' : '空盤回收換幣',
+                  subtitle: lang === 'en' ? 'Earn store credit' : lang === 'ja' ? 'ポイント還元' : '空盤折抵購物金',
+                  iconTone: 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/15 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-600',
+                  hoverBorder: 'hover:border-emerald-300/80 dark:hover:border-emerald-700/70',
+                  badgeCount: 0,
+                },
+                {
+                  id: 'quick-action-compare',
+                  onClick: () => setIsCompareModalOpen(true),
+                  icon: Scale,
+                  title: lang === 'en' ? 'Spec Compare' : lang === 'ja' ? '物性・規格比較' : '耗材規格對比',
+                  subtitle: lang === 'en' ? 'Mechanical datasheets' : lang === 'ja' ? '物性データ比較' : '物性強度比較',
+                  iconTone: 'bg-amber-500/10 dark:bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/15 group-hover:bg-amber-500 group-hover:text-white group-hover:border-amber-500',
+                  hoverBorder: 'hover:border-amber-300/80 dark:hover:border-amber-700/70',
+                  badgeCount: comparisonIds.length,
+                },
+              ].map((tool, index) => {
+                const Icon = tool.icon;
+                return (
+                  <motion.button
+                    key={tool.id}
+                    id={tool.id}
+                    onClick={tool.onClick}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.22, delay: index * 0.035, ease: 'easeOut' }}
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.985 }}
+                    className={`group relative bg-white dark:bg-slate-900/95 border border-slate-200/85 dark:border-slate-800 ${tool.hoverBorder} rounded-2xl flex items-center gap-2.5 sm:gap-3.5 p-3 sm:px-4 sm:py-3.5 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.05)] hover:shadow-[0_12px_24px_-12px_rgba(15,23,42,0.12)] dark:shadow-none transition-all duration-200 cursor-pointer text-left`}
+                  >
+                    <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl border ${tool.iconTone} flex items-center justify-center shrink-0 transition-colors duration-200`}>
+                      <Icon className="w-[17px] h-[17px] sm:w-[18px] sm:h-[18px]" />
+                    </div>
 
-              <button
-                id="quick-action-filament-lab"
-                onClick={() => setIsFilamentLabOpen(true)}
-                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
-              >
-                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Wrench className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                    {lang === 'en' ? 'Maker Lab' : lang === 'ja' ? '計算ツール' : '耗材實驗與試算'}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? 'Cost & length' : lang === 'ja' ? 'コスト・残量計算' : '長度與成本估算'}
-                  </div>
-                </div>
-              </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[12.5px] sm:text-[13.5px] font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate">
+                          {tool.title}
+                        </span>
+                        {tool.badgeCount > 0 && (
+                          <span className="text-[10px] font-mono tabular-nums font-bold px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 shrink-0">
+                            {tool.badgeCount}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        {tool.subtitle}
+                      </div>
+                    </div>
 
-              <button
-                id="quick-action-recycle"
-                onClick={() => setIsRecycleOpen(true)}
-                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
-              >
-                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Recycle className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                    {lang === 'en' ? 'Spool Recycle' : lang === 'ja' ? '空スプール還元' : '空盤回收換幣'}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? 'Earn store credit' : lang === 'ja' ? 'ポイント還元' : '空盤折抵購物金'}
-                  </div>
-                </div>
-              </button>
-
-              <button
-                id="quick-action-compare"
-                onClick={() => setIsCompareModalOpen(true)}
-                className="group bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 hover:border-amber-300 dark:hover:border-amber-700 rounded-2xl flex items-center gap-2.5 sm:gap-3 p-3 sm:px-4 sm:py-3.5 hover:shadow-xs transition-all cursor-pointer text-left"
-              >
-                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                  <Scale className="w-4 h-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
-                      {lang === 'en' ? 'Spec Compare' : lang === 'ja' ? '物性・規格比較' : '耗材規格對比'}
-                    </span>
-                    {comparisonIds.length > 0 && (
-                      <span className="text-[11px] font-mono tabular-nums font-bold text-indigo-600 dark:text-indigo-400">
-                        ({comparisonIds.length})
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {lang === 'en' ? 'Datasheet specs' : lang === 'ja' ? '物性データ比較' : '物性強度比較'}
-                  </div>
-                </div>
-              </button>
+                    <ArrowUpRight className="w-3.5 h-3.5 shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-slate-600 dark:group-hover:text-slate-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200 hidden sm:block" />
+                  </motion.button>
+                );
+              })}
             </div>
 
-            {/* Search Autocomplete & Filter Chips Bar */}
-            <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-3.5">
-              {/* Top Row: Search Autocomplete with Material and Brand suggestions + Sort */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="flex-1 max-w-2xl">
+            {/* Unified Storefront Search & Material Filter Console */}
+            <div className="relative bg-white dark:bg-slate-900/95 rounded-2xl border border-slate-200/85 dark:border-slate-800 shadow-[0_6px_24px_-12px_rgba(15,23,42,0.08)] dark:shadow-none">
+              {/* Upper Toolbar: Search Bar + Quiet Count & Integrated Sort */}
+              <div className="p-3.5 sm:px-5 sm:pt-4 sm:pb-3.5 flex flex-col md:flex-row md:items-center justify-between gap-2.5 md:gap-4">
+                <div className="flex-1 md:max-w-xl">
                   <SearchAutocomplete
                     id="storefront-product-search"
                     searchQuery={searchQuery}
                     setSearchQuery={setSearchQuery}
                     products={products}
-                    placeholder={t.searchPlaceholderInput || (lang === 'en' ? 'Search filament, brand or material (PLA+, PETG)...' : lang === 'ja' ? '材質 (PLA+, カーボン, PETG) やブランドを検索...' : '搜尋耗材材質、型號或品牌 (PLA+ / 碳纖維)...')}
+                    placeholder={t.searchPlaceholderInput || (lang === 'en' ? 'Search PLA+, CF, PETG or brand...' : lang === 'ja' ? 'PLA+・カーボン・PETG 等を検索' : '搜尋 PLA+、碳纖維、PETG 或品牌型號')}
                     onSelectProduct={handleOpenProductDetail}
-                    onSelectMaterial={(m) => setSelectedMaterial(m)}
+                    onSelectMaterial={(m) => setSelectedMaterial(resolveMaterialFamilyId(m))}
                   />
                 </div>
 
-                {/* Sort selector & Count */}
-                <div className="flex items-center justify-between md:justify-end gap-3 text-xs shrink-0">
-                  <span className="text-slate-500 dark:text-slate-400 text-[11px] sm:text-xs">
-                    {lang === 'en' ? 'Filtered: ' : lang === 'ja' ? '絞り込み: ' : '篩選：'}<strong className="text-slate-900 dark:text-slate-100 font-mono tabular-nums">{filteredAndSortedProducts.length}</strong> {lang === 'en' ? 'items' : lang === 'ja' ? '件' : '款'}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-500 dark:text-slate-400 font-medium hidden xs:inline">
-                      {lang === 'en' ? 'Sort:' : lang === 'ja' ? '並び順:' : '排序：'}
+                {/* Utility Bar: Unboxed Tabular Result Count + Custom Sort Select */}
+                <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 px-0.5 md:px-0">
+                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
+                    <span>
+                      {lang === 'en' ? 'Showing' : lang === 'ja' ? '該当' : '共'}{' '}
+                      <strong className="font-mono tabular-nums font-bold text-slate-900 dark:text-slate-100">
+                        {filteredAndSortedProducts.length}
+                      </strong>{' '}
+                      {lang === 'en' ? 'items' : lang === 'ja' ? '件' : '款'}
                     </span>
+                    {(searchQuery || selectedMaterial !== 'All') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          setSelectedMaterial('All');
+                        }}
+                        className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 underline underline-offset-2 cursor-pointer ml-1"
+                      >
+                        <span>{lang === 'en' ? 'Reset' : lang === 'ja' ? 'クリア' : '清除條件'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="relative inline-flex items-center">
                     <select
+                      aria-label={lang === 'en' ? 'Sort products' : lang === 'ja' ? '並び替え' : '商品排序方式'}
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as any)}
-                      className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/20"
+                      className="appearance-none bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-xl pl-3 pr-8 py-1.5 min-h-[36px] text-xs font-semibold text-slate-800 dark:text-slate-100 cursor-pointer outline-hidden focus:border-slate-900 dark:focus:border-indigo-400 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-indigo-500/20 transition-colors"
                     >
-                      <option value="popular">{lang === 'en' ? 'Most Popular (Default)' : lang === 'ja' ? '人気順 (デフォルト)' : '熱銷排行 (預設)'}</option>
-                      <option value="price_low">{lang === 'en' ? 'Price: Low to High' : lang === 'ja' ? '価格: 安い順' : '價格：由低至高'}</option>
-                      <option value="price_high">{lang === 'en' ? 'Price: High to Low' : lang === 'ja' ? '価格: 高い順' : '價格：由高至低'}</option>
-                      <option value="rating">{lang === 'en' ? 'Highest Rating' : lang === 'ja' ? '高評価順' : '創客評分最高'}</option>
+                      <option value="popular">{lang === 'en' ? 'Most Popular' : lang === 'ja' ? '人気順' : '熱銷排行'}</option>
+                      <option value="price_low">{lang === 'en' ? 'Price: Low → High' : lang === 'ja' ? '価格が安い順' : '價格：低至高'}</option>
+                      <option value="price_high">{lang === 'en' ? 'Price: High → Low' : lang === 'ja' ? '価格が高い順' : '價格：高至低'}</option>
+                      <option value="rating">{lang === 'en' ? 'Top Rated' : lang === 'ja' ? '高評価順' : '創客好評最高'}</option>
                     </select>
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
                   </div>
                 </div>
               </div>
 
-              {/* Bottom Row: Category Material Filter Chips + Reset Filter (Clean wrap, never squeezes chips or reset button on desktop) */}
-              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto sm:flex-wrap sm:overflow-visible pb-1 sm:pb-0 scrollbar-none flex-1 min-w-0">
-                  <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-0.5 select-none">
-                    {lang === 'en' ? 'Material:' : lang === 'ja' ? '材質:' : '材質：'}
+              {/* Lower Rail: Architectural Segmented Base-Material Family Tabs */}
+              <div className="relative border-t border-slate-100 dark:border-slate-800/80 px-3.5 py-2.5 sm:px-5 sm:py-3">
+                <div className="flex items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible scrollbar-none pr-6 sm:pr-0">
+                  <span className="text-[11px] font-semibold tracking-wider text-slate-400 dark:text-slate-500 shrink-0 mr-1 select-none">
+                    {lang === 'en' ? 'Material' : lang === 'ja' ? '材質' : '材質'}
                   </span>
-                  {materials.map((mat) => {
-                    const isSelected = selectedMaterial === mat;
-                    const count = products.filter((p) => mat === 'All' || p.material === mat).length;
+                  {STOREFRONT_MATERIAL_FAMILIES.map((fam) => {
+                    const isSelected = selectedMaterial === fam.id;
+                    const count = materialCounts[fam.id] ?? 0;
+                    const label = fam.id === 'All' ? t.allCategories : (fam.labels[lang] || fam.labels['zh-TW']);
                     return (
-                      <motion.button
-                        key={mat}
-                        id={`filter-material-${mat}`}
-                        onClick={() => setSelectedMaterial(mat)}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.96 }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 28 }}
-                        className={`relative px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none flex items-center gap-1.5 ${
+                      <button
+                        key={fam.id}
+                        id={`filter-material-${fam.id}`}
+                        type="button"
+                        onClick={() => setSelectedMaterial(fam.id)}
+                        className={`relative px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none flex items-center gap-1.5 active:scale-[0.97] ${
                           isSelected
-                            ? 'text-white dark:text-slate-900 shadow-xs'
-                            : 'bg-slate-100/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200/80 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white border border-transparent dark:border-slate-700/60'
+                            ? 'text-white dark:text-white'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100'
                         }`}
                       >
                         {isSelected && (
                           <motion.span
                             layoutId="activeMaterialIndicator"
-                            className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-white -z-0"
-                            transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+                            className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-indigo-600 shadow-xs -z-0"
+                            transition={{ type: 'spring', stiffness: 520, damping: 36 }}
                           />
                         )}
                         <span className="relative z-10 flex items-center gap-1.5">
-                          <span>{mat === 'All' ? t.allCategories : translateMaterial(mat, lang)}</span>
+                          <span>{label}</span>
                           <span
-                            className={`text-[10px] font-mono tabular-nums px-1 rounded-md transition-colors ${
-                              isSelected ? 'bg-white/20 dark:bg-slate-900/15 text-white dark:text-slate-900' : 'bg-slate-200/80 dark:bg-slate-700/80 text-slate-500 dark:text-slate-400'
+                            className={`text-[10px] font-mono tabular-nums transition-colors ${
+                              isSelected ? 'text-slate-300 dark:text-indigo-100' : 'text-slate-400 dark:text-slate-500'
                             }`}
                           >
                             {count}
                           </span>
                         </span>
-                      </motion.button>
+                      </button>
                     );
                   })}
                 </div>
-
-                {/* Active Filter Clear Tag */}
-                {(searchQuery || selectedMaterial !== 'All') && (
-                  <motion.button
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    whileHover={{ scale: 1.04 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setSearchQuery('');
-                      setSelectedMaterial('All');
-                    }}
-                    className="text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 px-2.5 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800/60 transition-colors cursor-pointer shrink-0 self-end lg:self-start whitespace-nowrap"
-                  >
-                    {lang === 'en' ? 'Reset Filters ✕' : lang === 'ja' ? '条件をクリア ✕' : '重設所有篩選 ✕'}
-                  </motion.button>
-                )}
+                {/* Soft mobile right-edge scroll fade affordance */}
+                <div className="pointer-events-none absolute right-0 top-1 bottom-1 w-8 bg-gradient-to-l from-white dark:from-slate-900 to-transparent rounded-r-2xl sm:hidden" />
               </div>
             </div>
 
-            {/* Product Grid with Smooth Fade In/Out Gradient & Scale Transition */}
+            {/* Product Grid (Instant reconciliation without AnimatePresence exit-block or per-card motion wrappers) */}
             <div id="storefront-product-grid">
-              <AnimatePresence mode="wait">
-                {filteredAndSortedProducts.length === 0 ? (
-                  <motion.div
-                    key="empty-products-state"
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -12 }}
-                    transition={{ duration: 0.22, ease: 'easeOut' }}
-                    className="py-20 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-8 space-y-3"
+              {filteredAndSortedProducts.length === 0 ? (
+                <div
+                  key="empty-products-state"
+                  className="py-20 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-200 dark:border-slate-700 p-8 space-y-3"
+                >
+                  <p className="font-bold text-slate-700 dark:text-slate-300 text-base">
+                    {lang === 'en' ? 'No matching 3D filaments found' : lang === 'ja' ? '該当する3Dフィラメントが見つかりませんでした' : '找不到符合條件的 3D 列印耗材'}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {lang === 'en' ? 'Try selecting a different material chip or clearing search terms!' : lang === 'ja' ? '別の材質タグを選択するか、検索キーワードを変更してみてください！' : '建議嘗試切換不同材質標籤或清除關鍵字搜尋！'}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSelectedMaterial('All');
+                      setSearchQuery('');
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-xs"
                   >
-                    <p className="font-bold text-slate-700 dark:text-slate-300 text-base">
-                      {lang === 'en' ? 'No matching 3D filaments found' : lang === 'ja' ? '該当する3Dフィラメントが見つかりませんでした' : '找不到符合條件的 3D 列印耗材'}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {lang === 'en' ? 'Try selecting a different material chip or clearing search terms!' : lang === 'ja' ? '別の材質タグを選択するか、検索キーワードを変更してみてください！' : '建議嘗試切換不同材質標籤或清除關鍵字搜尋！'}
-                    </p>
-                    <button
-                      onClick={() => {
-                        setSelectedMaterial('All');
-                        setSearchQuery('');
-                      }}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-colors shadow-xs"
-                    >
-                      {lang === 'en' ? 'Reset Search Criteria' : lang === 'ja' ? '検索条件をリセット' : '重設搜尋條件'}
-                    </button>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key={`product-grid-${selectedMaterial}-${sortBy}-${searchQuery || 'all'}`}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.22, ease: 'easeInOut' }}
-                    className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 lg:gap-6"
-                  >
-                    {filteredAndSortedProducts.map((product, idx) => (
-                      <React.Fragment key={product.id}>
-                        {/* Native Sponsored Card after 4th product: Adsterra / HilltopAds 300x250 */}
-                        {idx === 3 && adSenseConfig.enabled && adSenseConfig.showInFeedAd && (
-                          <NativeProductAdCard key="native-ad-feed-1" config={adSenseConfig} />
-                        )}
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.96 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ duration: 0.18, delay: Math.min(idx * 0.02, 0.14) }}
-                          className="h-full"
-                        >
-                          <ProductCard
-                            product={product}
-                            currency={currency}
-                            lang={lang}
-                            onAddToCart={(p, color, diameter, qty) => handleAddToCart(p, color, diameter, qty || 1)}
-                            onViewDetail={handleOpenProductDetail}
-                            isWishlisted={wishlistIds.includes(product.id)}
-                            onToggleWishlist={handleToggleWishlist}
-                            isCompared={comparisonIds.includes(product.id)}
-                            onToggleCompare={handleToggleCompare}
-                            onReviewSubmitted={handleReviewSubmitted}
-                          />
-                        </motion.div>
-                        {/* Secondary Native Card after 8th product: Adsterra / HilltopAds 300x250 */}
-                        {idx === 7 && adSenseConfig.enabled && adSenseConfig.showInFeedAd && (
-                          <NativeProductAdCard key="native-ad-feed-2" config={adSenseConfig} />
-                        )}
-                      </React.Fragment>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    {lang === 'en' ? 'Reset Search Criteria' : lang === 'ja' ? '検索条件をリセット' : '重設搜尋條件'}
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 lg:gap-6">
+                  {filteredAndSortedProducts.map((product, idx) => (
+                    <React.Fragment key={product.id}>
+                      {idx === 3 && adSenseConfig.enabled && adSenseConfig.showInFeedAd && (
+                        <NativeProductAdCard key="native-ad-feed-1" config={adSenseConfig} />
+                      )}
+                      <div className="product-grid-card h-full">
+                        <ProductCard
+                          product={product}
+                          currency={currency}
+                          lang={lang}
+                          onAddToCart={handleAddToCart}
+                          onViewDetail={handleOpenProductDetail}
+                          isWishlisted={wishlistSet.has(product.id)}
+                          onToggleWishlist={handleToggleWishlist}
+                          isCompared={comparisonSet.has(product.id)}
+                          onToggleCompare={handleToggleCompare}
+                          onReviewSubmitted={handleReviewSubmitted}
+                          priority={idx < 6}
+                        />
+                      </div>
+                      {idx === 7 && adSenseConfig.enabled && adSenseConfig.showInFeedAd && (
+                        <NativeProductAdCard key="native-ad-feed-2" config={adSenseConfig} />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Recently Viewed Products Shelf (Live Browser & Customer History) */}
-            <RecentlyViewedSection
-              products={products}
-              currency={currency}
-              lang={lang}
-              member={member}
-              onSelectProduct={handleOpenProductDetail}
-              onAddToCart={(p) => handleAddToCart(p, p.colors?.[0] || { name: '預設', hex: '#000000', stock: 10 }, p.diameter || '1.75mm', 1)}
-              onOpenHistoryModal={() => setIsHistoryOpen(true)}
-            />
+            {/* Recently Viewed Products Shelf (Lazy-loaded below-the-fold) */}
+            <Suspense fallback={null}>
+              <RecentlyViewedSection
+                products={products}
+                currency={currency}
+                lang={lang}
+                member={member}
+                onSelectProduct={handleOpenProductDetail}
+                onAddToCart={(p) => handleAddToCart(p, p.colors?.[0] || { name: '預設', hex: '#000000', stock: 10 }, p.diameter || '1.75mm', 1)}
+                onOpenHistoryModal={() => setIsHistoryOpen(true)}
+              />
+            </Suspense>
 
             {/* Google AdSense Footer Leaderboard Banner (Hidden when ads disabled) */}
             {adSenseConfig.enabled && adSenseConfig.showFooterBanner && (
@@ -2183,123 +2447,126 @@ export default function App() {
       </AnimatePresence>
 
       {/* =================================================================== */}
-      {/* GLOBAL MODALS                                                       */}
+      {/* GLOBAL LAZY MODALS & DRAWERS (Loaded on-demand for fast boot)       */}
       {/* =================================================================== */}
-      {viewingProduct && (
-        <ProductDetailModal
-          product={viewingProduct}
-          currency={currency}
-          lang={lang}
-          member={member}
-          onClose={() => setViewingProduct(null)}
-          onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
-          onQuickCheckout={handleQuickCheckout}
-          onAskAI={(p) => {
-            setViewingProduct(null);
-            const promptText =
-              lang === 'en'
-                ? `What are the best slicer settings, nozzle/bed temps, and printer compatibility tips for ${p.name} (${p.material})?`
-                : lang === 'ja'
-                ? `【${p.name}】(${p.material}) の最適なスライサー設定、ノズル・ベッド温度、対応機種のポイントを教えてください！`
-                : `我想了解【${p.name}】(${p.material}) 的最佳切片參數、噴嘴溫度與相容性建議！`;
-            setSupportInitialPrompt(promptText);
-            setIsCustomerSupportOpen(true);
-          }}
-          onReviewSubmitted={handleReviewSubmitted}
-        />
-      )}
-
-      {isCartOpen && (
-        <CartDrawer
-          isOpen={isCartOpen}
-          onClose={() => setIsCartOpen(false)}
-          cartItems={cartItems}
-          onUpdateQuantity={handleUpdateCartQuantity}
-          onUpdateColor={handleUpdateCartColor}
-          onRemoveItem={handleRemoveCartItem}
-          onClearCart={() => {
-            const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
-            saveCustomerCart(activeUid, [], { explicitClear: true }).catch(console.warn);
-            setCartItems([]);
-          }}
-          onAddQuickItem={(p, color, diameter, qty) => handleAddToCart(p, color, diameter, qty)}
-          onProceedCheckout={handleProceedCheckout}
-          currency={currency}
-          lang={lang}
-          member={member}
-        />
-      )}
-
-      {isCheckoutOpen && (
-        <CheckoutModal
-          isOpen={isCheckoutOpen}
-          onClose={() => setIsCheckoutOpen(false)}
-          cartItems={cartItems}
-          currency={currency}
-          lang={lang}
-          member={member}
-          pointsToUse={checkoutPointsToUse}
-          initialCouponCode={checkoutCouponCode}
-          onOrderCompleted={handleOrderCompleted}
-          onOpenTracking={(trk) => {
-            setTrackingNumberInput(trk);
-            setIsTrackingOpen(true);
-          }}
-        />
-      )}
-
       <Suspense fallback={null}>
-      {isAIAdvisorOpen && (
-        <AIAdvisorModal
-          isOpen={isAIAdvisorOpen}
-          onClose={() => setIsAIAdvisorOpen(false)}
-          products={products}
-          lang={lang}
-          onAddToCart={(p, c, d) => handleAddToCart(p, c, d, 1)}
-          onOpenSupportWithPrompt={(prompt) => {
-            setSupportInitialPrompt(prompt);
-            setIsCustomerSupportOpen(true);
-          }}
-        />
-      )}
+        {viewingProduct && (
+          <ProductDetailModal
+            product={viewingProduct}
+            currency={currency}
+            lang={lang}
+            member={member}
+            onClose={() => setViewingProduct(null)}
+            onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
+            onQuickCheckout={handleQuickCheckout}
+            onAskAI={(p) => {
+              setViewingProduct(null);
+              const promptText =
+                lang === 'en'
+                  ? `What are the best slicer settings, nozzle/bed temps, and printer compatibility tips for ${p.name} (${p.material})?`
+                  : lang === 'ja'
+                  ? `【${p.name}】(${p.material}) の最適なスライサー設定、ノズル・ベッド温度、対応機種のポイントを教えてください！`
+                  : `我想了解【${p.name}】(${p.material}) 的最佳切片參數、噴嘴溫度與相容性建議！`;
+              setSupportInitialPrompt(promptText);
+              setIsCustomerSupportOpen(true);
+            }}
+            onReviewSubmitted={handleReviewSubmitted}
+          />
+        )}
+
+        {isCartOpen && (
+          <CartDrawer
+            isOpen={isCartOpen}
+            onClose={() => setIsCartOpen(false)}
+            cartItems={cartItems}
+            onUpdateQuantity={handleUpdateCartQuantity}
+            onUpdateColor={handleUpdateCartColor}
+            onRemoveItem={handleRemoveCartItem}
+            onClearCart={() => {
+              const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
+              saveCustomerCart(activeUid, [], { explicitClear: true }).catch(console.warn);
+              setCartItems([]);
+            }}
+            onAddQuickItem={(p, color, diameter, qty) => handleAddToCart(p, color, diameter, qty)}
+            onProceedCheckout={handleProceedCheckout}
+            currency={currency}
+            lang={lang}
+            member={member}
+          />
+        )}
+
+        {isCheckoutOpen && (
+          <CheckoutModal
+            isOpen={isCheckoutOpen}
+            onClose={() => setIsCheckoutOpen(false)}
+            cartItems={cartItems}
+            currency={currency}
+            lang={lang}
+            member={member}
+            pointsToUse={checkoutPointsToUse}
+            initialCouponCode={checkoutCouponCode}
+            onOrderCompleted={handleOrderCompleted}
+            onPendingOrderCreated={handlePendingOrderCreated}
+            onOpenTracking={(trk) => {
+              setTrackingNumberInput(trk);
+              setIsTrackingOpen(true);
+            }}
+          />
+        )}
+
+        {isAIAdvisorOpen && (
+          <AIAdvisorModal
+            isOpen={isAIAdvisorOpen}
+            onClose={() => setIsAIAdvisorOpen(false)}
+            products={products}
+            lang={lang}
+            onAddToCart={(p, c, d) => handleAddToCart(p, c, d, 1)}
+            onOpenSupportWithPrompt={(prompt) => {
+              setSupportInitialPrompt(prompt);
+              setIsCustomerSupportOpen(true);
+            }}
+          />
+        )}
+
+        {isTrackingOpen && (
+          <TrackingModal
+            isOpen={isTrackingOpen}
+            onClose={() => setIsTrackingOpen(false)}
+            defaultTrackingNumber={trackingNumberInput}
+            orders={currentCustomerOrders}
+            userId={isLoggedIn ? member?.id : undefined}
+            lang={lang}
+          />
+        )}
+
+        {isCustomerSupportOpen && (
+          <CustomerSupportModal
+            isOpen={isCustomerSupportOpen}
+            onClose={() => {
+              setIsCustomerSupportOpen(false);
+              setSupportInitialPrompt('');
+            }}
+            viewingProduct={viewingProduct}
+            cartItems={cartItems}
+            member={isLoggedIn ? member : undefined}
+            initialPrompt={supportInitialPrompt}
+            lang={lang}
+          />
+        )}
+
+        {isAuthOpen && (
+          <AuthModal
+            isOpen={isAuthOpen}
+            onClose={() => setIsAuthOpen(false)}
+            lang={lang}
+            onLoginSuccess={(user) => {
+              const cleanUid = normalizeCustomerId(user.id) || 'usr_' + Date.now();
+              setIsLoggedIn(true);
+              syncUserData(cleanUid, user);
+            }}
+          />
+        )}
       </Suspense>
-
-      {isTrackingOpen && (
-        <TrackingModal
-          isOpen={isTrackingOpen}
-          onClose={() => setIsTrackingOpen(false)}
-          defaultTrackingNumber={trackingNumberInput}
-          orders={currentCustomerOrders}
-          userId={isLoggedIn ? member?.id : undefined}
-          lang={lang}
-        />
-      )}
-
-      <CustomerSupportModal
-        isOpen={isCustomerSupportOpen}
-        onClose={() => {
-          setIsCustomerSupportOpen(false);
-          setSupportInitialPrompt('');
-        }}
-        viewingProduct={viewingProduct}
-        cartItems={cartItems}
-        member={isLoggedIn ? member : undefined}
-        initialPrompt={supportInitialPrompt}
-        lang={lang}
-      />
-
-      {isAuthOpen && (
-        <AuthModal
-          isOpen={isAuthOpen}
-          onClose={() => setIsAuthOpen(false)}
-          lang={lang}
-          onLoginSuccess={(user) => {
-            const cleanUid = normalizeCustomerId(user.id) || 'usr_' + Date.now();
-            setIsLoggedIn(true);
-            syncUserData(cleanUid, user);
-          }}
-        />
-      )}
 
       {/* Persistent Sync & Status Toast Notification (Positioned clear of bottom-right floating chat widget) */}
       {toastNotification && (

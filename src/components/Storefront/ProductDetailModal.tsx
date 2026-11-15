@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { 
   X, 
   ShoppingCart, 
@@ -22,12 +22,15 @@ import {
 } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview, MemberProfile } from '../../types';
 import { formatPrice, translations, translateProduct } from '../../utils/i18n';
-import { WriteReviewModal } from './WriteReviewModal';
 import { subscribeToProductReviews } from '../../lib/reviewPersistence';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { triggerFlyToCart } from './FlyToCartOverlay';
+
+const WriteReviewModal = React.lazy(() =>
+  import('./WriteReviewModal').then((m) => ({ default: m.WriteReviewModal }))
+);
 
 interface ProductDetailModalProps {
   product: FilamentProduct | null;
@@ -736,19 +739,21 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
         </div>
       </div>
 
-      {localProduct && (
-        <WriteReviewModal
-          isOpen={isWriteReviewOpen}
-          onClose={() => setIsWriteReviewOpen(false)}
-          product={localProduct}
-          lang={lang}
-          onReviewSubmitted={(updated, review) => {
-            setLocalProduct(updated);
-            if (onReviewSubmitted) {
-              onReviewSubmitted(updated, review);
-            }
-          }}
-        />
+      {isWriteReviewOpen && localProduct && (
+        <Suspense fallback={null}>
+          <WriteReviewModal
+            isOpen={isWriteReviewOpen}
+            onClose={() => setIsWriteReviewOpen(false)}
+            product={localProduct}
+            lang={lang}
+            onReviewSubmitted={(updated, review) => {
+              setLocalProduct(updated);
+              if (onReviewSubmitted) {
+                onReviewSubmitted(updated, review);
+              }
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

@@ -140,7 +140,16 @@ export function getOrderStatusLabel(status: string): string {
 /**
  * Helper to map a Firestore order document to the Order model
  */
-function mapFirestoreDocToOrder(docId: string, d: any): Order {
+function mapFirestoreDocToOrder(docId: string, d: any): Order & Record<string, any> {
+  const rawStatus = String(d.orderStatus || d.status || 'pending').toLowerCase();
+  const inferredPaymentStatus =
+    d.paymentStatus ||
+    (['pending', 'unpaid', 'pending_payment', 'new', '待付款'].includes(rawStatus)
+      ? 'pending'
+      : ['cancelled', 'canceled', 'failed', '已取消'].includes(rawStatus)
+      ? 'failed'
+      : 'paid');
+
   return {
     id: docId,
     orderNumber: d.orderNumber || docId,
@@ -149,20 +158,27 @@ function mapFirestoreDocToOrder(docId: string, d: any): Order {
     customerEmail: d.customerEmail || '',
     customerPhone: d.customerPhone || '',
     shippingMethod: d.shippingMethod || '7-11',
-    storeOrAddress: d.shippingAddress || '',
+    storeOrAddress: d.storeOrAddress || d.shippingAddress || '',
     items: d.items || [],
     subtotal: d.subtotal || d.totalAmount || 0,
     shippingFee: d.shippingFee || 0,
     discount: d.discount || 0,
     pointsDeduction: d.pointsDeduction || 0,
     pointsEarned: d.pointsEarned || 0,
-    total: d.totalAmount || 0,
-    paymentGateway: d.paymentMethod || 'credit_card',
-    paymentStatus: 'paid',
-    orderStatus: d.status || 'picking',
+    total: d.totalAmount || d.total || 0,
+    paymentGateway: d.paymentGateway || d.paymentMethod || 'credit_card',
+    paymentStatus: inferredPaymentStatus,
+    orderStatus: d.orderStatus || d.status || 'pending',
     trackingNumber: d.trackingNumber || '',
     invoiceNumber: d.invoiceNumber || '',
     invoiceType: d.invoiceType || 'cloud',
+    isVerifiedByNewebPay: Boolean(d.isVerifiedByNewebPay || d.tradeNo),
+    tradeNo: d.tradeNo || '',
+    payTime: d.payTime || d.paidAt || '',
+    shippedAt: d.shippedAt || '',
+    deliveredAt: d.deliveredAt || d.completedAt || '',
+    cancelledAt: d.cancelledAt || '',
+    trackingEvents: Array.isArray(d.trackingEvents) ? d.trackingEvents : undefined,
   };
 }
 

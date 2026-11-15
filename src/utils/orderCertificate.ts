@@ -447,17 +447,17 @@ export function downloadOrderProofPDF(order: any): void {
     <div class="header">
       <div>
         <h1 class="brand-title">神狗勾 3D 列印耗材商城</h1>
-        <div class="brand-sub">官方電子訂單憑證與資料完整性證明 (Official Proof of Transaction)</div>
-        <div style="font-size: 11px; color: #475569; margin-top: 4px;">藍新金流商店代號：<strong>${cert.issuer.merchantId}</strong> ｜ 官方網域：${cert.issuer.officialDomain}</div>
+        <div class="brand-sub">官方電子購買憑證 (Order Receipt)</div>
+        <div style="font-size: 11px; color: #475569; margin-top: 4px;">官方網站：${cert.issuer.officialDomain}</div>
       </div>
       <div style="text-align: right;">
-        <span class="badge">✓ Google Cloud 資料庫完整性已驗證</span>
-        <div style="font-size: 10px; color: #64748b; margin-top: 6px;">憑證編號：${cert.certificateId}</div>
-        <div style="font-size: 10px; color: #64748b;">簽發時間：${new Date(cert.issuedAt).toLocaleString('zh-TW')}</div>
+        <span class="badge">✓ 官方交易明細</span>
+        <div style="font-size: 10px; color: #64748b; margin-top: 6px;">訂單編號：${cert.orderSummary.orderNumber}</div>
+        <div style="font-size: 10px; color: #64748b;">列印時間：${new Date(cert.issuedAt).toLocaleString('zh-TW')}</div>
       </div>
     </div>
 
-    <div class="section-title">📦 訂單與物流交付資訊</div>
+    <div class="section-title">📦 訂單與物流資訊</div>
     <div class="grid-2">
       <div>
         <div class="info-row"><span class="info-label">訂單編號：</span><span class="info-value">${cert.orderSummary.orderNumber}</span></div>
@@ -468,8 +468,8 @@ export function downloadOrderProofPDF(order: any): void {
       <div>
         <div class="info-row"><span class="info-label">配送方式：</span><span class="info-value">${cert.orderSummary.fulfillment.shippingMethod}</span></div>
         <div class="info-row"><span class="info-label">取件門市/地址：</span><span class="info-value">${cert.orderSummary.fulfillment.destination}</span></div>
-        <div class="info-row"><span class="info-label">物流託運單號：</span><span class="info-value" style="color: #4f46e5; font-family: monospace;">${cert.orderSummary.fulfillment.trackingNumber}</span></div>
-        <div class="info-row"><span class="info-label">雲端發票號碼：</span><span class="info-value">${cert.orderSummary.payment.invoiceNumber}</span></div>
+        <div class="info-row"><span class="info-label">物流託運單號：</span><span class="info-value" style="color: #4f46e5; font-family: monospace;">${cert.orderSummary.fulfillment.trackingNumber || '尚未配號'}</span></div>
+        <div class="info-row"><span class="info-label">電子發票：</span><span class="info-value">${String(cert.orderSummary.payment.invoiceNumber || '').startsWith('PENDING') ? '付款完成後開立' : cert.orderSummary.payment.invoiceNumber}</span></div>
       </div>
     </div>
 
@@ -501,25 +501,14 @@ export function downloadOrderProofPDF(order: any): void {
       </tfoot>
     </table>
 
-    <div class="crypto-box">
-      <div class="crypto-title">🔒 密碼學資料完整性簽章 (Cryptographic Proof)</div>
-      <div><strong>簽章演算法：</strong> ${cert.digitalSignature.algorithm} (${cert.digitalSignature.keyId})</div>
-      <div><strong>雲端儲存路徑：</strong> ${cert.digitalSignature.cloudStorageRef}</div>
-      <div><strong>訂單防偽雜湊 (SHA-256)：</strong></div>
-      <div class="hash-text">${cert.digitalSignature.payloadHash}</div>
-      <div style="margin-top: 4px;"><strong>電子數位簽章憑條：</strong></div>
-      <div class="hash-text">${cert.digitalSignature.signatureDigest}</div>
-    </div>
-
     <div class="seal-wrap">
       <div class="footer-note">
-        <strong>法律聲明與查驗說明：</strong><br>
-        本數位證明文件係由神狗勾商城（負責人：林子鈞）透過 Google Cloud Firestore 雲端資料庫安全簽署，所有內容皆與藍新金流特店及物流系統同步核驗。離線備份檔案具防偽校驗效力，可作為商業交易及資料完整性之正式憑證。
+        <strong>神狗勾 3D 列印耗材商城</strong><br>
+        本電子購買憑證供個人對帳、報帳與售後保固存查使用。如需協助請聯繫官方客服。
       </div>
       <div class="seal">
         神狗勾商城<br>
-        <span style="font-size: 10px; font-weight: normal;">特店 MS1843364339</span><br>
-        ★ 電子簽核 ★<br>
+        ★ 官方憑證 ★<br>
         VERIFIED
       </div>
     </div>

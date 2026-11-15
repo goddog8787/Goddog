@@ -540,6 +540,14 @@ export async function saveCustomerOrderRecord(order: Order, userId: string | nul
 
   // 2. Persist to Firestore /orders/{order.id}
   try {
+    const rawOrderStatus = String(order.orderStatus || '').toLowerCase();
+    const isPendingPayment = order.paymentStatus === 'pending' || rawOrderStatus === 'new' || rawOrderStatus === 'pending';
+    const firestoreStatus = isPendingPayment
+      ? 'pending'
+      : ['pending', 'confirmed', 'processing', 'picking', 'dispatched', 'in_transit', 'shipped', 'delivered', 'completed', 'cancelled'].includes(rawOrderStatus)
+      ? rawOrderStatus
+      : 'picking';
+
     const orderDoc = {
       id: order.id,
       userId: effectiveUid,
@@ -549,23 +557,30 @@ export async function saveCustomerOrderRecord(order: Order, userId: string | nul
       shippingAddress: order.storeOrAddress || '',
       shippingMethod: order.shippingMethod || '7-11',
       paymentMethod: order.paymentGateway || 'newebpay',
+      paymentGateway: order.paymentGateway || 'credit_card',
+      paymentStatus: order.paymentStatus || (isPendingPayment ? 'pending' : 'paid'),
+      orderStatus: order.orderStatus || (isPendingPayment ? 'new' : 'picking'),
       totalAmount: Number(order.total) || 0,
-      status: order.orderStatus || 'confirmed',
+      status: firestoreStatus,
       createdAt: order.createdAt || new Date().toISOString(),
       orderNumber: order.orderNumber,
       items: order.items,
       subtotal: order.subtotal,
       shippingFee: order.shippingFee,
       discount: order.discount,
+      couponCode: order.couponCode || '',
       pointsDeduction: order.pointsDeduction,
       pointsEarned: order.pointsEarned,
       trackingNumber: order.trackingNumber,
       invoiceNumber: order.invoiceNumber,
       invoiceType: order.invoiceType,
       invoiceCarrierValue: order.invoiceCarrierValue || '',
+      isVerifiedByNewebPay: Boolean(order.isVerifiedByNewebPay),
+      tradeNo: order.tradeNo || '',
+      payTime: order.payTime || '',
       notes: order.notes || '',
     };
-    await setDoc(doc(db, 'orders', order.id), orderDoc);
+    await setDoc(doc(db, 'orders', order.id), orderDoc, { merge: true });
   } catch (error) {
     console.warn('Firestore order save fallback:', error);
   }
@@ -587,6 +602,14 @@ export async function loadCustomerOrders(userId: string | null | undefined): Pro
       const ordersList: Order[] = [];
       snapshot.forEach((docSnap) => {
         const d = docSnap.data();
+        const rawStatus = String(d.status || d.orderStatus || '').toLowerCase();
+        const isPendingOrUnpaid =
+          d.paymentStatus === 'pending' ||
+          d.paymentStatus === 'unpaid' ||
+          rawStatus === 'pending' ||
+          rawStatus === 'pending_payment' ||
+          rawStatus === 'unpaid' ||
+          rawStatus === 'new';
         ordersList.push({
           id: d.id || docSnap.id,
           orderNumber: d.orderNumber || `ORD-${docSnap.id.substring(0, 8)}`,
@@ -600,18 +623,20 @@ export async function loadCustomerOrders(userId: string | null | undefined): Pro
           subtotal: d.subtotal || d.totalAmount || 0,
           shippingFee: d.shippingFee || 0,
           discount: d.discount || 0,
+          couponCode: d.couponCode || '',
           pointsDeduction: d.pointsDeduction || 0,
           pointsEarned: d.pointsEarned || 0,
           total: d.totalAmount || 0,
-          paymentGateway: d.paymentMethod || d.paymentGateway || 'ecpay_credit',
-          paymentStatus:
-            d.paymentStatus ||
-            (String(d.status || d.orderStatus || '').toLowerCase() === 'unpaid' ? 'unpaid' : 'paid'),
-          orderStatus: (d.orderStatus || d.status || 'paid') as any,
+          paymentGateway: d.paymentGateway || d.paymentMethod || 'credit_card',
+          paymentStatus: d.paymentStatus || (isPendingOrUnpaid ? 'pending' : 'paid'),
+          orderStatus: (d.orderStatus || (isPendingOrUnpaid ? 'new' : d.status) || 'picking') as any,
           trackingNumber: d.trackingNumber || '',
           invoiceNumber: d.invoiceNumber || `TW-${Date.now().toString().substring(5)}`,
           invoiceType: d.invoiceType || 'cloud',
           invoiceCarrierValue: d.invoiceCarrierValue,
+          isVerifiedByNewebPay: Boolean(d.isVerifiedByNewebPay),
+          tradeNo: d.tradeNo || '',
+          payTime: d.payTime || '',
           notes: d.notes,
           userId: d.userId || cleanUid,
         });

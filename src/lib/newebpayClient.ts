@@ -60,6 +60,9 @@ export interface NewebPayCheckoutParams {
   email: string;
   desc: string;
   paymentMethod: string;
+  orderId?: string;
+  docId?: string;
+  returnFrom?: 'checkout' | 'profile';
   merchantId?: string;
   hashKey?: string;
   hashIV?: string;
@@ -73,7 +76,7 @@ export function createClientNewebPayCheckout(params: NewebPayCheckoutParams) {
   const hashIV = (params.hashIV || activeCreds.hashIV).trim();
   const isSandbox = params.testMode ?? activeCreds.testMode;
 
-  const orderId = `GD${Date.now()}`;
+  const orderId = (params.orderId && String(params.orderId).trim()) || `GD${Date.now()}`;
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://goddog.space';
 
   const paymentFlags: Record<string, any> = {};
@@ -132,6 +135,17 @@ export function createClientNewebPayCheckout(params: NewebPayCheckoutParams) {
       paymentFlags.CREDIT = 1;
   }
 
+  const backParams = new URLSearchParams({
+    client_back: '1',
+    orderId,
+  });
+  if (params.docId) {
+    backParams.set('docId', params.docId);
+  }
+  if (params.returnFrom) {
+    backParams.set('from', params.returnFrom);
+  }
+
   const tradeInfoParams: Record<string, string> = {
     MerchantID: merchantId,
     RespondType: 'JSON',
@@ -144,7 +158,7 @@ export function createClientNewebPayCheckout(params: NewebPayCheckoutParams) {
     LoginType: '0',
     ReturnURL: `${origin}/?payment_success=true&orderId=${orderId}`,
     NotifyURL: `${origin}/api/payment/notify`,
-    ClientBackURL: `${origin}/`,
+    ClientBackURL: `${origin}/?${backParams.toString()}`,
   };
 
   Object.keys(paymentFlags).forEach((k) => {

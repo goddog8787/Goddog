@@ -87,7 +87,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         (currentUid && orderUid && orderUid === currentUid) ||
         (currentEmail && orderEmail && orderEmail === currentEmail);
       if (belongs) {
-        const key = o.id || o.orderNumber;
+        const key = o.orderNumber || o.id;
         if (key) map.set(key, o);
       }
     });
@@ -95,7 +95,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   }, [safeOrders, persistedOrders, member?.id, member?.email]);
 
   const ordersCount = genuineMemberOrders.length;
-  const totalSpent = genuineMemberOrders.reduce((sum, o) => sum + (Number(o.totalAmount || o.total) || 0), 0);
+  const totalSpent = genuineMemberOrders
+    .filter((o: any) => {
+      const lbl = classifyOrderStatusLabel(o);
+      return lbl !== '待付款' && lbl !== '退換貨' && lbl !== '已取消';
+    })
+    .reduce((sum, o) => sum + (Number(o.totalAmount || o.total) || 0), 0);
 
   const isVipActive = isMemberVipActive(member);
 
@@ -159,17 +164,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   };
 
   const isUserLoggedIn = Boolean(
-    isLoggedIn && 
-    member && 
-    member.id && 
-    member.id.trim() !== '' && 
-    !member.id.startsWith('guest_') && 
-    member.name !== '創客訪客' && 
-    member.name !== '訪客' && 
-    member.name !== '訪客創客' && 
-    member.name !== 'Guest' &&
-    member.email && 
-    member.email.trim() !== ''
+    isLoggedIn &&
+    member &&
+    member.id &&
+    member.id.trim() !== '' &&
+    !member.id.startsWith('guest') &&
+    member.name !== '創客訪客' &&
+    member.name !== '訪客' &&
+    member.name !== '訪客創客' &&
+    member.name !== 'Guest'
   );
 
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
@@ -622,63 +625,59 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </p>
           </div>
         </div>
-
-      
-        {/* Render Active Modal */}
-        <OrderModal
-          isOpen={activeModal === 'orders'}
-          onClose={() => setActiveModal(null)}
-          initialTab={orderTab}
-          orders={genuineMemberOrders}
-          setOrders={setOrders}
-          member={member}
-          setMember={setMember}
-          onOpenTracking={onOpenTracking}
-          onOpenSupport={onOpenSupport}
-          onConfirmReceipt={async (orderId) => {
-            if (setOrders) {
-              await confirmOrderReceipt(orderId, orders, setOrders);
-              showToast('🎉 已確認收貨！商品真實評價資格已成功解鎖');
-            }
-          }}
-          onGoReview={(productId) => {
-            navigate(`/?product=${productId}`);
-          }}
-        />
-        <PrinterModal isOpen={activeModal === 'printers'} onClose={() => setActiveModal(null)} member={member} />
-        <AddressModal isOpen={activeModal === 'address'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
-        <ReferralModal isOpen={activeModal === 'referral'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
-        <AchievementModal isOpen={activeModal === 'achievements'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} orders={genuineMemberOrders} />
-        <SettingsModal
-          isOpen={activeModal === 'settings'}
-          onClose={() => setActiveModal(null)}
-          member={member}
-          setMember={setMember}
-          onAccountDeleted={async () => {
-            setActiveModal(null);
-            if (onLogout) {
-              await onLogout();
-            } else {
-              setMember(null);
-            }
-            showToast(lang === 'en' ? 'Account deleted.' : lang === 'ja' ? 'アカウントを削除しました。' : '帳號與雲端資料已刪除，並已安全登出。');
-            navigate('/', { replace: true });
-          }}
-        />
-        <FAQModal isOpen={activeModal === 'faq'} onClose={() => setActiveModal(null)} />
-        <NotificationModal isOpen={activeModal === 'notifications'} onClose={() => setActiveModal(null)} member={member} />
-        <HistoryModal 
-          isOpen={activeModal === 'history'} 
-          onClose={() => setActiveModal(null)} 
-          member={member} 
-          onOpenProductDetail={onOpenProductDetail}
-          onAddToCart={onAddToCart}
-        />
-
-        <CouponModal isOpen={activeModal === 'coupons'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
-
-
       </div>
+
+      {/* Render Active Modal outside z-20 container */}
+      <OrderModal
+        isOpen={activeModal === 'orders'}
+        onClose={() => setActiveModal(null)}
+        initialTab={orderTab}
+        orders={genuineMemberOrders}
+        setOrders={setOrders}
+        member={member}
+        setMember={setMember}
+        onOpenTracking={onOpenTracking}
+        onOpenSupport={onOpenSupport}
+        onConfirmReceipt={async (orderId) => {
+          if (setOrders) {
+            await confirmOrderReceipt(orderId, orders, setOrders);
+            showToast('🎉 已確認收貨！商品真實評價資格已成功解鎖');
+          }
+        }}
+        onGoReview={(productId) => {
+          navigate(`/?product=${productId}`);
+        }}
+      />
+      <PrinterModal isOpen={activeModal === 'printers'} onClose={() => setActiveModal(null)} member={member} />
+      <AddressModal isOpen={activeModal === 'address'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
+      <ReferralModal isOpen={activeModal === 'referral'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
+      <AchievementModal isOpen={activeModal === 'achievements'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} orders={genuineMemberOrders} />
+      <SettingsModal
+        isOpen={activeModal === 'settings'}
+        onClose={() => setActiveModal(null)}
+        member={member}
+        setMember={setMember}
+        onAccountDeleted={async () => {
+          setActiveModal(null);
+          if (onLogout) {
+            await onLogout();
+          } else {
+            setMember(null);
+          }
+          showToast(lang === 'en' ? 'Account deleted.' : lang === 'ja' ? 'アカウントを削除しました。' : '帳號與雲端資料已刪除，並已安全登出。');
+          navigate('/', { replace: true });
+        }}
+      />
+      <FAQModal isOpen={activeModal === 'faq'} onClose={() => setActiveModal(null)} />
+      <NotificationModal isOpen={activeModal === 'notifications'} onClose={() => setActiveModal(null)} member={member} />
+      <HistoryModal
+        isOpen={activeModal === 'history'}
+        onClose={() => setActiveModal(null)}
+        member={member}
+        onOpenProductDetail={onOpenProductDetail}
+        onAddToCart={onAddToCart}
+      />
+      <CouponModal isOpen={activeModal === 'coupons'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
     </div>
   );
 };
