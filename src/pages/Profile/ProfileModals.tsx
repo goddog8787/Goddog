@@ -12,7 +12,9 @@ import {
 import { isMockOrder, getGenuineUserOrders } from '../../lib/orderVerification';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { formatPrice, translateProductName, translateMaterial } from '../../utils/i18n';
-import { LanguageCode, CurrencyCode } from '../../types';
+import { LanguageCode, CurrencyCode, FilamentProduct } from '../../types';
+import { INITIAL_PRODUCTS } from '../../data/mockData';
+import { loadPersistedProductsSync } from '../../lib/productPersistence';
 import {
   PRINTER_BRANDS,
   PRINTER_PROFILES,
@@ -88,7 +90,7 @@ const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110]"
+            className="fixed inset-0 bg-slate-950/65 z-[110]"
           />
           <motion.div
             initial={{ opacity: 0, y: 100 }}
@@ -237,6 +239,16 @@ export const OrderModal: React.FC<{
       cancelled = true;
     };
   }, [isOpen, orders, member?.id]);
+
+  const catalogLookup = useMemo(() => {
+    const map = new Map<string, FilamentProduct>();
+    const list = loadPersistedProductsSync(INITIAL_PRODUCTS);
+    for (const prod of list) {
+      if (prod.id) map.set(prod.id, prod);
+      if (prod.name) map.set(prod.name.trim(), prod);
+    }
+    return map;
+  }, [isOpen]);
 
   const effectiveOrders = useMemo(() => {
     const map = new Map<string, any>();
@@ -456,11 +468,14 @@ export const OrderModal: React.FC<{
                   id: it.productId || 'custom',
                   name: it.name || '3D列印耗材',
                   price: Number(it.price) || amt,
+                  imageUrl: it.imageUrl || it.image || catalogLookup.get(it.productId)?.imageUrl || '',
+                  material: it.material || catalogLookup.get(it.productId)?.material || 'PLA',
                 },
                 selectedColor: {
                   name: it.colorName || it.color || '預設',
                   hex: it.colorHex || '#6366f1',
                 },
+                selectedDiameter: it.diameter || it.selectedDiameter || '1.75mm',
                 quantity: Number(it.quantity) || 1,
               }))
             : [],
@@ -739,58 +754,81 @@ export const OrderModal: React.FC<{
                   </div>
                 )}
 
-              {/* Rich Item List with Color, Diameter, Quantity, and Price */}
+              {/* Rich Item List with Resolved Product Photo, Color, Diameter, Quantity, and Price */}
               <div className="space-y-2.5 mb-3">
                 {order.items.map((item: any, idx: number) => {
-                  const itemName = typeof item === 'string' ? item : item.name || '神狗勾 3D 列印耗材';
-                  const itemColor = typeof item === 'object' ? item.color || item.selectedColor?.name : '';
-                  const itemHex = typeof item === 'object' ? item.colorHex || item.selectedColor?.hex : '';
-                  const itemDiameter = typeof item === 'object' ? item.diameter || item.selectedDiameter || '1.75mm' : '1.75mm';
+                  const itemName = typeof item === 'string' ? item : item.name || '3D 列印耗材';
+                  const matchedProd =
+                    typeof item === 'object'
+                      ? catalogLookup.get(item.productId) || catalogLookup.get(itemName.trim())
+                      : undefined;
+                  const itemColor =
+                    typeof item === 'object'
+                      ? item.colorName || item.color || item.selectedColor?.name || ''
+                      : '';
+                  const itemHex =
+                    typeof item === 'object'
+                      ? item.colorHex || item.selectedColor?.hex || ''
+                      : '';
+                  const itemDiameter =
+                    typeof item === 'object'
+                      ? item.diameter || item.selectedDiameter || matchedProd?.diameter || '1.75mm'
+                      : '1.75mm';
+                  const itemMaterial =
+                    (typeof item === 'object' ? item.material || item.category : '') ||
+                    matchedProd?.material ||
+                    '';
                   const itemQty = typeof item === 'object' ? item.quantity || 1 : 1;
                   const itemPrice = typeof item === 'object' ? item.price || 0 : 0;
-                  const itemImg = typeof item === 'object' ? item.image || item.imageUrl : '';
+                  const rawImg =
+                    (typeof item === 'object' ? item.imageUrl || item.image || item.img : '') ||
+                    matchedProd?.imageUrl ||
+                    '';
+                  const resolvedImg = getSafeProductImageUrl(rawImg, itemMaterial, itemName);
 
                   return (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-50/70 border border-slate-100"
+                      className="flex items-center justify-between gap-3 p-2.5 rounded-2xl bg-slate-50/80 border border-slate-100/90"
                     >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        {itemImg ? (
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-14 h-14 rounded-xl bg-white border border-slate-200/80 overflow-hidden shrink-0 shadow-2xs flex items-center justify-center">
                           <img
-                            src={getSafeProductImageUrl(itemImg, item.material, itemName)}
+                            src={resolvedImg}
                             alt={itemName}
-                            className="w-11 h-11 rounded-lg object-cover bg-white border border-slate-200 shrink-0"
-                            onError={(e) => handleProductImageError(e, item.material, itemName)}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-cover"
+                            onError={(e) => handleProductImageError(e, itemMaterial, itemName)}
                           />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                            <Package className="w-5 h-5" />
-                          </div>
-                        )}
+                        </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-slate-900 truncate">{itemName}</p>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <p className="text-xs sm:text-[13px] font-bold text-slate-900 line-clamp-2 leading-snug">
+                            {itemName}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                             {itemColor && (
-                              <span className="inline-flex items-center gap-1 text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-medium">
+                              <span className="inline-flex items-center gap-1 text-[10px] bg-white border border-slate-200 px-1.5 py-0.5 rounded-md text-slate-600 font-medium">
                                 {itemHex && (
                                   <span
-                                    className="w-2 h-2 rounded-full border border-slate-300"
+                                    className="w-2 h-2 rounded-full border border-slate-300 shrink-0"
                                     style={{ backgroundColor: itemHex }}
                                   />
                                 )}
-                                {itemColor}
+                                <span className="truncate max-w-[96px]">{itemColor}</span>
                               </span>
                             )}
-                            <span className="text-[10px] bg-slate-200/70 text-slate-600 px-1.5 py-0.5 rounded font-mono">
-                              {itemDiameter}
-                            </span>
-                            <span className="text-[10px] font-bold text-indigo-600">x{itemQty}</span>
+                            {(!itemMaterial || (!itemMaterial.toLowerCase().includes('accessories') && !itemMaterial.toLowerCase().includes('resin'))) && (
+                              <span className="text-[10px] bg-slate-200/75 text-slate-600 px-1.5 py-0.5 rounded-md font-mono">
+                                {itemDiameter}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-bold text-indigo-600 font-mono">x{itemQty}</span>
                           </div>
                         </div>
                       </div>
                       {itemPrice > 0 && (
-                        <div className="text-xs font-mono font-bold text-slate-700 shrink-0">
+                        <div className="text-xs font-mono font-bold text-slate-800 shrink-0 tabular-nums">
                           NT$ {(itemPrice * itemQty).toLocaleString()}
                         </div>
                       )}
@@ -911,7 +949,7 @@ export const OrderModal: React.FC<{
         typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs animate-fade-in"
+            className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-slate-950/70 animate-fade-in"
             onClick={() => setReviewingOrder(null)}
           >
             <div
@@ -1013,7 +1051,7 @@ export const OrderModal: React.FC<{
         typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs animate-fade-in"
+            className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-slate-950/70 animate-fade-in"
             onClick={() => setAfterSalesOrder(null)}
           >
             <div
@@ -2305,38 +2343,6 @@ export const HistoryModal: React.FC<{
   return (
     <ModalWrapper isOpen={isOpen} onClose={onClose} title={modalTitle}>
       <div className="space-y-4">
-        {/* User Account Isolation & Cloud Sync Banner */}
-        <div className="bg-indigo-50/80 border border-indigo-100 rounded-2xl p-3 flex items-start gap-2.5 text-xs text-indigo-950">
-          <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-          <div className="flex-1 leading-relaxed">
-            <span className="font-bold text-indigo-900">
-              {activeLang === 'en' ? 'Personal Cloud History:' : activeLang === 'ja' ? '個人専用クラウド履歴：' : '專屬個人雲端紀錄：'}
-            </span>
-            {member?.email || member?.name ? (
-              <span>
-                {activeLang === 'en'
-                  ? ` Linked to your account `
-                  : activeLang === 'ja'
-                  ? ` 会員アカウント `
-                  : ' 此瀏覽歷程已綁定於您的會員帳號 '}
-                <strong className="font-mono text-indigo-700">({member.email || member.name})</strong>
-                {activeLang === 'en'
-                  ? `, securely preserved in cloud across all devices.`
-                  : activeLang === 'ja'
-                  ? ` に紐付けされ、クラウドへ安全に同期されています。`
-                  : '，永久安全儲存於雲端，換機登入自動載入，絕不混入其他用戶。'}
-              </span>
-            ) : (
-              <span>
-                {activeLang === 'en'
-                  ? 'Currently stored on this device. Sign in to permanently sync to your maker account.'
-                  : activeLang === 'ja'
-                  ? '現在はゲストのローカル履歴です。ログインするとクラウドへ永続同期されます。'
-                  : '目前為訪客本機紀錄。登入後所有瀏覽紀錄將永久同步歸戶至您的個人會員中心。'}
-              </span>
-            )}
-          </div>
-        </div>
 
         {history.length > 0 && (
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs">
@@ -2392,12 +2398,16 @@ export const HistoryModal: React.FC<{
               onClick={() => handleItemClick(item)}
               className="bg-white p-3.5 rounded-2xl border border-slate-100 hover:border-indigo-200 shadow-xs hover:shadow-md flex items-center gap-3.5 relative overflow-hidden group cursor-pointer transition-all active:scale-[0.99]"
             >
-              <img 
-                src={getSafeProductImageUrl(item.image || item.imageUrl || item.img, item.category, item.name)} 
-                alt={item.name} 
-                className="w-16 h-16 sm:w-18 sm:h-18 object-cover rounded-xl bg-slate-100 shrink-0 border border-slate-100"
-                onError={(e) => handleProductImageError(e, item.category, item.name)}
-              />
+              <div className="w-16 h-16 sm:w-[70px] sm:h-[70px] rounded-2xl bg-white border border-slate-200/80 overflow-hidden shrink-0 shadow-2xs flex items-center justify-center">
+                <img 
+                  src={getSafeProductImageUrl(item.image || item.imageUrl || item.img, item.material || item.category, item.name)} 
+                  alt={item.name} 
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-full object-cover"
+                  onError={(e) => handleProductImageError(e, item.material || item.category, item.name)}
+                />
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                   {item.brand && (

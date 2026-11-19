@@ -863,7 +863,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   return (
     <div 
       id="customer-support-modal-backdrop"
-      className={`fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-5 transition-all duration-300 cursor-pointer select-none ${
+      className={`fixed inset-0 z-50 overflow-hidden bg-slate-950/65 flex items-center justify-center p-2 sm:p-5 transition-all duration-200 cursor-pointer select-none ${
         isOpen ? 'opacity-100 pointer-events-auto visible' : 'opacity-0 pointer-events-none invisible'
       }`}
       onClick={onClose}
@@ -1006,7 +1006,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         {/* AI Model Picker Popover */}
         {showModelPicker && (
           <div 
-            className="absolute top-[108px] sm:top-16 left-3 right-3 sm:left-auto sm:right-5 z-50 sm:w-[390px] bg-slate-900/98 backdrop-blur-xl border border-slate-700 rounded-2xl shadow-2xl p-3.5 text-white animate-fade-in"
+            className="absolute top-[108px] sm:top-16 left-3 right-3 sm:left-auto sm:right-5 z-50 sm:w-[390px] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3.5 text-white animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2.5 border-b border-slate-800">

@@ -246,6 +246,9 @@ export interface OrderItem {
   colorHex: string;
   price: number;
   quantity: number;
+  imageUrl?: string;
+  material?: string;
+  diameter?: '1.75mm' | '2.85mm' | string;
 }
 
 export interface Order {

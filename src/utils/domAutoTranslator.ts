@@ -101,6 +101,7 @@ const PHRASE_MAP: Record<string, TransEntry> = {
   '管理後台': { en: 'Admin Console', ja: '管理コンソール' },
   '管理員': { en: 'Admin', ja: '管理者' },
   '創客 VIP 會員': { en: 'Maker VIP Club', ja: 'メイカーVIP会員' },
+  '97折': { en: '3% OFF', ja: '3%OFF' },
   '95折': { en: '5% OFF', ja: '5%OFF' },
   '即時物流追蹤': { en: 'Order Tracking', ja: '配送状況追跡' },
   '訂單查詢': { en: 'Order Tracking', ja: '注文履歴・追跡' },

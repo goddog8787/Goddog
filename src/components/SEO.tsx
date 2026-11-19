@@ -116,7 +116,7 @@ function buildSingleProductJsonLd(
   };
 }
 
-export const SEO: React.FC<SEOProps> = ({
+export const SEO: React.FC<SEOProps> = React.memo(({
   title,
   description,
   keywords,
@@ -243,60 +243,67 @@ export const SEO: React.FC<SEOProps> = ({
   }, [jsonLd, schema, product, products, finalDesc]);
 
   useEffect(() => {
-    document.title = fullTitle;
+    let cancelled = false;
+    const applySeoTags = () => {
+      if (cancelled) return;
+      document.title = fullTitle;
 
-    const setMetaTag = (attrName: string, attrValue: string, content: string) => {
-      let element = document.querySelector(`meta[${attrName}="${attrValue}"]`);
-      if (!element) {
-        element = document.createElement('meta');
-        element.setAttribute(attrName, attrValue);
-        document.head.appendChild(element);
+      const setMetaTag = (attrName: string, attrValue: string, content: string) => {
+        let element = document.querySelector(`meta[${attrName}="${attrValue}"]`);
+        if (!element) {
+          element = document.createElement('meta');
+          element.setAttribute(attrName, attrValue);
+          document.head.appendChild(element);
+        }
+        element.setAttribute('content', content);
+      };
+
+      let canonicalLink = document.querySelector(
+        'link[rel="canonical"]'
+      ) as HTMLLinkElement | null;
+      if (!canonicalLink) {
+        canonicalLink = document.createElement('link');
+        canonicalLink.setAttribute('rel', 'canonical');
+        canonicalLink.id = 'seo-canonical-link';
+        document.head.appendChild(canonicalLink);
       }
-      element.setAttribute('content', content);
+      canonicalLink.setAttribute('href', resolvedCanonical);
+      setMetaTag('property', 'og:url', resolvedCanonical);
+
+      setMetaTag('name', 'description', finalDesc);
+      if (finalKeywords) {
+        setMetaTag('name', 'keywords', finalKeywords);
+      }
+
+      setMetaTag('property', 'og:title', fullTitle);
+      setMetaTag('property', 'og:description', finalDesc);
+      setMetaTag('property', 'og:type', product ? 'product' : ogType);
+      setMetaTag('property', 'og:image', resolvedOgImage);
+
+      setMetaTag('name', 'twitter:card', 'summary_large_image');
+      setMetaTag('name', 'twitter:title', fullTitle);
+      setMetaTag('name', 'twitter:description', finalDesc);
+      setMetaTag('name', 'twitter:image', resolvedOgImage);
+
+      let scriptElement = document.querySelector('#seo-json-ld') as HTMLScriptElement | null;
+      if (computedJsonLd) {
+        if (!scriptElement) {
+          scriptElement = document.createElement('script');
+          scriptElement.id = 'seo-json-ld';
+          scriptElement.type = 'application/ld+json';
+          document.head.appendChild(scriptElement);
+        }
+        scriptElement.textContent = JSON.stringify(computedJsonLd);
+      } else if (scriptElement) {
+        scriptElement.remove();
+      }
     };
 
-    // 1. Canonical URL (<link rel="canonical">) & og:url
-    let canonicalLink = document.querySelector(
-      'link[rel="canonical"]'
-    ) as HTMLLinkElement | null;
-    if (!canonicalLink) {
-      canonicalLink = document.createElement('link');
-      canonicalLink.setAttribute('rel', 'canonical');
-      canonicalLink.id = 'seo-canonical-link';
-      document.head.appendChild(canonicalLink);
-    }
-    canonicalLink.setAttribute('href', resolvedCanonical);
-    setMetaTag('property', 'og:url', resolvedCanonical);
-
-    // 2. Standard & Social Meta Tags
-    setMetaTag('name', 'description', finalDesc);
-    if (finalKeywords) {
-      setMetaTag('name', 'keywords', finalKeywords);
-    }
-
-    setMetaTag('property', 'og:title', fullTitle);
-    setMetaTag('property', 'og:description', finalDesc);
-    setMetaTag('property', 'og:type', product ? 'product' : ogType);
-    setMetaTag('property', 'og:image', resolvedOgImage);
-
-    setMetaTag('name', 'twitter:card', 'summary_large_image');
-    setMetaTag('name', 'twitter:title', fullTitle);
-    setMetaTag('name', 'twitter:description', finalDesc);
-    setMetaTag('name', 'twitter:image', resolvedOgImage);
-
-    // 3. Dynamic Schema.org JSON-LD (Product / Store / ItemList)
-    let scriptElement = document.querySelector('#seo-json-ld') as HTMLScriptElement | null;
-    if (computedJsonLd) {
-      if (!scriptElement) {
-        scriptElement = document.createElement('script');
-        scriptElement.id = 'seo-json-ld';
-        scriptElement.type = 'application/ld+json';
-        document.head.appendChild(scriptElement);
-      }
-      scriptElement.textContent = JSON.stringify(computedJsonLd);
-    } else if (scriptElement) {
-      scriptElement.remove();
-    }
+    const timer = window.setTimeout(applySeoTags, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [
     fullTitle,
     finalDesc,
@@ -310,4 +317,4 @@ export const SEO: React.FC<SEOProps> = ({
   ]);
 
   return null;
-};
+});

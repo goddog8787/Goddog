@@ -14,6 +14,7 @@ import {
   downloadOrderProofPDF,
   OrderCertificate,
 } from '../../utils/orderCertificate';
+import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 
 interface OrderCertificateModalProps {
   isOpen: boolean;
@@ -77,7 +78,7 @@ export const OrderCertificateModal: React.FC<OrderCertificateModalProps> = ({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[120] overflow-y-auto bg-slate-900/65 backdrop-blur-xs flex items-end sm:items-center justify-center p-2 sm:p-5 select-none cursor-pointer"
+      className="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/70 flex items-end sm:items-center justify-center p-2 sm:p-5 select-none cursor-pointer"
       onClick={onClose}
     >
       <div
@@ -181,12 +182,22 @@ export const OrderCertificateModal: React.FC<OrderCertificateModalProps> = ({
                   {cert.orderSummary.items.map((item, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-2 text-xs text-slate-700 dark:text-slate-300 bg-slate-50/80 dark:bg-slate-800/50 px-2.5 py-2 rounded-xl"
+                      className="flex items-center justify-between gap-2.5 text-xs text-slate-700 dark:text-slate-300 bg-slate-50/80 dark:bg-slate-800/50 px-2.5 py-2 rounded-xl"
                     >
-                      <span className="truncate font-medium">
-                        {item.name}
-                        {item.colorName ? ` (${item.colorName})` : ''}
-                      </span>
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <img
+                          src={getSafeProductImageUrl((item as any).imageUrl || (item as any).image, (item as any).material, item.name)}
+                          alt={item.name}
+                          className="w-9 h-9 rounded-lg object-cover border border-slate-200 dark:border-slate-700 bg-white shrink-0"
+                          loading="lazy"
+                          decoding="async"
+                          onError={(e) => handleProductImageError(e, (item as any).material, item.name)}
+                        />
+                        <span className="truncate font-medium">
+                          {item.name}
+                          {item.colorName ? ` (${item.colorName})` : ''}
+                        </span>
+                      </div>
                       <div className="flex items-center gap-2 shrink-0 font-mono text-[11px]">
                         <span className="text-slate-400">x{item.quantity}</span>
                         {item.price > 0 && (

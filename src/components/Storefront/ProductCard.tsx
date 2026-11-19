@@ -1,11 +1,12 @@
-import React, { useState, useMemo, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { ShoppingCart, Check, Eye, Heart, Scale, Package, X, Plus, Minus } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview } from '../../types';
-import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
+import { formatPrice, translations, translateProduct, translateColorName, useCatalogI18nVersion } from '../../utils/i18n';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
+import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
 import { triggerFlyToCart } from './FlyToCartOverlay';
 
 const WriteReviewModal = React.lazy(() =>
@@ -40,7 +41,8 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
   priority = false,
 }) => {
   const t = translations[lang];
-  const liveProduct = useMemo(() => translateProduct(product, lang), [product, lang]);
+  const catalogI18nVersion = useCatalogI18nVersion(lang);
+  const liveProduct = useMemo(() => translateProduct(product, lang), [product, lang, catalogI18nVersion]);
 
   const availableColors: ColorOption[] = useMemo(() => {
     const fallbackName = lang === 'en' ? 'Standard Spec' : lang === 'ja' ? '標準仕様' : '標準規格';
@@ -55,7 +57,18 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
   const [selectedDiameter] = useState<'1.75mm' | '2.85mm'>(liveProduct.diameter);
   const [isAddedAnimation, setIsAddedAnimation] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
   const sheetThumbRef = React.useRef<HTMLImageElement>(null);
+
+  // Viewport-only image rendering: avoids decoding offscreen images or skipped cards during rapid mobile scroll
+  const { ref: cardRef, shouldRender: isCardImageVisible } = useIntersectionObserver<HTMLDivElement>({
+    enabled: !priority,
+    rootMargin: '120px 0px',
+    threshold: 0.01,
+    scrollSettleMs: 70,
+    freezeOnceVisible: false,
+  });
+  const canRenderCardImage = priority || isCardImageVisible;
 
   // 清理品牌顯示：完整且精煉的品牌名稱，絕不出現「...」截斷
   const cleanBrand = useMemo(() => {
@@ -138,6 +151,10 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
     return getSafeProductImageUrl(liveProduct.imageUrl, product.material, product.name);
   }, [liveProduct.imageUrl, product.material, product.name]);
 
+  useEffect(() => {
+    setIsImageLoaded(false);
+  }, [activeImageUrl, canRenderCardImage]);
+
   const stockLabel = useMemo(() => {
     if (liveProduct.stock <= 0) {
       return lang === 'en' ? 'Restocking' : lang === 'ja' ? '入荷待ち' : '補貨中';
@@ -150,6 +167,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
 
   return (
     <div
+      ref={cardRef}
       id={`product-card-${product.id}`}
       onClick={() => onViewDetail(liveProduct)}
       className="group h-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer relative"
@@ -168,7 +186,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                 e.stopPropagation();
                 onViewDetail(liveProduct);
               }}
-              className="hidden sm:flex w-8 h-8 rounded-full items-center justify-center shadow-xs transition-all cursor-pointer bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105"
+              className="hidden sm:flex w-8 h-8 rounded-full items-center justify-center shadow-xs transition-all duration-150 cursor-pointer bg-white/95 dark:bg-slate-800/95 text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:scale-105 active:scale-90"
               title={lang === 'en' ? 'Quick View' : lang === 'ja' ? '詳細を見る' : '查看詳情'}
             >
               <Eye className="w-3.5 h-3.5" />
@@ -178,10 +196,10 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
               <button
                 type="button"
                 onClick={() => onToggleCompare(product.id)}
-                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all duration-150 cursor-pointer hover:scale-105 active:scale-90 ${
                   isCompared
                     ? 'bg-indigo-600 text-white'
-                    : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-600 dark:text-slate-300 hover:text-indigo-600'
+                    : 'bg-white/95 dark:bg-slate-800/95 text-slate-600 dark:text-slate-300 hover:text-indigo-600'
                 }`}
                 title={
                   isCompared
@@ -205,10 +223,10 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
               <button
                 type="button"
                 onClick={() => onToggleWishlist(product.id)}
-                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all cursor-pointer ${
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all duration-150 cursor-pointer hover:scale-105 active:scale-90 ${
                   isWishlisted
-                    ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-600'
-                    : 'bg-white/90 dark:bg-slate-800/90 backdrop-blur-xs text-slate-500 dark:text-slate-400 hover:text-rose-500'
+                    ? 'bg-rose-50 dark:bg-rose-950/90 text-rose-600'
+                    : 'bg-white/95 dark:bg-slate-800/95 text-slate-500 dark:text-slate-400 hover:text-rose-500'
                 }`}
                 title={
                   isWishlisted
@@ -224,23 +242,36 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                     : '收藏'
                 }
               >
-                <Heart className={`w-3.5 h-3.5 ${isWishlisted ? 'fill-rose-500 text-rose-500' : ''}`} />
+                <Heart className={`w-3.5 h-3.5 transition-transform duration-200 ${isWishlisted ? 'fill-rose-500 text-rose-500 scale-110' : ''}`} />
               </button>
             )}
           </div>
 
-          {/* 商品圖片本體 */}
+          {/* 商品圖片本體（僅在可視區域內掛載與解碼，滑出視窗即釋放記憶體） */}
           {activeImageUrl && activeImageUrl.trim() !== '' ? (
-            <img
-              src={activeImageUrl}
-              alt={cleanTitle}
-              referrerPolicy="no-referrer"
-              className="w-full h-full rounded-[16px] object-cover object-center group-hover:scale-103 transition-transform duration-300"
-              loading={priority ? 'eager' : 'lazy'}
-              fetchPriority={priority ? 'high' : 'low'}
-              decoding="async"
-              onError={(e) => handleProductImageError(e, product.material, product.name)}
-            />
+            canRenderCardImage ? (
+              <img
+                src={activeImageUrl}
+                alt={cleanTitle}
+                referrerPolicy="no-referrer"
+                className={`w-full h-full rounded-[16px] object-cover object-center group-hover:scale-103 transition-all duration-300 ${
+                  priority || isImageLoaded ? 'opacity-100' : 'opacity-0'
+                }`}
+                loading={priority ? 'eager' : 'lazy'}
+                fetchPriority={priority ? 'high' : 'low'}
+                decoding="async"
+                onLoad={() => setIsImageLoaded(true)}
+                onError={(e) => {
+                  handleProductImageError(e, product.material, product.name);
+                  setIsImageLoaded(true);
+                }}
+              />
+            ) : (
+              <div
+                aria-hidden="true"
+                className="w-full h-full rounded-[16px] bg-slate-100 dark:bg-slate-800/60"
+              />
+            )
           ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400">
               <Package className="w-10 h-10" />
@@ -288,12 +319,12 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
             type="button"
             onClick={handleOpenColorSheet}
             disabled={liveProduct.stock <= 0}
-            className={`h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-colors duration-200 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`group/cart h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 active:scale-95 ${
               liveProduct.stock <= 0
                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                 : isAddedAnimation
-                ? 'bg-emerald-600 text-white'
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
+                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
+                : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-600/20 text-white shadow-xs'
             }`}
             title={liveProduct.stock <= 0 ? t.outOfStock : t.addToCart}
           >
@@ -323,7 +354,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
         typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="fixed inset-0 z-[75] bg-slate-900/55 backdrop-blur-xs flex items-end justify-center animate-fade-in select-none"
+            className="fixed inset-0 z-[75] bg-slate-950/60 flex items-end justify-center select-none"
             onClick={(e) => {
               e.stopPropagation();
               setIsColorSheetOpen(false);
@@ -462,7 +493,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                 <button
                   type="button"
                   onClick={handleConfirmAddFromSheet}
-                  className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap transition-all"
+                  className="btn-tactile-primary flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
                   <ShoppingCart className="w-4 h-4 shrink-0" />
                   <span>
@@ -498,4 +529,31 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
   );
 };
 
-export const ProductCard = React.memo(ProductCardInner);
+function areProductCardPropsEqual(prev: ProductCardProps, next: ProductCardProps): boolean {
+  return (
+    prev.product.id === next.product.id &&
+    prev.product.name === next.product.name &&
+    prev.product.brand === next.product.brand &&
+    prev.product.material === next.product.material &&
+    prev.product.diameter === next.product.diameter &&
+    prev.product.price === next.product.price &&
+    prev.product.originalPrice === next.product.originalPrice &&
+    prev.product.stock === next.product.stock &&
+    prev.product.imageUrl === next.product.imageUrl &&
+    prev.product.rating === next.product.rating &&
+    prev.product.reviewsCount === next.product.reviewsCount &&
+    prev.product.colors === next.product.colors &&
+    prev.currency === next.currency &&
+    prev.lang === next.lang &&
+    prev.isWishlisted === next.isWishlisted &&
+    prev.isCompared === next.isCompared &&
+    prev.priority === next.priority &&
+    prev.onAddToCart === next.onAddToCart &&
+    prev.onViewDetail === next.onViewDetail &&
+    prev.onToggleWishlist === next.onToggleWishlist &&
+    prev.onToggleCompare === next.onToggleCompare &&
+    prev.onReviewSubmitted === next.onReviewSubmitted
+  );
+}
+
+export const ProductCard = React.memo(ProductCardInner, areProductCardPropsEqual);

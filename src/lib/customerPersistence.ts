@@ -1123,7 +1123,7 @@ export async function loadCustomerProfileDoc(
             ? subProfile.points
             : typeof localCached?.points === 'number'
             ? localCached.points
-            : 120,
+            : 50,
         coupons:
           Array.isArray(subProfile?.coupons) && subProfile.coupons.length > 0
             ? subProfile.coupons
@@ -1168,7 +1168,7 @@ export async function loadCustomerProfileDoc(
         email: fallbackUser?.email || '',
         phone: '',
         tier: (fallbackUser?.tier as any) || 'Bronze',
-        points: typeof fallbackUser?.points === 'number' ? fallbackUser.points : 120,
+        points: typeof fallbackUser?.points === 'number' ? fallbackUser.points : 50,
         totalSpent: 0,
         ordersCount: 0,
         referralCode: generateUserReferralCode(cleanUid, fallbackUser?.email || ''),

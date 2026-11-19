@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Navbar 
@@ -9,26 +9,50 @@ import {
 import { 
   SearchAutocomplete 
 } from './components/Storefront/SearchAutocomplete';
-import {
-  DraggableChatWidget
-} from './components/Storefront/DraggableChatWidget';
 import { FlyToCartOverlay } from './components/Storefront/FlyToCartOverlay';
+const loadDraggableChatWidget = () => import('./components/Storefront/DraggableChatWidget');
+const DraggableChatWidget = React.lazy(() => loadDraggableChatWidget().then(m => ({ default: m.DraggableChatWidget })));
 
-// Lazy-loaded heavy secondary modals, drawers & routes to keep initial bundle lean and taps instant
-const ProductDetailModal = React.lazy(() => import('./components/Storefront/ProductDetailModal').then(m => ({ default: m.ProductDetailModal })));
-const CartDrawer = React.lazy(() => import('./components/Storefront/CartDrawer').then(m => ({ default: m.CartDrawer })));
-const CheckoutModal = React.lazy(() => import('./components/Storefront/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
-const TrackingModal = React.lazy(() => import('./components/Storefront/TrackingModal').then(m => ({ default: m.TrackingModal })));
-const CustomerSupportModal = React.lazy(() => import('./components/Storefront/CustomerSupportModal').then(m => ({ default: m.CustomerSupportModal })));
-const AuthModal = React.lazy(() => import('./components/Auth/AuthModal').then(m => ({ default: m.AuthModal })));
-const WishlistDrawer = React.lazy(() => import('./components/Storefront/WishlistDrawer').then(m => ({ default: m.WishlistDrawer })));
-const RecentlyViewedSection = React.lazy(() => import('./components/Storefront/RecentlyViewedSection').then(m => ({ default: m.RecentlyViewedSection })));
-const AdminDashboard = React.lazy(() => import('./components/Admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
-const AIAdvisorModal = React.lazy(() => import('./components/Storefront/AIAdvisorModal').then(m => ({ default: m.AIAdvisorModal })));
-const FilamentLabModal = React.lazy(() => import('./components/Storefront/FilamentLabModal').then(m => ({ default: m.FilamentLabModal })));
-const ProductComparisonModal = React.lazy(() => import('./components/Storefront/ProductComparisonModal').then(m => ({ default: m.ProductComparisonModal })));
-const SpoolRecycleModal = React.lazy(() => import('./components/Storefront/SpoolRecycleModal').then(m => ({ default: m.SpoolRecycleModal })));
-const HistoryModal = React.lazy(() => import('./pages/Profile/ProfileModals').then(m => ({ default: m.HistoryModal })));
+// Named lazy chunk loaders so frequently tapped modals can be prefetched during idle time
+const loadProductDetailModal = () => import('./components/Storefront/ProductDetailModal');
+const loadCartDrawer = () => import('./components/Storefront/CartDrawer');
+const loadCheckoutModal = () => import('./components/Storefront/CheckoutModal');
+const loadTrackingModal = () => import('./components/Storefront/TrackingModal');
+const loadCustomerSupportModal = () => import('./components/Storefront/CustomerSupportModal');
+const loadAuthModal = () => import('./components/Auth/AuthModal');
+const loadWishlistDrawer = () => import('./components/Storefront/WishlistDrawer');
+const loadRecentlyViewedSection = () => import('./components/Storefront/RecentlyViewedSection');
+const loadAdminDashboard = () => import('./components/Admin/AdminDashboard');
+const loadAIAdvisorModal = () => import('./components/Storefront/AIAdvisorModal');
+const loadFilamentLabModal = () => import('./components/Storefront/FilamentLabModal');
+const loadProductComparisonModal = () => import('./components/Storefront/ProductComparisonModal');
+const loadSpoolRecycleModal = () => import('./components/Storefront/SpoolRecycleModal');
+const loadHistoryModal = () => import('./pages/Profile/ProfileModals');
+
+const ProductDetailModal = React.lazy(() => loadProductDetailModal().then(m => ({ default: m.ProductDetailModal })));
+const CartDrawer = React.lazy(() => loadCartDrawer().then(m => ({ default: m.CartDrawer })));
+const CheckoutModal = React.lazy(() => loadCheckoutModal().then(m => ({ default: m.CheckoutModal })));
+const TrackingModal = React.lazy(() => loadTrackingModal().then(m => ({ default: m.TrackingModal })));
+const CustomerSupportModal = React.lazy(() => loadCustomerSupportModal().then(m => ({ default: m.CustomerSupportModal })));
+const AuthModal = React.lazy(() => loadAuthModal().then(m => ({ default: m.AuthModal })));
+const WishlistDrawer = React.lazy(() => loadWishlistDrawer().then(m => ({ default: m.WishlistDrawer })));
+const RecentlyViewedSection = React.lazy(() => loadRecentlyViewedSection().then(m => ({ default: m.RecentlyViewedSection })));
+const AdminDashboard = React.lazy(() => loadAdminDashboard().then(m => ({ default: m.AdminDashboard })));
+const AIAdvisorModal = React.lazy(() => loadAIAdvisorModal().then(m => ({ default: m.AIAdvisorModal })));
+const FilamentLabModal = React.lazy(() => loadFilamentLabModal().then(m => ({ default: m.FilamentLabModal })));
+const ProductComparisonModal = React.lazy(() => loadProductComparisonModal().then(m => ({ default: m.ProductComparisonModal })));
+const SpoolRecycleModal = React.lazy(() => loadSpoolRecycleModal().then(m => ({ default: m.SpoolRecycleModal })));
+const HistoryModal = React.lazy(() => loadHistoryModal().then(m => ({ default: m.HistoryModal })));
+
+function ModalLoadingFallback() {
+  return (
+    <div className="fixed inset-0 z-[100] bg-slate-950/45 flex items-center justify-center pointer-events-auto">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-xl border border-slate-200 dark:border-slate-700">
+        <div className="w-7 h-7 rounded-full border-3 border-indigo-200 border-t-indigo-600 animate-spin" />
+      </div>
+    </div>
+  );
+}
 import { 
   INITIAL_PRODUCTS, 
   INITIAL_MEMBER 
@@ -51,7 +75,7 @@ import {
   AdSenseConfig,
   ProductReview
 } from './types';
-import { translations } from './utils/i18n';
+import { translations, preloadCatalogI18n } from './utils/i18n';
 import { subscribeToProductStats } from './lib/reviewPersistence';
 import {
   loadPersistedProductsSync,
@@ -142,7 +166,7 @@ const FAQPage = React.lazy(() => import('./pages/FAQ/FAQPage').then(m => ({ defa
 const ProfilePage = React.lazy(() => import('./pages/Profile').then(m => ({ default: m.ProfilePage })));
 const SubscriptionPage = React.lazy(() => import('./pages/Subscription/SubscriptionPage').then(m => ({ default: m.SubscriptionPage })));
 const MaterialGuidePage = React.lazy(() => import('./pages/MaterialGuide/MaterialGuidePage').then(m => ({ default: m.MaterialGuidePage })));
-import { Footer } from './components/Footer';
+const Footer = React.lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 import { SEO } from './components/SEO';
 import { evaluateProductDeepSearch } from './utils/productSearch';
 import { getStoreAnnouncementConfig } from './utils/announcementManager';
@@ -269,10 +293,10 @@ export default function App() {
     ? 'admin' 
     : 'store';
 
-  const setActiveTab = (tab: 'store' | 'admin') => {
+  const setActiveTab = useCallback((tab: 'store' | 'admin') => {
     if (tab === 'store') navigate('/');
     else if (tab === 'admin') navigate('/admin');
-  };
+  }, [navigate]);
 
   // i18n & currency with localStorage persistence
   const [lang, setLang] = useState<LanguageCode>(() => {
@@ -290,21 +314,21 @@ export default function App() {
     return 'TWD';
   });
 
-  const handleUpdateLang = (newLang: LanguageCode) => {
+  const handleUpdateLang = useCallback((newLang: LanguageCode) => {
     setLang(newLang);
     try {
       localStorage.setItem('printcore_lang', newLang);
       window.dispatchEvent(new CustomEvent('printcore_lang_changed', { detail: newLang }));
     } catch(e) {}
-  };
+  }, []);
 
-  const handleUpdateCurrency = (newCurr: CurrencyCode) => {
+  const handleUpdateCurrency = useCallback((newCurr: CurrencyCode) => {
     setCurrency(newCurr);
     try {
       localStorage.setItem('printcore_currency', newCurr);
       window.dispatchEvent(new CustomEvent('printcore_currency_changed', { detail: newCurr }));
     } catch(e) {}
-  };
+  }, []);
 
   useEffect(() => {
     const handleLangSync = (e: any) => {
@@ -337,6 +361,10 @@ export default function App() {
         : lang === 'ja'
         ? '神狗勾 3D | 高速3Dプリントフィラメント＆スマート素材選定ストア'
         : '神狗勾耗材 3D列印線材旗艦館 | PLA・PETG・高速線材與智能選材商城';
+
+    if (lang !== 'zh-TW') {
+      void preloadCatalogI18n(lang);
+    }
 
     if (lang === 'zh-TW' && !hasAutoTranslatedDomRef.current) {
       return;
@@ -396,11 +424,67 @@ export default function App() {
     loadPersistedProductsSync(INITIAL_PRODUCTS)
   );
 
+  const hasMountedProductsRef = useRef(false);
   useEffect(() => {
-    try {
-      localStorage.setItem('printcore_products', JSON.stringify(products));
-    } catch {}
+    if (!hasMountedProductsRef.current) {
+      hasMountedProductsRef.current = true;
+      return;
+    }
+    const timerId = window.setTimeout(() => {
+      try {
+        localStorage.setItem('printcore_products', JSON.stringify(products));
+      } catch {}
+    }, 120);
+    return () => window.clearTimeout(timerId);
   }, [products]);
+
+  // Warm high-frequency lazy modal & drawer chunks in background during browser idle time so mobile taps respond at 0ms
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    const warmQueue: Array<() => Promise<unknown>> = [
+      loadProductDetailModal,
+      loadCartDrawer,
+      loadWishlistDrawer,
+      loadCustomerSupportModal,
+      loadAIAdvisorModal,
+      loadAuthModal,
+      loadFilamentLabModal,
+      loadProductComparisonModal,
+      loadTrackingModal,
+      loadSpoolRecycleModal,
+      loadCheckoutModal,
+    ];
+
+    let idx = 0;
+    let timerId: number | undefined;
+
+    const runNext = () => {
+      if (cancelled || idx >= warmQueue.length) return;
+      const loader = warmQueue[idx++];
+      loader().catch(() => {});
+      scheduleNext();
+    };
+
+    const scheduleNext = () => {
+      if (cancelled || idx >= warmQueue.length) return;
+      const idleWin = window as unknown as {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      };
+      if (typeof idleWin.requestIdleCallback === 'function') {
+        idleWin.requestIdleCallback(runNext, { timeout: 1800 });
+      } else {
+        timerId = window.setTimeout(runNext, 250);
+      }
+    };
+
+    const startTimer = window.setTimeout(scheduleNext, 900);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startTimer);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+    };
+  }, []);
 
   // Real-time synchronization of Admin product catalog edits/additions/deletions from Cloud & Server
   useEffect(() => {
@@ -435,18 +519,22 @@ export default function App() {
   // Real-time synchronization of product review stats from Firestore database
   useEffect(() => {
     const unsub = subscribeToProductStats((stats) => {
-      setProducts((prevProducts) =>
-        prevProducts.map((p) => {
-          if (stats[p.id]) {
+      setProducts((prevProducts) => {
+        let changed = false;
+        const next = prevProducts.map((p) => {
+          const stat = stats[p.id];
+          if (stat && (stat.rating !== p.rating || stat.reviewsCount !== p.reviewsCount)) {
+            changed = true;
             return {
               ...p,
-              rating: stats[p.id].rating,
-              reviewsCount: stats[p.id].reviewsCount,
+              rating: stat.rating,
+              reviewsCount: stat.reviewsCount,
             };
           }
           return p;
-        })
-      );
+        });
+        return changed ? next : prevProducts;
+      });
     });
     return () => unsub();
   }, []);
@@ -566,9 +654,18 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Record genuine visitor traffic without simulation
+  // Defer genuine visitor analytics until browser is idle so first interaction stays instant
   useEffect(() => {
-    recordRealVisitor();
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      const idleId = win.requestIdleCallback(() => recordRealVisitor(), { timeout: 2000 });
+      return () => win.cancelIdleCallback?.(idleId);
+    }
+    const timer = window.setTimeout(() => recordRealVisitor(), 1000);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const [member, setMember] = useState<MemberProfile>(() => {
@@ -588,7 +685,7 @@ export default function App() {
         name: session.name || '',
         email: session.email || '',
         tier: session.tier || 'Silver',
-        points: typeof session.points === 'number' ? session.points : 100,
+        points: typeof session.points === 'number' ? session.points : 50,
         totalSpent: typeof session.totalSpent === 'number' ? session.totalSpent : 0,
       });
     } catch {}
@@ -646,7 +743,7 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
+  const toggleDarkMode = useCallback(() => setIsDarkMode((prev) => !prev), []);
 
   // Cart State: Synchronously initialize from active customer's isolated storage so items never vanish on refresh/re-login
   const [cartItems, setCartItems] = useState<CartItem[]>(() => {
@@ -1271,7 +1368,7 @@ export default function App() {
               subscriptionExpiry: newExpiry.toISOString(),
               subscriptionNextBillingDate: newExpiry.toISOString(),
               subscriptionAmount: typeof pendingSub?.price === 'number' ? pendingSub.price : prev?.subscriptionAmount,
-              points: (prev?.points || 0) + Math.floor(days * 2),
+              points: (prev?.points || 0) + Math.floor(days * 1),
             });
             localStorage.setItem('printcore_member', JSON.stringify(updated));
             if (updated.id) {
@@ -1293,7 +1390,7 @@ export default function App() {
 
           setToastNotification({
             type: 'success',
-            message: `🎉 藍新金流扣款成功！恭喜開通【創客 VIP ${planType}】（有效期限 ${days} 天），立享全館 95 折與專屬權益！`
+            message: `🎉 藍新金流扣款成功！恭喜開通【創客 VIP ${planType}】（有效期限 ${days} 天），立享全館 97 折與專屬權益！`
           });
         } catch (e) {
           console.error('VIP verification error:', e);
@@ -1807,8 +1904,10 @@ export default function App() {
   const wishlistSet = useMemo(() => new Set(wishlistIds), [wishlistIds]);
   const comparisonSet = useMemo(() => new Set(comparisonIds), [comparisonIds]);
 
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
   const filteredAndSortedProducts = useMemo(() => {
-    const hasActiveQuery = searchQuery.trim().length > 0;
+    const hasActiveQuery = deferredSearchQuery.trim().length > 0;
     const activeFamily = STOREFRONT_MATERIAL_FAMILIES.find((f) => f.id === selectedMaterial);
     const scored = products
       .map((p) => {
@@ -1819,7 +1918,7 @@ export default function App() {
             ? activeFamily.match(p.material || '')
             : p.material === selectedMaterial;
         if (!matchesMat) return null;
-        const evalRes = evaluateProductDeepSearch(p, searchQuery);
+        const evalRes = evaluateProductDeepSearch(p, deferredSearchQuery);
         if (!evalRes.matched) return null;
         return { product: p, score: evalRes.score };
       })
@@ -1836,9 +1935,34 @@ export default function App() {
     });
 
     return scored.map((item) => item.product);
-  }, [products, selectedMaterial, searchQuery, sortBy]);
+  }, [products, selectedMaterial, deferredSearchQuery, sortBy]);
 
-  const cartCount = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+  const cartCount = useMemo(() => cartItems.reduce((acc, item) => acc + item.quantity, 0), [cartItems]);
+
+  const handleOpenCart = useCallback(() => setIsCartOpen(true), []);
+  const handleOpenAIAdvisor = useCallback(() => setIsAIAdvisorOpen(true), []);
+  const handleOpenSupport = useCallback(() => setIsCustomerSupportOpen(true), []);
+  const handleOpenTracking = useCallback(() => {
+    const genuineOrder = currentCustomerOrders.find(o => 
+      !isMockOrder(o) && 
+      (o.paymentStatus === 'paid' || o.isVerifiedByNewebPay) && 
+      o.trackingNumber && 
+      o.trackingNumber !== '77391829310' && 
+      !o.trackingNumber.includes('77391829310')
+    );
+    setTrackingNumberInput(genuineOrder?.trackingNumber || '');
+    setIsTrackingOpen(true);
+  }, [currentCustomerOrders]);
+  const handleOpenMember = useCallback(() => {
+    setActiveTab('store');
+    navigate('/profile');
+  }, [setActiveTab, navigate]);
+  const handleOpenAuth = useCallback(() => setIsAuthOpen(true), []);
+  const handleOpenFilamentLab = useCallback(() => setIsFilamentLabOpen(true), []);
+  const handleOpenCompare = useCallback(() => setIsCompareModalOpen(true), []);
+  const handleOpenWishlist = useCallback(() => setIsWishlistOpen(true), []);
+  const handleOpenHistory = useCallback(() => setIsHistoryOpen(true), []);
+  const handleOpenRecycle = useCallback(() => setIsRecycleOpen(true), []);
 
   return (
     <div key={lang} className="min-h-screen bg-slate-100/60 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200">
@@ -1855,34 +1979,21 @@ export default function App() {
         currency={currency}
         setCurrency={handleUpdateCurrency}
         cartCount={cartCount}
-        onOpenCart={() => setIsCartOpen(true)}
-        onOpenAIAdvisor={() => setIsAIAdvisorOpen(true)}
-        onOpenSupport={() => setIsCustomerSupportOpen(true)}
-        onOpenTracking={() => {
-          const genuineOrder = currentCustomerOrders.find(o => 
-            !isMockOrder(o) && 
-            (o.paymentStatus === 'paid' || o.isVerifiedByNewebPay) && 
-            o.trackingNumber && 
-            o.trackingNumber !== '77391829310' && 
-            !o.trackingNumber.includes('77391829310')
-          );
-          setTrackingNumberInput(genuineOrder?.trackingNumber || '');
-          setIsTrackingOpen(true);
-        }}
-        openMemberModal={() => {
-          setActiveTab('store');
-          navigate('/profile');
-        }}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onOpenFilamentLab={() => setIsFilamentLabOpen(true)}
-        onOpenCompare={() => setIsCompareModalOpen(true)}
+        onOpenCart={handleOpenCart}
+        onOpenAIAdvisor={handleOpenAIAdvisor}
+        onOpenSupport={handleOpenSupport}
+        onOpenTracking={handleOpenTracking}
+        openMemberModal={handleOpenMember}
+        onOpenAuth={handleOpenAuth}
+        onOpenFilamentLab={handleOpenFilamentLab}
+        onOpenCompare={handleOpenCompare}
         compareCount={comparisonIds.length}
-        onOpenWishlist={() => setIsWishlistOpen(true)}
+        onOpenWishlist={handleOpenWishlist}
         wishlistCount={wishlistIds.length}
-        onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenHistory={handleOpenHistory}
         historyCount={recentlyViewedCount}
         onSelectProduct={handleOpenProductDetail}
-        onOpenRecycle={() => setIsRecycleOpen(true)}
+        onOpenRecycle={handleOpenRecycle}
         isLoggedIn={isLoggedIn}
         member={member}
         searchQuery={searchQuery}
@@ -1961,7 +2072,7 @@ export default function App() {
                   </div>
                   <div className="min-w-0 flex items-center gap-2">
                     <span className="text-xs sm:text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate">
-                      {lang === 'en' ? 'New member perk: 100 G-Coins on sign-in' : lang === 'ja' ? '初回特典：ログインで100 G-Coin進呈' : '新會員登入即贈 100 點紅利積分'}
+                      {lang === 'en' ? 'New member perk: 50 G-Coins on sign-in' : lang === 'ja' ? '初回特典：ログインで50 G-Coin進呈' : '新會員登入即贈 50 點紅利積分'}
                     </span>
                     <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden md:inline truncate">
                       {lang === 'en' ? '· Redeem at checkout & track shipments live' : lang === 'ja' ? '· 決済利用・配送リアルタイム追跡に対応' : '· 結帳直接折抵現金，支援超商物流即時追蹤'}
@@ -2014,7 +2125,7 @@ export default function App() {
                       const el = document.getElementById('storefront-product-grid');
                       el?.scrollIntoView({ behavior: 'smooth' });
                     }}
-                    className="flex-1 sm:flex-initial justify-center px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap shadow-xs"
+                    className="btn-tactile-primary group flex-1 sm:flex-initial justify-center px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer whitespace-nowrap shadow-xs"
                   >
                     <span>
                       {lang === 'en'
@@ -2023,66 +2134,66 @@ export default function App() {
                         ? `全商品を見る (${products.length})`
                         : `瀏覽全館耗材 (${products.length})`}
                     </span>
-                    <ArrowRight className="w-4 h-4 shrink-0" />
+                    <ArrowRight className="w-4 h-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5" />
                   </button>
 
                   <button
                     id="hero-ai-advisor-cta-btn"
                     onClick={() => setIsAIAdvisorOpen(true)}
-                    className="flex-1 sm:flex-initial justify-center px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                    className="group flex-1 sm:flex-initial justify-center px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/85 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700 text-xs sm:text-sm font-semibold flex items-center gap-1.5 cursor-pointer transition-all duration-150 hover:shadow-xs active:scale-97 whitespace-nowrap"
                   >
-                    <Compass className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <Compass className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 transition-transform duration-200 group-hover:rotate-12" />
                     <span>{lang === 'en' ? 'Match Printer' : lang === 'ja' ? '機種別選材' : '依機型選材'}</span>
                   </button>
                 </div>
               </div>
 
-                  {/* Unified Bottom Spec & Guarantee Strip (Consolidated to eliminate redundant boxes) */}
+                  {/* Unified Bottom Spec & Guarantee Strip (Consolidated, responsive spacing so mobile never truncates) */}
                   <div className="border-t border-slate-200/80 dark:border-slate-800 bg-slate-200/70 dark:bg-slate-800 grid grid-cols-2 lg:grid-cols-4 gap-px">
-                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2 sm:gap-2.5">
                       <Truck className="w-4 h-4 text-slate-700 dark:text-slate-300 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
                           {lang === 'en' ? '24H Store Dispatch' : lang === 'ja' ? '24時間スピード出荷' : '24H 超商快速出貨'}
                         </div>
-                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
                           {lang === 'en' ? 'Free over NT$999' : lang === 'ja' ? 'NT$999以上送料無料' : '滿 NT$999 即享免運'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2 sm:gap-2.5">
                       <Package className="w-4 h-4 text-slate-700 dark:text-slate-300 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
                           {lang === 'en' ? 'Moisture-Sealed Bag' : lang === 'ja' ? '防湿密封袋包装' : '密封袋防潮出貨'}
                         </div>
-                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
                           {lang === 'en' ? 'Unopened warranty' : lang === 'ja' ? '未開封吸湿保証' : '未拆封吸濕雙重保固'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2 sm:gap-2.5">
                       <ShieldCheck className="w-4 h-4 text-slate-700 dark:text-slate-300 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight">
                           {lang === 'en' ? 'NewebPay SSL' : lang === 'ja' ? '暗号化安全決済' : '藍新 SSL 安全金流'}
                         </div>
-                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                          {lang === 'en' ? 'Card / Apple Pay / ATM' : lang === 'ja' ? 'カード / Apple Pay' : '信用卡 / Apple Pay'}
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
+                          {lang === 'en' ? 'Card / Apple Pay' : lang === 'ja' ? 'カード / Apple Pay' : '信用卡 / Apple Pay'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3.5 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2.5">
+                    <div className="bg-slate-50/90 dark:bg-slate-900/95 px-3 py-2.5 sm:px-5 sm:py-3 flex items-center gap-2 sm:gap-2.5">
                       <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 font-mono tabular-nums truncate">
-                          ±0.02mm · 600mm/s
+                        <div className="text-[11px] sm:text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight tabular-nums">
+                          {lang === 'en' ? '±0.02mm Precision' : lang === 'ja' ? '±0.02mm 高精度' : '±0.02mm 雙軸測徑'}
                         </div>
-                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                          {lang === 'en' ? 'Dual-axis laser QC' : lang === 'ja' ? '両軸レーザー品質管理' : '雙軸測徑與高速相容'}
+                        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5 tabular-nums">
+                          {lang === 'en' ? '600mm/s high-speed' : lang === 'ja' ? '600mm/s 高速対応' : '600mm/s 高速相容'}
                         </div>
                       </div>
                     </div>
@@ -2143,10 +2254,10 @@ export default function App() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.22, delay: index * 0.035, ease: 'easeOut' }}
                     whileHover={{ y: -2 }}
-                    whileTap={{ scale: 0.985 }}
+                    whileTap={{ scale: 0.965 }}
                     className={`group relative bg-white dark:bg-slate-900/95 border border-slate-200/85 dark:border-slate-800 ${tool.hoverBorder} rounded-2xl flex items-center gap-2.5 sm:gap-3.5 p-3 sm:px-4 sm:py-3.5 shadow-[0_2px_10px_-4px_rgba(15,23,42,0.05)] hover:shadow-[0_12px_24px_-12px_rgba(15,23,42,0.12)] dark:shadow-none transition-all duration-200 cursor-pointer text-left`}
                   >
-                    <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl border ${tool.iconTone} flex items-center justify-center shrink-0 transition-colors duration-200`}>
+                    <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl border ${tool.iconTone} flex items-center justify-center shrink-0 transition-all duration-200 group-hover:scale-105`}>
                       <Icon className="w-[17px] h-[17px] sm:w-[18px] sm:h-[18px]" />
                     </div>
 
@@ -2248,26 +2359,17 @@ export default function App() {
                         onClick={() => setSelectedMaterial(fam.id)}
                         className={`relative px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none flex items-center gap-1.5 active:scale-[0.97] ${
                           isSelected
-                            ? 'text-white dark:text-white'
+                            ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-xs'
                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100'
                         }`}
                       >
-                        {isSelected && (
-                          <motion.span
-                            layoutId="activeMaterialIndicator"
-                            className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-indigo-600 shadow-xs -z-0"
-                            transition={{ type: 'spring', stiffness: 520, damping: 36 }}
-                          />
-                        )}
-                        <span className="relative z-10 flex items-center gap-1.5">
-                          <span>{label}</span>
-                          <span
-                            className={`text-[10px] font-mono tabular-nums transition-colors ${
-                              isSelected ? 'text-slate-300 dark:text-indigo-100' : 'text-slate-400 dark:text-slate-500'
-                            }`}
-                          >
-                            {count}
-                          </span>
+                        <span>{label}</span>
+                        <span
+                          className={`text-[10px] font-mono tabular-nums transition-colors ${
+                            isSelected ? 'text-slate-300 dark:text-indigo-100' : 'text-slate-400 dark:text-slate-500'
+                          }`}
+                        >
+                          {count}
                         </span>
                       </button>
                     );
@@ -2421,7 +2523,9 @@ export default function App() {
         <FloatingSkyscraperAd config={adSenseConfig} />
       )}
 
-      <Footer lang={lang} />
+      <Suspense fallback={null}>
+        <Footer lang={lang} />
+      </Suspense>
       
       {/* Global Toast Notification - Top floating non-blocking layer (z-[110]) so it never occludes CartDrawer or bottom buttons */}
       <AnimatePresence>
@@ -2433,7 +2537,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15, transition: { duration: 0.15 } }}
               onClick={() => setToastMsg(null)}
-              className="pointer-events-auto bg-slate-900/95 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-slate-700 cursor-pointer"
+              className="pointer-events-auto bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-slate-700 cursor-pointer"
             >
               <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
                 <ShoppingCart className="w-3.5 h-3.5" />
@@ -2447,9 +2551,9 @@ export default function App() {
       </AnimatePresence>
 
       {/* =================================================================== */}
-      {/* GLOBAL LAZY MODALS & DRAWERS (Loaded on-demand for fast boot)       */}
+      {/* GLOBAL LAZY MODALS & DRAWERS (Loaded on-demand + idle prefetched)   */}
       {/* =================================================================== */}
-      <Suspense fallback={null}>
+      <Suspense fallback={<ModalLoadingFallback />}>
         {viewingProduct && (
           <ProductDetailModal
             product={viewingProduct}
@@ -2571,7 +2675,7 @@ export default function App() {
       {/* Persistent Sync & Status Toast Notification (Positioned clear of bottom-right floating chat widget) */}
       {toastNotification && (
         <div className="fixed bottom-24 lg:bottom-24 right-4 sm:right-6 z-50 max-w-sm w-full px-2 sm:px-4 animate-fade-in pointer-events-none">
-          <div className="bg-slate-900/95 text-white backdrop-blur-md px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center justify-between gap-3 text-xs pointer-events-auto">
+          <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center justify-between gap-3 text-xs pointer-events-auto">
             <div className="flex items-center gap-2.5">
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                 toastNotification.type === 'success' ? 'bg-emerald-400 animate-pulse' :
@@ -2590,7 +2694,7 @@ export default function App() {
       )}
 
       {/* Maker Lab, Comparison, History & Recycle Lazy Modals */}
-      <Suspense fallback={null}>
+      <Suspense fallback={<ModalLoadingFallback />}>
       {isFilamentLabOpen && (
         <FilamentLabModal
           isOpen={isFilamentLabOpen}
@@ -2671,15 +2775,17 @@ export default function App() {
       </Suspense>
 
       {/* Free Draggable AI Floating Chat & Advisor Bubble with Recycle / Hide Drop Zone */}
-      <DraggableChatWidget
-        onOpenSupport={() => setIsCustomerSupportOpen(true)}
-        onOpenAdvisor={() => setIsAIAdvisorOpen(true)}
-        lang={lang}
-      />
+      <Suspense fallback={null}>
+        <DraggableChatWidget
+          onOpenSupport={() => setIsCustomerSupportOpen(true)}
+          onOpenAdvisor={() => setIsAIAdvisorOpen(true)}
+          lang={lang}
+        />
+      </Suspense>
 
       {/* Floating Sticky Comparison Indicator Bar (Positioned gracefully above bottom nav without blocking center button) */}
       {comparisonIds.length > 0 && !isCompareModalOpen && (
-        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 backdrop-blur-md text-white px-3.5 py-2 sm:px-5 sm:py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2.5 sm:gap-4 animate-bounce-short max-w-[92vw]">
+        <div className="fixed bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-3.5 py-2 sm:px-5 sm:py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2.5 sm:gap-4 animate-bounce-short max-w-[92vw]">
           <div className="flex items-center gap-1.5 sm:gap-2">
             <Scale className="w-4 h-4 text-indigo-400 shrink-0" />
             <span className="text-xs font-bold whitespace-nowrap">
@@ -2714,7 +2820,7 @@ export default function App() {
       {!isCheckoutOpen && !isCartOpen && (
         <nav
           id="mobile-bottom-nav-bar"
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/98 dark:bg-slate-900/98 backdrop-blur-md border-t border-slate-200 dark:border-slate-700/90 py-1 px-1.5 shadow-2xl flex items-center justify-around pb-[max(0.5rem,env(safe-area-inset-bottom))] safe-area-bottom"
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700/90 py-1 px-1.5 shadow-2xl flex items-center justify-around pb-[max(0.5rem,env(safe-area-inset-bottom))] safe-area-bottom"
         >
           {/* Tab 1: Store Catalog */}
           <button
@@ -2765,8 +2871,8 @@ export default function App() {
             }}
             className="flex flex-col items-center justify-center -mt-4 cursor-pointer group min-w-[54px] active:scale-95"
           >
-            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-700 to-sky-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/30 group-active:scale-95 transition-transform border-2 border-white dark:border-slate-800">
-              <Bot className="w-6 h-6 text-sky-200 animate-pulse" />
+            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-indigo-600 via-indigo-700 to-sky-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 group-active:scale-90 transition-transform duration-150 border-2 border-white dark:border-slate-800">
+              <Bot className="w-6 h-6 text-sky-100" />
             </div>
             <span className="text-[10px] mt-0.5 font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
               {t.bottomAiBot || (lang === 'en' ? 'AI Chat' : lang === 'ja' ? 'AIロボット' : 'AI 機器人')}

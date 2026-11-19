@@ -25,6 +25,7 @@ import {
   ShippingMethod 
 } from '../../types';
 import { formatPrice, translations, translateProductName, translateProduct } from '../../utils/i18n';
+import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
 import { auth, loadNewebPayConfigFromFirestore } from '../../lib/firebase';
 import { 
   downloadOrderProofJSON, 
@@ -234,7 +235,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Price calculations
   const rawSubtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const isVip = isMemberVipActive(member);
-  const vipDiscountAmount = isVip ? Math.floor(rawSubtotal * 0.05) : 0;
+  const vipDiscountAmount = isVip ? Math.floor(rawSubtotal * 0.03) : 0;
   const subtotal = rawSubtotal - vipDiscountAmount;
 
   // Auto-apply or reset initialCouponCode forwarded from CartDrawer when CheckoutModal opens
@@ -310,7 +311,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const discount = appliedCoupon ? appliedCoupon.discountAmount : 0;
   const paymentFee = 0;
   const total = Math.max(0, subtotal + shippingFee - pointsToUse - discount);
-  const pointsEarned = Math.floor(total * 0.05) * (isVip ? 2 : 1);
+  const pointsEarned = Math.floor(total * 0.02 * (isVip ? 1.5 : 1));
 
   const handleApplyCoupon = (codeToApply?: string) => {
     const code = (codeToApply || couponCode).trim().toUpperCase();
@@ -485,6 +486,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             colorHex: c.selectedColor.hex,
             price: c.product.price,
             quantity: c.quantity,
+            imageUrl: c.product.imageUrl,
+            material: c.product.material,
+            diameter: c.selectedDiameter,
           })),
           subtotal,
           shippingFee,
@@ -652,7 +656,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[95] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[95] overflow-y-auto bg-slate-950/65 flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可返回主頁面"
     >
@@ -661,7 +665,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
-        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-md sticky top-0 z-10">
+        <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50 dark:bg-slate-900 sticky top-0 z-10">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0">
               <ShieldCheck className="w-5 h-5" />
@@ -1248,14 +1252,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                           key={`${item.product.id}-${item.selectedColor.name}`}
                           className="flex items-center justify-between text-xs py-2 border-b border-slate-200/80 dark:border-slate-800/80 gap-2.5"
                         >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <span 
-                              className="w-2.5 h-2.5 rounded-full shrink-0 border border-slate-300 dark:border-slate-600"
-                              style={{ backgroundColor: item.selectedColor.hex }} 
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <img
+                              src={getSafeProductImageUrl(item.product.imageUrl, item.product.material, item.product.name)}
+                              alt={cleanItemName}
+                              className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 bg-white shrink-0"
+                              loading="lazy"
+                              decoding="async"
+                              onError={(e) => handleProductImageError(e, item.product.material, item.product.name)}
                             />
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                              {cleanItemName}
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 truncate block">
+                                {cleanItemName}
+                              </span>
+                              <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                                <span 
+                                  className="w-2 h-2 rounded-full shrink-0 border border-slate-300 dark:border-slate-600" 
+                                  style={{ backgroundColor: item.selectedColor.hex }} 
+                                />
+                                <span className="truncate">{item.selectedColor.name}</span>
+                              </div>
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded whitespace-nowrap">

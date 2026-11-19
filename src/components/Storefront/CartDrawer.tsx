@@ -62,7 +62,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const rawSubtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const isVip = isMemberVipActive(member);
-  const vipDiscount = isVip ? Math.floor(rawSubtotal * 0.05) : 0;
+  const vipDiscount = isVip ? Math.floor(rawSubtotal * 0.03) : 0;
   const subtotal = rawSubtotal - vipDiscount; // actual subtotal after VIP discount
   const freeShippingThreshold = 999;
 
@@ -71,8 +71,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const needForFreeShipping = isFreeShipping ? 0 : Math.max(0, freeShippingThreshold - subtotal);
   const freeShippingProgress = isFreeShipping ? 100 : Math.min(100, Math.round((subtotal / freeShippingThreshold) * 100));
 
-  // Points redemption logic: 1 point = NT$1 off, up to member's points or 20% of subtotal
-  const maxRedeemablePoints = Math.min((member?.points || 0), Math.floor(subtotal * 0.2));
+  // Points redemption logic: 1 point = NT$1 off, up to member's points or 10% of subtotal
+  const maxRedeemablePoints = Math.min((member?.points || 0), Math.floor(subtotal * 0.1));
   const [usePoints, setUsePoints] = useState(false);
   const pointsUsed = usePoints ? maxRedeemablePoints : 0;
   const couponDiscount = appliedCoupon ? appliedCoupon.discount : 0;
@@ -160,7 +160,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-[85] overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end cursor-pointer select-none"
+      className="fixed inset-0 z-[85] overflow-hidden bg-slate-950/65 flex justify-end cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可關閉購物車"
     >
@@ -270,18 +270,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     key={`${item.product.id}-${item.selectedColor.name}-${item.selectedDiameter}`}
                     className="p-3 bg-white hover:bg-slate-50/80 rounded-2xl border border-slate-200/90 shadow-2xs flex gap-3 transition-colors"
                   >
-                    {item.product.imageUrl && item.product.imageUrl.trim() !== '' ? (
+                    <div className="w-16 h-16 rounded-xl bg-white border border-slate-200/80 overflow-hidden shrink-0">
                       <img
                         src={getSafeProductImageUrl(item.product.imageUrl, item.product.material, item.product.name)}
                         alt={item.product.name}
-                        className="w-16 h-16 rounded-xl object-cover border border-slate-200/80 shrink-0 bg-white"
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover"
                         onError={(e) => handleProductImageError(e, item.product.material, item.product.name)}
                       />
-                    ) : (
-                      <div className="w-16 h-16 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
-                        <Package className="w-7 h-7" />
-                      </div>
-                    )}
+                    </div>
 
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
                       <div>
@@ -523,7 +521,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-between text-xs">
                     <span className="font-bold text-indigo-900 flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                      {lang === 'en' ? 'VIP Member 5% Off' : lang === 'ja' ? 'VIP会員 5% OFF' : 'VIP 訂閱會員專屬 95 折'}
+                      {lang === 'en' ? 'VIP Member 3% Off' : lang === 'ja' ? 'VIP会員 3% OFF' : 'VIP 訂閱會員專屬 97 折'}
                     </span>
                     <span className="font-mono font-bold text-indigo-600">
                       -{formatPrice(vipDiscount, currency)}
@@ -567,7 +565,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </div>
                   {vipDiscount > 0 && (
                     <div className="flex justify-between text-indigo-600">
-                      <span>{lang === 'en' ? 'VIP 5% Discount' : lang === 'ja' ? 'VIP 5% 割引' : 'VIP 95 折優惠'}</span>
+                      <span>{lang === 'en' ? 'VIP 3% Discount' : lang === 'ja' ? 'VIP 3% 割引' : 'VIP 97 折優惠'}</span>
                       <span className="font-mono">-{formatPrice(vipDiscount, currency)}</span>
                     </div>
                   )}
@@ -600,7 +598,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Compact Sticky Dock at Bottom (Takes < 95px on mobile, never blocking items!) */}
         {cartItems.length > 0 && (
-          <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-lg shrink-0 space-y-2">
+          <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-t border-slate-200 bg-white shadow-lg shrink-0 space-y-2">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-baseline gap-1.5">
@@ -650,7 +648,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         {/* 購物車內：從下往上彈出的更換顏色小視窗 (Bottom Sheet) */}
         {editingColorItemIdx !== null && cartItems[editingColorItemIdx] && (
           <div
-            className="absolute inset-0 z-[90] bg-slate-900/50 backdrop-blur-xs flex items-end justify-center animate-fade-in"
+            className="absolute inset-0 z-[90] bg-slate-950/60 flex items-end justify-center animate-fade-in"
             onClick={() => setEditingColorItemIdx(null)}
           >
             <div

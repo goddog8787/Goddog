@@ -62,12 +62,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         category: 'vip',
         duration: '30 Days',
         durationDays: 30,
-        price: 99,
-        originalPrice: 99,
+        price: 199,
+        originalPrice: 249,
         badge: 'Flexible',
-        tagline: 'NT$ 99 / month',
+        tagline: 'NT$ 199 / month',
         frequencyLabel: 'Auto-billed monthly',
-        perks: ['5% OFF storewide', '2x G-Coin points', 'VIP Gold badge']
+        perks: ['3% OFF storewide', '1.5x G-Coin points', 'VIP Gold badge']
       },
       {
         id: 'vip-quarterly',
@@ -75,12 +75,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         category: 'vip',
         duration: '90 Days',
         durationDays: 90,
-        price: 279,
-        originalPrice: 279,
+        price: 549,
+        originalPrice: 597,
         badge: 'Popular',
-        tagline: 'Avg. NT$ 93 / month',
+        tagline: 'Avg. NT$ 183 / month',
         frequencyLabel: 'Auto-billed every 90 days',
-        perks: ['5% OFF storewide', '2x G-Coin points', 'VIP Gold badge', 'Priority dispatch']
+        perks: ['3% OFF storewide', '1.5x G-Coin points', 'VIP Gold badge', 'Priority dispatch']
       },
       {
         id: 'vip-yearly',
@@ -88,12 +88,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         category: 'vip',
         duration: '365 Days',
         durationDays: 365,
-        price: 990,
-        originalPrice: 990,
+        price: 1990,
+        originalPrice: 2388,
         badge: 'Best Value',
-        tagline: 'Avg. NT$ 82 / month',
+        tagline: 'Avg. NT$ 166 / month',
         frequencyLabel: 'Auto-billed annually',
-        perks: ['5% OFF storewide', '2x G-Coin points', 'Diamond VIP badge', 'Priority dispatch & support']
+        perks: ['3% OFF storewide', '1.5x G-Coin points', 'Diamond VIP badge', 'Priority dispatch & support']
       }
     ];
   } else if (lang === 'ja') {
@@ -104,12 +104,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         category: 'vip',
         duration: '30日間',
         durationDays: 30,
-        price: 99,
-        originalPrice: 99,
+        price: 199,
+        originalPrice: 249,
         badge: '手軽',
-        tagline: '月あたり NT$ 99',
+        tagline: '月あたり NT$ 199',
         frequencyLabel: '毎月自動引き落とし',
-        perks: ['全品 5% OFF', 'G-Coin 2倍還元', 'ゴールドバッジ']
+        perks: ['全品 3% OFF', 'G-Coin 1.5倍還元', 'ゴールドバッジ']
       },
       {
         id: 'vip-quarterly',
@@ -117,12 +117,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         category: 'vip',
         duration: '90日間',
         durationDays: 90,
-        price: 279,
-        originalPrice: 279,
+        price: 549,
+        originalPrice: 597,
         badge: '人気',
-        tagline: '月あたり NT$ 93',
+        tagline: '月あたり NT$ 183',
         frequencyLabel: '90日ごとに自動引き落とし',
-        perks: ['全品 5% OFF', 'G-Coin 2倍還元', 'ゴールドバッジ', '優先発送対応']
+        perks: ['全品 3% OFF', 'G-Coin 1.5倍還元', 'ゴールドバッジ', '優先発送対応']
       },
       {
         id: 'vip-yearly',
@@ -130,12 +130,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         category: 'vip',
         duration: '365日間',
         durationDays: 365,
-        price: 990,
-        originalPrice: 990,
+        price: 1990,
+        originalPrice: 2388,
         badge: '最得',
-        tagline: '月あたり NT$ 82',
+        tagline: '月あたり NT$ 166',
         frequencyLabel: '毎年自動引き落とし',
-        perks: ['全品 5% OFF', 'G-Coin 2倍還元', 'ダイヤモンドバッジ', '優先発送＆専任サポート']
+        perks: ['全品 3% OFF', 'G-Coin 1.5倍還元', 'ダイヤモンドバッジ', '優先発送＆専任サポート']
       }
     ];
   }
@@ -146,12 +146,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
       category: 'vip',
       duration: '30 天',
       durationDays: 30,
-      price: 99,
-      originalPrice: 99,
+      price: 199,
+      originalPrice: 249,
       badge: '靈活體驗',
-      tagline: '平均 NT$ 99 / 月',
+      tagline: '平均 NT$ 199 / 月',
       frequencyLabel: '每月自動扣款',
-      perks: ['全館耗材 95 折', '雙倍 G-Coin 點數回饋', '創客金星徽章']
+      perks: ['全館耗材 97 折', '1.5 倍 G-Coin 點數回饋', '創客金星徽章']
     },
     {
       id: 'vip-quarterly',
@@ -159,12 +159,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
       category: 'vip',
       duration: '90 天',
       durationDays: 90,
-      price: 279,
-      originalPrice: 279,
+      price: 549,
+      originalPrice: 597,
       badge: '熱門首選',
-      tagline: '平均 NT$ 93 / 月',
+      tagline: '平均 NT$ 183 / 月',
       frequencyLabel: '每季 (90天) 自動扣款',
-      perks: ['全館耗材 95 折', '雙倍 G-Coin 點數回饋', '創客金星徽章', '訂單優先揀貨出貨']
+      perks: ['全館耗材 97 折', '1.5 倍 G-Coin 點數回饋', '創客金星徽章', '訂單優先揀貨出貨']
     },
     {
       id: 'vip-yearly',
@@ -172,12 +172,12 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
       category: 'vip',
       duration: '365 天',
       durationDays: 365,
-      price: 990,
-      originalPrice: 990,
+      price: 1990,
+      originalPrice: 2388,
       badge: '最超值',
-      tagline: '平均 NT$ 82 / 月',
+      tagline: '平均 NT$ 166 / 月',
       frequencyLabel: '每年 (365天) 自動扣款',
-      perks: ['全館耗材 95 折', '雙倍 G-Coin 點數回饋', '鑽石創客金星徽章', '全年優先出貨與專屬客服']
+      perks: ['全館耗材 97 折', '1.5 倍 G-Coin 點數回饋', '鑽石創客金星徽章', '全年優先出貨與專屬客服']
     }
   ];
 }
@@ -271,7 +271,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
     newExpiry.setDate(newExpiry.getDate() + planDays);
 
     const calculatedNextBilling = params.nextAuthDate || newExpiry.toISOString().slice(0, 10);
-    const pointsBonus = Math.floor(params.periodAmt * 1.5);
+    const pointsBonus = Math.floor(params.periodAmt * 0.5);
 
     const historyEntry = {
       id: `cycle-${Date.now()}`,
@@ -558,7 +558,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
     <div className="space-y-6 max-w-6xl mx-auto pb-16 px-1 sm:px-2">
       <SEO 
         title="VIP 會員方案與訂閱管理" 
-        description="開通或管理神狗勾 3D 創客 VIP 會員方案，享全館 95 折、雙倍點數與優先出貨。" 
+        description="開通或管理神狗勾 3D 創客 VIP 會員方案，享全館 97 折、1.5 倍點數與優先出貨。" 
         url="/subscription" 
       />
 
@@ -592,7 +592,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
               <span>VIP 創客俱樂部</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight">
-              全館耗材 95 折 · 雙倍狗勾幣回饋
+              全館耗材 97 折 · 1.5 倍狗勾幣回饋
             </h1>
             <p className="text-slate-300 text-xs">
               支援藍新金流安全授權，隨時可線上切換或停止次期續約。
@@ -662,7 +662,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
             <Percent className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">全館 95 折</h4>
+            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">全館 97 折</h4>
             <p className="text-[11px] text-slate-500 text-pretty line-clamp-1">結帳自動折抵</p>
           </div>
         </div>
@@ -672,8 +672,8 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
             <Coins className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">雙倍狗勾幣</h4>
-            <p className="text-[11px] text-slate-500 text-pretty line-clamp-1">2x 點數回饋</p>
+            <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white text-balance line-clamp-1">1.5 倍狗勾幣</h4>
+            <p className="text-[11px] text-slate-500 text-pretty line-clamp-1">1.5x 點數回饋</p>
           </div>
         </div>
 

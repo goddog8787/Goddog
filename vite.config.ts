@@ -19,13 +19,36 @@ export default defineConfig(() => {
       chunkSizeWarningLimit: 1200,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom', 'react-router-dom', 'react-helmet-async'],
-            'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-            'vendor-icons': ['lucide-react'],
-            'vendor-motion': ['motion'],
-            'vendor-charts': ['recharts'],
-            'vendor-crypto': ['crypto-js'],
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return;
+            if (id.includes('/firebase/') || id.includes('/@firebase/')) {
+              return 'vendor-firebase';
+            }
+            if (
+              id.includes('/react/') ||
+              id.includes('/react-dom/') ||
+              id.includes('/scheduler/') ||
+              id.includes('/react-router') ||
+              id.includes('/@remix-run/') ||
+              id.includes('/react-helmet-async/')
+            ) {
+              return 'vendor-react';
+            }
+            if (id.includes('/recharts/') || id.includes('/d3-') || id.includes('/victory-vendor/')) {
+              return 'vendor-charts';
+            }
+            if (id.includes('/motion/') || id.includes('/framer-motion/')) {
+              return 'vendor-motion';
+            }
+            if (id.includes('/lucide-react/')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('/crypto-js/')) {
+              return 'vendor-crypto';
+            }
+            if (id.includes('/@google/genai/')) {
+              return 'vendor-genai';
+            }
           },
         },
       },

@@ -245,10 +245,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
           <p className="text-sm text-slate-600 dark:text-slate-300 mb-6 leading-relaxed max-w-sm mx-auto">
             {lang === 'en'
-              ? 'Sign in or register now to instantly receive 100 G-Coins (NT$100 off) and first-order Free Shipping voucher!'
+              ? 'Sign in or register now to instantly receive 50 G-Coins (NT$50 off) and first-order Free Shipping voucher!'
               : lang === 'ja'
-              ? '今すぐログインまたは新規登録で、100 G-Coin（100円相当割引）＆初回送料無料クーポンをプレゼント！'
-              : '立即登入或免費註冊會員，立享 100 點狗狗幣（現折 NT$100）與專屬首購超商免運券！'}
+              ? '今すぐログインまたは新規登録で、50 G-Coin（50円相当割引）＆初回送料無料クーポンをプレゼント！'
+              : '立即登入或免費註冊會員，立享 50 點狗勾幣（現折 NT$50）與專屬首購超商免運券！'}
           </p>
 
           <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 mb-6 text-left border border-slate-100 dark:border-slate-800 space-y-2.5">
@@ -256,11 +256,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-500 flex items-center justify-center font-bold text-xs shrink-0">🪙</span>
               <span>
                 {lang === 'en' ? (
-                  <><strong>100 G-Coin Bonus:</strong> Instant cash discount across all filaments</>
+                  <><strong>50 G-Coin Bonus:</strong> Instant cash discount across all filaments</>
                 ) : lang === 'ja' ? (
-                  <><strong>100 G-Coin特典：</strong>全フィラメントで使える即時割引ポイント</>
+                  <><strong>50 G-Coin特典：</strong>全フィラメントで使える即時割引ポイント</>
                 ) : (
-                  <><strong>100 點狗狗幣紅利：</strong>全館耗材無門檻折抵現金</>
+                  <><strong>50 點狗勾幣紅利：</strong>全館耗材結帳直接折抵現金</>
                 )}
               </span>
             </div>
@@ -434,11 +434,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <p className="text-white/90 text-xs sm:text-sm mt-0.5 font-medium drop-shadow-sm text-pretty line-clamp-2">
                   {isVipActive && member?.subscriptionExpiry
                     ? (lang === 'en'
-                        ? `VIP Perks Active! 5% Off storewide, ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} days remaining`
+                        ? `VIP Perks Active! 3% Off storewide, ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} days remaining`
                         : lang === 'ja'
-                        ? `VIP特典適用中！全品5%OFF、残り ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 日`
-                        : `VIP 權益生效中！全館 95 折，剩餘 ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 天`)
-                    : (lang === 'en' ? 'Join VIP to enjoy 5% OFF storewide & exclusive privileges' : lang === 'ja' ? 'VIP加入で全品5%OFF＆限定特権を獲得' : '加入 VIP，立享全館 95 折優惠與專屬尊榮權益')}
+                        ? `VIP特典適用中！全品3%OFF、残り ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 日`
+                        : `VIP 權益生效中！全館 97 折，剩餘 ${Math.max(0, Math.ceil((new Date(member.subscriptionExpiry).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))} 天`)
+                    : (lang === 'en' ? 'Join VIP to enjoy 3% OFF storewide & exclusive privileges' : lang === 'ja' ? 'VIP加入で全品3%OFF＆限定特権を獲得' : '加入 VIP，立享全館 97 折優惠與專屬尊榮權益')}
                 </p>
               </div>
             </div>

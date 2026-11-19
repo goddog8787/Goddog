@@ -1,5 +1,59 @@
+import { useSyncExternalStore } from 'react';
 import { LanguageCode, CurrencyCode, FilamentProduct, ColorOption } from '../types';
-import { PRODUCT_CATALOG_I18N, EXACT_COLOR_I18N } from './productCatalogI18n';
+
+type CatalogI18nBundle = typeof import('./productCatalogI18n');
+
+let catalogI18nModule: CatalogI18nBundle | null = null;
+let catalogI18nPromise: Promise<CatalogI18nBundle> | null = null;
+let catalogI18nVersion = 0;
+const catalogI18nListeners = new Set<() => void>();
+
+function notifyCatalogI18nListeners() {
+  catalogI18nVersion += 1;
+  catalogI18nListeners.forEach((fn) => fn());
+}
+
+function subscribeCatalogI18n(listener: () => void): () => void {
+  catalogI18nListeners.add(listener);
+  return () => {
+    catalogI18nListeners.delete(listener);
+  };
+}
+
+function getCatalogI18nSnapshot(): number {
+  return catalogI18nVersion;
+}
+
+export function useCatalogI18nVersion(lang: LanguageCode): number {
+  const version = useSyncExternalStore(
+    subscribeCatalogI18n,
+    getCatalogI18nSnapshot,
+    getCatalogI18nSnapshot
+  );
+  if (lang !== 'zh-TW' && !catalogI18nModule) {
+    void preloadCatalogI18n(lang);
+  }
+  return version;
+}
+
+export function preloadCatalogI18n(lang: LanguageCode): Promise<void> {
+  if (lang === 'zh-TW' || catalogI18nModule) {
+    return Promise.resolve();
+  }
+  if (!catalogI18nPromise) {
+    catalogI18nPromise = import('./productCatalogI18n')
+      .then((mod) => {
+        catalogI18nModule = mod;
+        notifyCatalogI18nListeners();
+        return mod;
+      })
+      .catch((err) => {
+        catalogI18nPromise = null;
+        throw err;
+      });
+  }
+  return catalogI18nPromise.then(() => undefined);
+}
 
 export const currencyRates: Record<CurrencyCode, { symbol: string; rate: number; label: string }> = {
   TWD: { symbol: 'NT$', rate: 1, label: '新台幣 (TWD)' },
@@ -1000,12 +1054,20 @@ export function translateColorName(colorName: string, lang: LanguageCode): strin
   if (!colorName) return '';
   const trimmed = colorName.trim();
 
-  if (EXACT_COLOR_I18N[trimmed]) {
-    return lang === 'zh-TW' ? EXACT_COLOR_I18N[trimmed].zh : EXACT_COLOR_I18N[trimmed][lang];
+  const exactColorMap = catalogI18nModule?.EXACT_COLOR_I18N;
+  if (exactColorMap && exactColorMap[trimmed]) {
+    return lang === 'zh-TW' ? exactColorMap[trimmed].zh : exactColorMap[trimmed][lang];
   }
 
   if (lang === 'zh-TW') {
-    return trimmed.replace(/\s+[A-Za-z][A-Za-z0-9\s-]*$/, '').replace(/莫蘭迪/g, '').trim() || trimmed;
+    return (
+      trimmed
+        .replace(/\s+[A-Za-z][A-Za-z0-9\s-]*$/, '')
+        .replace(/莫蘭迪灰/g, '霧面灰')
+        .replace(/莫蘭迪/g, '')
+        .replace(/柠檬/g, '檸檬')
+        .trim() || trimmed
+    );
   }
 
   // Check if it has english in parens, e.g. "消光黑 (Matte Black)"
@@ -1242,7 +1304,10 @@ export function translateProduct(product: FilamentProduct, lang: LanguageCode): 
     };
   }
 
-  const catalogOverride = PRODUCT_CATALOG_I18N[product.id]?.[lang];
+  if (!catalogI18nModule) {
+    void preloadCatalogI18n(lang);
+  }
+  const catalogOverride = catalogI18nModule?.PRODUCT_CATALOG_I18N?.[product.id]?.[lang];
   const translatedColors = (product.colors || []).map(c => ({
     ...c,
     name: translateColorName(c?.name || '', lang)

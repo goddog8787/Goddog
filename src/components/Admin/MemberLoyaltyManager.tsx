@@ -314,10 +314,10 @@ export const MemberLoyaltyManager: React.FC<MemberLoyaltyManagerProps> = ({ orde
         <div className="flex items-center gap-2">
           <Settings className="w-4 h-4 text-slate-500" />
           <span className="text-xs font-bold text-slate-700">紅利回饋參數設定：</span>
-          <span className="text-xs text-slate-500">結帳消費每 NT$ 100 回饋 5 點，1 點現折 NT$ 1</span>
+          <span className="text-xs text-slate-500">結帳消費每 NT$ 100 回饋 2 點，1 點現折 NT$ 1</span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500">VIP 會員享雙倍 10% 回饋</span>
+          <span className="text-xs text-slate-500">VIP 會員享 1.5 倍 (3%) 回饋</span>
           <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 text-[10px] font-bold rounded-md">
             自動累積機制運作中
           </span>

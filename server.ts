@@ -3203,9 +3203,9 @@ app.post('/api/payment/period-checkout', (req, res) => {
     // 強化金額解析與方案預設金額補全，避免前端事件物件或未帶金額導致報錯
     let finalPrice = Number(price);
     if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
-      if (planId === 'vip-monthly') finalPrice = 99;
-      else if (planId === 'vip-quarterly') finalPrice = 279;
-      else if (planId === 'vip-yearly') finalPrice = 990;
+      if (planId === 'vip-monthly') finalPrice = 199;
+      else if (planId === 'vip-quarterly') finalPrice = 549;
+      else if (planId === 'vip-yearly') finalPrice = 1990;
       else if (planId === 'box-maker') finalPrice = 899;
     }
 

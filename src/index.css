@@ -33,18 +33,70 @@
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
+
+  :where(button:not(:disabled):not([data-no-press]), [role="button"]:not([aria-disabled="true"]):not([data-no-press])) {
+    transition: transform 110ms cubic-bezier(0.22, 1, 0.36, 1), opacity 110ms ease;
+  }
+
+  :where(button:not(:disabled):not([data-no-press]), [role="button"]:not([aria-disabled="true"]):not([data-no-press])):active {
+    transform: scale(0.97);
+  }
+}
+
+.btn-tactile-primary {
+  position: relative;
+  overflow: hidden;
+  transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 140ms ease;
+}
+
+.btn-tactile-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 25%, rgba(255, 255, 255, 0.16) 50%, transparent 75%);
+  transform: translateX(-115%);
+  transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.btn-tactile-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -8px rgba(15, 23, 42, 0.35);
+}
+
+.btn-tactile-primary:hover:not(:disabled)::after {
+  transform: translateX(115%);
+}
+
+.btn-tactile-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.972);
 }
 
 .product-grid-card {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 340px;
-  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .product-grid-card:hover {
-  transform: scale(1.018);
+  transform: scale(1.015);
   z-index: 2;
+}
+
+.product-grid-card:active {
+  transform: scale(0.992);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(button, [role="button"]),
+  .btn-tactile-primary,
+  .btn-tactile-primary::after,
+  .product-grid-card {
+    transition-duration: 0.01ms !important;
+  }
+  .btn-tactile-primary:hover:not(:disabled),
+  .product-grid-card:hover,
+  :where(button, [role="button"]):active {
+    transform: none !important;
+  }
 }
 
 @theme {

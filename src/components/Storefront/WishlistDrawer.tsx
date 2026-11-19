@@ -40,7 +40,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-xs flex justify-end animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-50 overflow-hidden bg-slate-950/65 flex justify-end animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
@@ -103,17 +103,15 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                   key={p.id}
                   className="p-3 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-indigo-200 transition-all flex gap-3 group shadow-xs"
                 >
-                  <div className="w-16 h-16 rounded-xl bg-slate-100 dark:bg-slate-700 p-1 flex items-center justify-center shrink-0 border border-slate-100 dark:border-slate-600">
-                    {p.imageUrl && p.imageUrl.trim() !== '' ? (
-                      <img 
-                        src={getSafeProductImageUrl(p.imageUrl, p.material, p.name)} 
-                        alt={displayName} 
-                        className="w-full h-full object-cover rounded-lg"
-                        onError={(e) => handleProductImageError(e, p.material, p.name)}
-                      />
-                    ) : (
-                      <Package className="w-6 h-6 text-slate-400" />
-                    )}
+                  <div className="w-16 h-16 rounded-xl bg-white dark:bg-slate-800 overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-700">
+                    <img 
+                      src={getSafeProductImageUrl(p.imageUrl, p.material, p.name)} 
+                      alt={displayName} 
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                      onError={(e) => handleProductImageError(e, p.material, p.name)}
+                    />
                   </div>
 
                   <div className="flex-1 min-w-0 flex flex-col justify-between">

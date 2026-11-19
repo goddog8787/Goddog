@@ -1048,7 +1048,7 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-5 touch-manipulation animate-fade-in"
+      className="fixed inset-0 z-50 bg-slate-950/75 flex items-end sm:items-center justify-center p-0 sm:p-5 touch-manipulation animate-fade-in"
       onClick={onClose}
     >
       <div

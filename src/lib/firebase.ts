@@ -388,7 +388,7 @@ export async function signInWithEmail(email: string, pass: string): Promise<{ us
         passwordHash: pass,
         name: result.user.displayName || effectiveEmail.split('@')[0],
         tier: 'Bronze',
-        points: 120,
+        points: 50,
       });
     }
     return { user: result.user };
@@ -437,7 +437,7 @@ export async function signInWithEmail(email: string, pass: string): Promise<{ us
         passwordHash: pass,
         name: effectiveEmail.split('@')[0],
         tier: 'Bronze',
-        points: 120,
+        points: 50,
       });
       return { user: demoUser };
     }
@@ -468,7 +468,7 @@ export async function registerWithEmail(
         email: result.user.email || effectiveEmail,
         name: displayName,
         tier: 'Bronze',
-        points: 120,
+        points: 50,
       });
       saveLocalAccount({
         uid: result.user.uid,
@@ -476,7 +476,7 @@ export async function registerWithEmail(
         passwordHash: pass,
         name: displayName,
         tier: 'Bronze',
-        points: 120,
+        points: 50,
       });
     }
     return { user: result.user, profile };
@@ -504,7 +504,7 @@ export async function registerWithEmail(
       passwordHash: pass,
       name: name || effectiveEmail.split('@')[0],
       tier: 'Bronze',
-      points: 120,
+      points: 50,
     });
     return { user: demoUser };
   }
@@ -631,7 +631,7 @@ export async function saveUserProfileToFirestore(profile: any) {
           ? profile.points
           : typeof existingData.points === 'number'
           ? existingData.points
-          : 120,
+          : 50,
       createdAt: isNew ? new Date().toISOString() : (existingData.createdAt || new Date().toISOString()),
       referralCode:
         existingData.referralCode ||

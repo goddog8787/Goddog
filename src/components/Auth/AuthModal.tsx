@@ -102,14 +102,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             name: profile?.name || name || user.displayName || email.split('@')[0],
             email: profile?.email || user.email || email,
             tier: profile?.tier || 'Bronze',
-            points: profile?.points || 120,
+            points: profile?.points || 50,
           });
           setSuccessMessage(
             lang === 'en' 
-              ? '🎉 Registered successfully! 120 bonus points awarded!' 
+              ? '🎉 Registered successfully! 50 bonus points awarded!' 
               : lang === 'ja' 
-              ? '🎉 新規登録完了！120ボーナスポイントを付与しました！' 
-              : '🎉 註冊成功！已為您贈送新會員 120 點紅利積點！'
+              ? '🎉 新規登録完了！50ボーナスポイントを付与しました！' 
+              : '🎉 註冊成功！已為您贈送新會員 50 點紅利積點！'
           );
           setTimeout(() => onClose(), 1200);
         } else {
@@ -127,7 +127,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[110] overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[110] overflow-y-auto bg-slate-950/65 flex items-center justify-center p-3 sm:p-5 animate-fade-in cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
@@ -324,7 +324,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   ) : (
                     <>
                       <UserPlus className="w-4 h-4" />
-                      <span>{lang === 'en' ? 'Register & Claim 120 Pts' : lang === 'ja' ? '登録して120pt獲得' : '註冊領取 120 點紅利'}</span>
+                      <span>{lang === 'en' ? 'Register & Claim 50 Pts' : lang === 'ja' ? '登録して50pt獲得' : '註冊領取 50 點紅利'}</span>
                     </>
                   )}
                 </button>

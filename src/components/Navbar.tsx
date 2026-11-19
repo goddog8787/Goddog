@@ -74,7 +74,7 @@ interface NavbarProps {
   products?: FilamentProduct[];
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
+const NavbarInner: React.FC<NavbarProps> = ({
   announcement,
   activeTab,
   setActiveTab,
@@ -375,10 +375,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </div>
 
-      <header className={`sticky top-0 z-40 transition-[background-color,box-shadow,border-color] duration-200 ${
+      <header className={`sticky top-0 z-40 transition-[background-color,box-shadow,border-color] duration-150 ${
         isScrolled 
-          ? 'bg-white/98 dark:bg-slate-900/98 backdrop-blur-md shadow-md shadow-slate-900/5 border-b border-slate-200/80 dark:border-slate-800' 
-          : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800'
+          ? 'bg-white/98 dark:bg-slate-900/98 shadow-md shadow-slate-900/5 border-b border-slate-200/80 dark:border-slate-800' 
+          : 'bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800'
       }`}>
       {/* Main Header Bar - Proportioned for Mobile & Spacious Desktop (No crowded inline nav squeezing search) */}
       <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
@@ -442,7 +442,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-lang-dropdown"
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-                className="flex items-center gap-1 h-8.5 sm:h-9 text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-2 rounded-xl transition-colors cursor-pointer whitespace-nowrap border border-slate-200/70 dark:border-slate-700"
+                className="flex items-center gap-1 h-8.5 sm:h-9 text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-2 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap border border-slate-200/70 dark:border-slate-700"
                 title={t.langCurrency || "切換語言與幣別"}
               >
                 <Globe className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 shrink-0" />
@@ -592,7 +592,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {toggleDarkMode && (
               <button
                 onClick={toggleDarkMode}
-                className="relative flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer shrink-0"
+                className="relative flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all duration-150 active:scale-95 cursor-pointer shrink-0"
                 title={lang === 'en' ? 'Toggle Dark Mode' : lang === 'ja' ? 'ダークモード切替' : '切換日夜間模式'}
               >
                 {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
@@ -603,7 +603,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-wishlist"
                 onClick={onOpenWishlist}
-                className="relative hidden xs:flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer shrink-0"
+                className="relative hidden xs:flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-all duration-150 active:scale-95 cursor-pointer shrink-0"
                 title={t.wishlist || "我的願望清單 / 收藏庫"}
               >
                 <Heart className={`w-4 h-4 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
@@ -620,7 +620,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-history"
                 onClick={onOpenHistory}
-                className="relative hidden md:flex items-center justify-center w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/60 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer shrink-0"
+                className="relative hidden md:flex items-center justify-center w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-purple-950/60 text-slate-700 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 transition-all duration-150 active:scale-95 cursor-pointer shrink-0"
                 title={t.navHistory || (lang === 'en' ? 'Recently Viewed' : '最近瀏覽記錄')}
               >
                 <Clock className="w-4 h-4" />
@@ -760,7 +760,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Menu Dropdown Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white/98 dark:bg-slate-900/98 backdrop-blur-xl px-4 pt-3 pb-5 space-y-2.5 shadow-2xl animate-in slide-in-from-top-2 duration-200 max-h-[85vh] overflow-y-auto">
+        <div className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pt-3 pb-5 space-y-2.5 shadow-2xl max-h-[85vh] overflow-y-auto">
           {/* Mobile Search Autocomplete */}
           {setSearchQuery && (
             <div>
@@ -998,7 +998,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="truncate">{lang === 'en' ? 'VIP Club' : lang === 'ja' ? 'VIP会員' : '創客 VIP 會員'}</span>
               </span>
               <span className="text-[10px] font-extrabold bg-amber-200/80 dark:bg-amber-800 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 rounded-full shrink-0">
-                {lang === 'en' ? '5% OFF' : lang === 'ja' ? '5%OFF' : '95折'}
+                {lang === 'en' ? '3% OFF' : lang === 'ja' ? '3%OFF' : '97折'}
               </span>
             </button>
 
@@ -1088,3 +1088,5 @@ export const Navbar: React.FC<NavbarProps> = ({
     </>
   );
 };
+
+export const Navbar = React.memo(NavbarInner);
