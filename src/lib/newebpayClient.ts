@@ -28,6 +28,10 @@ export async function requestCheckout(endpoint: CheckoutEndpoint, details: objec
     const response = endpoint === 'period-checkout'
       ? await authenticatedStoreFetch(path, options)
       : await fetch(getStoreApiBase() + path, options);
+    if (response.status === 409 && endpoint === 'checkout') {
+      const conflict = await response.json().catch(() => null);
+      throw new Error(conflict?.message || '商品庫存有變動，請更新購物車後再試。');
+    }
     if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
       throw new Error('付款服務暫時無法連線，請稍後再試。');
     }

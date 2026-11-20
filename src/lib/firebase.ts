@@ -66,7 +66,7 @@ const getEffectiveAuthDomain = (): string => {
   if (customDomain) {
     return customDomain;
   }
-  if (typeof window !== 'undefined' && window.location.hostname.includes('goddog.space')) {
+  if (typeof window !== 'undefined' && window.location.hostname === 'goddog.space') {
     return 'goddog.space';
   }
   return firebaseConfig.authDomain || 'goddog-shop.firebaseapp.com';

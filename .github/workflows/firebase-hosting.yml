@@ -78,16 +78,20 @@ jobs:
             try {
               const health = await read('/api/health');
               if (revisions.has(health.revision)) {
-                const payment = await read('/api/payment/config-status');
-                const inventory = await read('/api/payment/inventory-status');
-                ready = payment.configured === true && payment.sandbox === false && inventory.ready === true;
+                const [payment, inventory, handler] = await Promise.all([
+                  read('/api/payment/config-status'),
+                  read('/api/payment/inventory-status'),
+                  fetch('https://goddog.space/__/auth/handler', { signal: AbortSignal.timeout(12000) }),
+                ]);
+                ready = payment.configured === true && payment.sandbox === false && inventory.ready === true &&
+                  handler.ok && (await handler.text()).includes('fireauth');
               }
             } catch {
               // Render may still be building or starting the release.
             }
             if (!ready) await new Promise(resolve => setTimeout(resolve, 10000));
           } while (!ready && Date.now() < deadline);
-          if (!ready) throw new Error('Matching Render release, production payment config, or Firestore inventory is unavailable');
+          if (!ready) throw new Error('Matching Render release, payment, inventory, or Firebase Auth is unavailable');
           JS
 
       - name: Deploy Firestore rules and Firebase Hosting

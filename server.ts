@@ -68,6 +68,37 @@ const parsedPort = Number(cliPort || resolvedEnvPort);
 const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
 const HOST = resolveCliArg('--host') || process.env.HOST || '0.0.0.0';
 
+// Serve Firebase Auth's popup and iframe on the same origin as the Render storefront.
+const firebaseAuthOrigin = 'https://goddog-shop.firebaseapp.com';
+app.all('/__/auth/*', express.raw({ type: () => true, limit: '64kb' }), async (req, res) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
+    return res.set('Allow', 'GET, HEAD, POST').sendStatus(405);
+  }
+  try {
+    const upstream = new URL(firebaseAuthOrigin + req.originalUrl);
+    if (!upstream.pathname.startsWith('/__/auth/')) return res.sendStatus(404);
+    const contentType = req.get('Content-Type');
+    const response = await fetch(upstream, {
+      method: req.method,
+      headers: contentType ? { 'Content-Type': contentType } : undefined,
+      body: req.method === 'POST' && Buffer.isBuffer(req.body) ? req.body : undefined,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10_000),
+    });
+    const location = response.headers.get('location');
+    if (location) {
+      const redirect = new URL(location, upstream);
+      res.set('Location', redirect.origin === firebaseAuthOrigin ? redirect.pathname + redirect.search + redirect.hash : redirect.href);
+    }
+    res.set('Cache-Control', 'no-store');
+    const responseType = response.headers.get('content-type');
+    if (responseType) res.set('Content-Type', responseType);
+    return res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
+  } catch {
+    return res.status(502).send('Firebase 登入服務暫時無法連線。');
+  }
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
