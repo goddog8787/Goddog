@@ -498,6 +498,8 @@ export interface AIModelOption {
   minTier?: 'FREE' | 'GO' | 'PLUS';
 }
 
+export const DEFAULT_GEMINI_CHAT_MODEL = 'gemini-3.1-flash-lite';
+
 export const SUPPORTED_AI_MODELS: AIModelOption[] = [
   {
     id: 'gemini-4-hydrogen',

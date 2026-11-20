@@ -24,7 +24,7 @@ import {
   dispatchGeminiStream,
   generateSmart3DExpertReply,
 } from '../../lib/geminiClient';
-import { FilamentProduct, CartItem, MemberProfile, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
+import { FilamentProduct, CartItem, MemberProfile, DEFAULT_GEMINI_CHAT_MODEL, SUPPORTED_AI_MODELS, LanguageCode } from '../../types';
 import { 
   normalizeCustomerId,
   getStoredCustomerChatSync,
@@ -144,9 +144,9 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       if (saved && SUPPORTED_AI_MODELS.some((m) => m.id === saved)) {
         return saved;
       }
-      return 'gemini-3.1-flash-lite';
+      return DEFAULT_GEMINI_CHAT_MODEL;
     } catch {
-      return 'gemini-3.1-flash-lite';
+      return DEFAULT_GEMINI_CHAT_MODEL;
     }
   });
   const [showModelPicker, setShowModelPicker] = useState(false);
@@ -386,9 +386,8 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         signal: controller.signal,
         lang,
         onMeta: (meta) => {
-          if (meta?.modelUsed) {
-            resolvedModelName = meta.modelUsed;
-          }
+          const fallbackLabel = lang === 'en' ? ' (fallback)' : lang === 'ja' ? '（代替）' : '（備援）';
+          resolvedModelName = meta.modelUsed + (meta.fallbackFrom ? fallbackLabel : '');
         },
         onChunk: (streamedSoFar) => {
           setMessages((prev) =>
@@ -430,7 +429,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       }
 
       if (dispatched?.reply && dispatched.reply.trim()) {
-        const finalModel = dispatched.modelUsed || resolvedModelName;
+        const finalModel = resolvedModelName || dispatched.modelUsed;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === aiMsgId

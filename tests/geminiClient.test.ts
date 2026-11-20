@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { dispatchGeminiStream } from '../src/lib/geminiClient';
 
-test('the chat accepts only complete replies from the selected Gemini model', async t => {
+test('the chat accepts complete replies from the selected model or a declared Flash-Lite fallback', async t => {
   const config = { message: 'PETG', model: 'gemini-4-hydrogen' };
   const reply = { text: 'fresh provider answer' };
   const confirmation = { meta: { source: 'gemini', modelId: config.model, modelUsed: 'Gemini 4 Hydrogen' } };
@@ -16,6 +16,15 @@ test('the chat accepts only complete replies from the selected Gemini model', as
   assert.equal(await dispatchGeminiStream(config), null);
 
   events = [{ meta: { ...confirmation.meta, modelId: 'gemini-3.1-flash-lite' } }, reply, '[DONE]'];
+  assert.equal(await dispatchGeminiStream(config), null);
+
+  const fallback = { meta: {
+    source: 'gemini', modelId: 'gemini-3.1-flash-lite', modelUsed: 'Gemini 3.1 Flash-Lite', fallbackFrom: config.model,
+  } };
+  events = [fallback, reply, '[DONE]'];
+  assert.deepEqual(await dispatchGeminiStream(config), { reply: reply.text, modelUsed: fallback.meta.modelUsed, modelId: fallback.meta.modelId });
+
+  events = [confirmation, reply, fallback, reply, '[DONE]'];
   assert.equal(await dispatchGeminiStream(config), null);
 
   events = [confirmation, reply, { error: 'MODEL_UNAVAILABLE' }, '[DONE]'];
