@@ -86,7 +86,6 @@ function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
       sender: 'ai',
       text: "Hey there! I'm the GodDog 3D Filament & Slicing Specialist.\n\nWhether you need dialed-in nozzle & bed temps for PLA+, PETG-HF, TPU 95A, or Carbon Fiber, Bambu Lab AMS tips, or help fixing stringing and warping—just ask away!",
       timestamp: Date.now(),
-      modelUsed: 'Gemini 4 Hydrogen',
     };
   }
   if (lang === 'ja') {
@@ -95,7 +94,6 @@ function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
       sender: 'ai',
       text: 'こんにちは！神狗勾 (GodDog) 3Dフィラメント専属AIアドバイザーです。\n\nPLA+・PETG・TPU・炭素繊維フィラメントの最適な温度設定やスライサー調整、Bambu Lab AMSでの給紙のコツ、糸引き・反り対策など、何でもお気軽にご相談ください！',
       timestamp: Date.now(),
-      modelUsed: 'Gemini 4 Hydrogen',
     };
   }
   return {
@@ -103,7 +101,6 @@ function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
     sender: 'ai',
     text: '您好！我是神狗勾 3D 智能顧問。\n\n無論是 PLA+、PETG、TPU 還是碳纖維線材的切片推薦溫度、速度、拓竹 AMS 供料設定或列印故障排查，請隨時告訴我！',
     timestamp: Date.now(),
-    modelUsed: 'Gemini 4 Hydrogen',
   };
 }
 
@@ -584,8 +581,6 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         return;
       }
 
-      // Unified fast dispatcher: streams directly from Cloud Run / local Express SSE with 4.5s first-byte timeout,
-      // and seamlessly falls back to Firestore Live Bridge on static hosts like goddog.space.
       let resolvedModelName = currentModelObj.name;
       const dispatched = await dispatchGeminiStream({
         message: text,
@@ -668,7 +663,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                 text: cleanChatText(expertResult.reply),
                 solution: expertResult.solution,
                 isLoading: false,
-                modelUsed: expertResult.modelUsed,
+                modelUsed: '內建回答 · Gemini 暫時無法連線',
               }
             : m
         )
@@ -686,7 +681,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                 text: cleanChatText(fallbackResult.reply),
                 solution: fallbackResult.solution,
                 isLoading: false,
-                modelUsed: fallbackResult.modelUsed,
+                modelUsed: '內建回答 · Gemini 暫時無法連線',
               }
             : m
         )
@@ -762,7 +757,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                     text: aiTxt,
                     solution: data,
                     isLoading: false,
-                    modelUsed: data?.modelUsed || currentModelObj.name,
+                    modelUsed: data?.modelUsed || '排查指南',
                   }
                 : m
             )
@@ -1315,7 +1310,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                           <div className="flex items-center gap-1.5 min-w-0">
                             <Cpu className="w-3 h-3 text-indigo-500 shrink-0" />
                             <span className="text-slate-600 font-medium truncate">
-                              {m.modelUsed || currentModelObj.name}
+                              {m.modelUsed || '神狗勾 3D 智能顧問'}
                             </span>
                           </div>
                           {m.timestamp && (

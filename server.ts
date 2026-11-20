@@ -478,7 +478,7 @@ const ALL_SUPPORTED_GEMINI_MODELS = [
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'gemini-4-hydrogen': 'Gemini 4 Hydrogen (推薦首選)',
-  'gemini-3.8-flash': 'Gemini 4 Hydrogen (推薦首選)',
+  'gemini-3.8-flash': 'Gemini 3.8 Flash',
   'gemini-3-flash-preview': 'Gemini 4 Hydrogen (推薦首選)',
   'gemini-3.1-flash-lite': 'Gemini 3.1 Flash-Lite (極速輕量)',
   'gemini-flash-latest': 'Gemini Flash (自動分流)',
@@ -626,27 +626,26 @@ async function* generateGeminiChatStreamSafely(
       : preferredModel;
 
   // Prioritize selected model then ultrafast failover nodes
-  const baseOrder = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  const baseOrder = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-flash-latest'];
   const orderedModels =
     normalizedPreferred === 'gemini-3.1-pro-preview'
-      ? ['gemini-3.1-pro-preview', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+      ? ['gemini-3.1-pro-preview', ...baseOrder]
       : [normalizedPreferred, ...baseOrder.filter((m) => m !== normalizedPreferred)];
 
   for (const candidateModel of orderedModels) {
     if (abortSignal?.aborted) return;
     let yieldedFromCandidate = false;
+    const deadline = AbortSignal.timeout(12_000);
+    const attemptSignal = abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline;
     try {
-      const stream = await callWithTimeout(
-        ai.models.generateContentStream({
-          model: candidateModel,
-          contents: rawContents,
-          config: buildModelGenConfig(candidateModel, {
-            systemInstruction,
-            maxOutputTokens: 700,
-          }),
-        }),
-        5200
-      );
+      const stream = await ai.models.generateContentStream({
+        model: candidateModel,
+        contents: rawContents,
+        config: {
+          ...buildModelGenConfig(candidateModel, { systemInstruction, maxOutputTokens: 700 }),
+          abortSignal: attemptSignal,
+        },
+      });
 
       for await (const chunk of stream) {
         if (abortSignal?.aborted) {
@@ -665,10 +664,15 @@ async function* generateGeminiChatStreamSafely(
       if (yieldedFromCandidate) {
         return;
       }
-    } catch (_err: any) {
+    } catch (error) {
       if (abortSignal?.aborted) {
         return;
       }
+      const status = Number((error as { status?: number } | null)?.status);
+      console.warn('[Gemini chat] Upstream request failed', {
+        model: orderedModels.indexOf(candidateModel) + 1,
+        reason: deadline.aborted ? 'timeout' : Number.isInteger(status) ? status : 'transport',
+      });
       if (yieldedFromCandidate) {
         return;
       }
@@ -682,7 +686,8 @@ async function generateGeminiChatSafely(
   systemInstruction: string,
   latestUserMessage: string,
   preferredModel?: string,
-  customApiKey?: string
+  customApiKey?: string,
+  abortSignal?: AbortSignal,
 ): Promise<{ reply: string; modelUsed: string; error?: string } | null> {
   const ai = getAIClient(customApiKey);
   if (!ai) return { reply: '', modelUsed: '', error: '尚未配置有效的 Google Gemini API Key' };
@@ -721,15 +726,16 @@ async function generateGeminiChatSafely(
   let lastErrorMsg = '';
 
   for (const candidateModel of orderedModels) {
+    if (abortSignal?.aborted) return null;
     try {
       const response = await callWithTimeout(
         ai.models.generateContent({
           model: candidateModel,
           contents: rawContents,
-          config: buildModelGenConfig(candidateModel, {
-            systemInstruction,
-            maxOutputTokens: 700,
-          }),
+          config: {
+            ...buildModelGenConfig(candidateModel, { systemInstruction, maxOutputTokens: 700 }),
+            abortSignal,
+          },
         }),
         6500
       );
@@ -1548,8 +1554,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
       }))
       .filter((m) => m.text.length > 0);
 
-    const clientApiKey = (req.body?.apiKey || '').trim();
-    const effectiveApiKey = (clientApiKey || runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+    const effectiveApiKey = (runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 
     const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
       normalizedFullHistory,
@@ -1618,7 +1623,7 @@ ${contextNotes}`;
     }
 
     if (requestedModel === 'local-expert' || !effectiveApiKey) {
-      res.write(`data: ${JSON.stringify({ meta: { modelUsed: '神狗勾 3D 專家顧問' } })}\n\n`);
+      res.write(`data: ${JSON.stringify({ meta: { modelUsed: requestedModel === 'local-expert' ? '內建回答' : '內建回答 · Gemini 暫時無法連線' } })}\n\n`);
       res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
@@ -1651,6 +1656,18 @@ ${contextNotes}`;
       streamedFullText += chunkText;
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     }
+    if (!streamedAnyChunk && !abortController.signal.aborted) {
+      const result = await generateGeminiChatSafely(
+        history, systemPrompt, latestUserMessage, requestedModel, effectiveApiKey, abortController.signal,
+      );
+      if (result?.reply && !abortController.signal.aborted) {
+        resolvedModelId = result.modelUsed;
+        streamedFullText = result.reply;
+        streamedAnyChunk = true;
+        res.write(`data: ${JSON.stringify({ meta: { modelUsed: MODEL_DISPLAY_NAMES[resolvedModelId] || resolvedModelId } })}\n\n`);
+        res.write(`data: ${JSON.stringify({ text: streamedFullText })}\n\n`);
+      }
+    }
     if (streamedAnyChunk) {
       totalCustomerQueriesServed++;
       if (normalizedFullHistory.length <= 2 && latestUserMessage.length <= 100 && streamedFullText.trim()) {
@@ -1659,7 +1676,7 @@ ${contextNotes}`;
     }
 
     if (!streamedAnyChunk && !clientDisconnected && !abortController.signal.aborted) {
-      res.write(`data: ${JSON.stringify({ meta: { modelUsed: '神狗勾 3D 專家顧問' } })}\n\n`);
+      res.write(`data: ${JSON.stringify({ meta: { modelUsed: '內建回答 · Gemini 暫時無法連線' } })}\n\n`);
       res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
     }
 
@@ -1737,13 +1754,7 @@ app.post('/api/ai/chat', async (req, res) => {
       }))
       .filter((m) => m.text.length > 0);
 
-    const clientApiKey = (req.body?.apiKey || '').trim();
-    const effectiveApiKey = (clientApiKey || runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-
-    if (clientApiKey && !runtimeCustomApiKey) {
-      runtimeCustomApiKey = clientApiKey;
-      savePersistedOwnerApiKey(clientApiKey);
-    }
+    const effectiveApiKey = (runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
 
     const rawTarget = requestedModel || 'gemini-4-hydrogen';
     const targetModel = rawTarget === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : rawTarget;
