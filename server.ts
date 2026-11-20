@@ -65,7 +65,14 @@ function resolveCliArg(flag: string): string | undefined {
 }
 
 const app = express();
-const parsedPort = Number(resolveCliArg('--port') || process.env.PORT || 3000);
+const cliPort = resolveCliArg('--port');
+const isDevRuntime = process.env.NODE_ENV !== 'production';
+const nginxPort = process.env.NGINX_PORT || '8080';
+const resolvedEnvPort =
+  isDevRuntime && process.env.PORT && process.env.PORT === nginxPort
+    ? process.env.DEFAULT_APP_PORT || '3000'
+    : process.env.PORT || process.env.DEFAULT_APP_PORT || '3000';
+const parsedPort = Number(cliPort || resolvedEnvPort);
 const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
 const HOST = resolveCliArg('--host') || process.env.HOST || '0.0.0.0';
 
@@ -190,12 +197,14 @@ app.get('/apple-developer-merchantid-domain-association.txt', serveApplePayAssoc
 
 // Apple Pay merchant & domain verification inspection endpoint
 app.get('/api/applepay/verify-status', (_req, res) => {
+  const envMerchant = (process.env.NEWEBPAY_MERCHANT_ID || '').trim();
+  const maskedMerchant = envMerchant ? `${envMerchant.slice(0, 4)}****${envMerchant.slice(-2)}` : '未設定';
   res.json({
     success: true,
     status: 'active',
     domainVerified: true,
-    merchantId: 'MS1843364339',
-    merchantIdentifier: 'MS1843364339',
+    merchantId: maskedMerchant,
+    merchantIdentifier: maskedMerchant,
     pspId: '2B7BBF1994ACFFA497189BD8E260B9DBBE5F022D64F7D356614CC21125D1BC19',
     version: 1,
     createdOn: 1718727267616,
@@ -1203,7 +1212,7 @@ app.get('/api/ai/admin-config', (_req, res) => {
   const hasEnv = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
   const hasRuntime = !!(runtimeCustomApiKey && runtimeCustomApiKey.trim());
   const activeKey = runtimeCustomApiKey || process.env.GEMINI_API_KEY || '';
-  const maskedKey = activeKey ? `${activeKey.slice(0, 6)}...${activeKey.slice(-4)}` : '';
+  const maskedKey = activeKey ? '已由伺服器環境變數安全載入' : '';
 
   res.json({
     success: true,
@@ -2793,28 +2802,32 @@ Respond ONLY with valid JSON.`,
 });
 
 // -------------------------------------------------------------
-// 8.5. 藍新金流 (NewebPay) 真實串接 API
+// 8.5. 藍新金流 (NewebPay) 真實串接 API（嚴格由伺服器環境變數管理金鑰）
 // -------------------------------------------------------------
-const LEGACY_PLACEHOLDER_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ';
-const DEFAULT_PROD_NEWEBPAY_HASH_KEY = 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ';
-const LEGACY_PLACEHOLDER_HASH_IV = 'P4rlxhbNjCyiK5qC';
-
-const rawEnvHashKey = (process.env.NEWEBPAY_HASH_KEY || '').trim();
-let NEWEBPAY_MERCHANT_ID = (process.env.NEWEBPAY_MERCHANT_ID || 'MS1843364339').trim();
-let NEWEBPAY_HASH_KEY =
-  rawEnvHashKey && rawEnvHashKey !== LEGACY_PLACEHOLDER_HASH_KEY
-    ? rawEnvHashKey
-    : DEFAULT_PROD_NEWEBPAY_HASH_KEY;
-let NEWEBPAY_HASH_IV = (process.env.NEWEBPAY_HASH_IV || LEGACY_PLACEHOLDER_HASH_IV).trim();
-let NEWEBPAY_IS_SANDBOX = process.env.NEWEBPAY_ENV === 'sandbox';
-const NEWEBPAY_URL = process.env.NEWEBPAY_ENV === 'sandbox' 
-  ? 'https://ccore.newebpay.com/MPG/mpg_gateway' 
+const NEWEBPAY_MERCHANT_ID = (process.env.NEWEBPAY_MERCHANT_ID || '').trim();
+const NEWEBPAY_HASH_KEY = (process.env.NEWEBPAY_HASH_KEY || '').trim();
+const NEWEBPAY_HASH_IV = (process.env.NEWEBPAY_HASH_IV || '').trim();
+const NEWEBPAY_IS_SANDBOX = process.env.NEWEBPAY_ENV === 'sandbox';
+const NEWEBPAY_URL = NEWEBPAY_IS_SANDBOX
+  ? 'https://ccore.newebpay.com/MPG/mpg_gateway'
   : 'https://core.newebpay.com/MPG/mpg_gateway';
-const NEWEBPAY_PERIOD_URL = process.env.NEWEBPAY_ENV === 'sandbox'
+const NEWEBPAY_PERIOD_URL = NEWEBPAY_IS_SANDBOX
   ? 'https://ccore.newebpay.com/MPG/period'
   : 'https://core.newebpay.com/MPG/period';
 const NEWEBPAY_VERSION = '2.0';
 const NEWEBPAY_PERIOD_VERSION = '1.5';
+
+function isNewebPayConfigured(): boolean {
+  return (
+    NEWEBPAY_MERCHANT_ID.length > 0 &&
+    NEWEBPAY_HASH_KEY.length === 32 &&
+    NEWEBPAY_HASH_IV.length === 16
+  );
+}
+
+function getNewebPayMissingConfigMessage(): string {
+  return '伺服器尚未完整設定藍新金流環境變數（NEWEBPAY_MERCHANT_ID、32 碼 NEWEBPAY_HASH_KEY、16 碼 NEWEBPAY_HASH_IV），請於後端環境變數 / Secrets 完成設定後再重試。';
+}
 
 function resolveSafeGatewayCallbackBase(req: express.Request, originUrl?: string): {
   webhookBaseUrl: string;
@@ -2838,52 +2851,36 @@ function resolveSafeGatewayCallbackBase(req: express.Request, originUrl?: string
   return { webhookBaseUrl, clientBackUrl };
 }
 
-// Sync NewebPay credentials from Admin Dashboard
-app.post('/api/payment/config', (req, res) => {
-  try {
-    const { merchantId, hashKey, hashIV, testMode } = req.body || {};
-    if (merchantId && String(merchantId).trim()) {
-      NEWEBPAY_MERCHANT_ID = String(merchantId).trim();
-    }
-    if (hashKey && String(hashKey).trim().length === 32) {
-      const cleanedKey = String(hashKey).trim();
-      NEWEBPAY_HASH_KEY =
-        cleanedKey === LEGACY_PLACEHOLDER_HASH_KEY ? DEFAULT_PROD_NEWEBPAY_HASH_KEY : cleanedKey;
-    }
-    if (hashIV && String(hashIV).trim().length === 16) {
-      NEWEBPAY_HASH_IV = String(hashIV).trim();
-    }
-    if (typeof testMode === 'boolean') {
-      NEWEBPAY_IS_SANDBOX = testMode;
-    }
-    return res.json({
-      success: true,
-      merchantId: NEWEBPAY_MERCHANT_ID,
-      testMode: NEWEBPAY_IS_SANDBOX,
-    });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, message: err?.message || 'Update failed' });
-  }
+// Read-only non-sensitive payment gateway status for Admin Console
+app.get('/api/payment/status', (_req, res) => {
+  const maskedMerchant = NEWEBPAY_MERCHANT_ID
+    ? `${NEWEBPAY_MERCHANT_ID.slice(0, 4)}****${NEWEBPAY_MERCHANT_ID.slice(-2)}`
+    : '';
+  return res.json({
+    success: true,
+    configured: isNewebPayConfigured(),
+    hasMerchantId: NEWEBPAY_MERCHANT_ID.length > 0,
+    hasHashKey: NEWEBPAY_HASH_KEY.length === 32,
+    hasHashIV: NEWEBPAY_HASH_IV.length === 16,
+    merchantIdMasked: maskedMerchant,
+    testMode: NEWEBPAY_IS_SANDBOX,
+  });
 });
 
-// Verify NewebPay HashKey & HashIV against NewebPay MPG Gateway to detect MPG03009
-app.post('/api/payment/verify-keys', async (req, res) => {
+// Verify server-side NewebPay environment variables against NewebPay MPG Gateway to detect MPG03009
+app.post('/api/payment/verify-keys', async (_req, res) => {
   try {
-    const reqKey = String(req.body?.hashKey || '').trim();
-    const reqIv = String(req.body?.hashIV || '').trim();
-    const mId = String(req.body?.merchantId || NEWEBPAY_MERCHANT_ID).trim();
-    const hKey =
-      reqKey.length === 32 && reqKey !== LEGACY_PLACEHOLDER_HASH_KEY ? reqKey : NEWEBPAY_HASH_KEY;
-    const hIv =
-      reqIv.length === 16 ? reqIv : NEWEBPAY_HASH_IV;
-    const isSandbox = Boolean(req.body?.testMode ?? NEWEBPAY_IS_SANDBOX);
-
-    if (hKey.length !== 32 || hIv.length !== 16) {
+    if (!isNewebPayConfigured()) {
       return res.json({
         success: false,
-        message: `金鑰長度錯誤：HashKey 必須為 32 字元 (目前 ${hKey.length})，HashIV 必須為 16 字元 (目前 ${hIv.length})`,
+        message: getNewebPayMissingConfigMessage(),
       });
     }
+
+    const mId = NEWEBPAY_MERCHANT_ID;
+    const hKey = NEWEBPAY_HASH_KEY;
+    const hIv = NEWEBPAY_HASH_IV;
+    const isSandbox = NEWEBPAY_IS_SANDBOX;
 
     const gatewayUrl = isSandbox
       ? 'https://ccore.newebpay.com/MPG/mpg_gateway'
@@ -3036,18 +3033,20 @@ const verifiedPaidOrdersStore: Record<string, VerifiedPaidOrder> = {};
 // =============================================================
 app.post('/api/payment/checkout', (req, res) => {
   try {
-    const { amount, email, desc, paymentMethod, useSandbox, merchantId, hashKey, hashIV, originUrl, orderId: requestedOrderId, docId, returnFrom, userId, customerName } = req.body;
-    
+    const { amount, email, desc, paymentMethod, originUrl, orderId: requestedOrderId, docId, returnFrom, userId, customerName } = req.body;
+
+    if (!isNewebPayConfigured()) {
+      return res.status(503).json({ success: false, message: getNewebPayMissingConfigMessage() });
+    }
+
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid amount' });
     }
 
-    const reqKey = String(hashKey || '').trim();
-    const reqIv = String(hashIV || '').trim();
-    const activeMerchantId = (merchantId && String(merchantId).trim()) ? String(merchantId).trim() : NEWEBPAY_MERCHANT_ID;
-    const activeHashKey = (reqKey.length === 32 && reqKey !== LEGACY_PLACEHOLDER_HASH_KEY) ? reqKey : NEWEBPAY_HASH_KEY;
-    const activeHashIV = (reqIv.length === 16) ? reqIv : NEWEBPAY_HASH_IV;
-    const activeSandbox = typeof useSandbox === 'boolean' ? useSandbox : NEWEBPAY_IS_SANDBOX;
+    const activeMerchantId = NEWEBPAY_MERCHANT_ID;
+    const activeHashKey = NEWEBPAY_HASH_KEY;
+    const activeHashIV = NEWEBPAY_HASH_IV;
+    const activeSandbox = NEWEBPAY_IS_SANDBOX;
 
     const cleanRequestedId = typeof requestedOrderId === 'string' && /^GD[A-Za-z0-9_]{6,22}$/.test(requestedOrderId.trim())
       ? requestedOrderId.trim()
@@ -3198,8 +3197,13 @@ app.get('/api/payment/session-handoff', (req, res) => {
 // =============================================================
 app.post('/api/payment/period-checkout', (req, res) => {
   try {
-    const { planId, planName, price, days, email, frequencyLabel, useSandbox, userId } = req.body;
-    
+    if (!isNewebPayConfigured()) {
+      return res.status(503).json({ success: false, message: getNewebPayMissingConfigMessage() });
+    }
+
+    const { planId, planName, price, days, email, frequencyLabel, userId } = req.body;
+    const useSandbox = NEWEBPAY_IS_SANDBOX;
+
     // 強化金額解析與方案預設金額補全，避免前端事件物件或未帶金額導致報錯
     let finalPrice = Number(price);
     if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
@@ -4789,11 +4793,15 @@ app.post('/', (req, res) => {
 // ==========================================
 app.post('/api/payment/vip-checkout', (req, res) => {
   try {
+    if (!isNewebPayConfigured()) {
+      return res.status(503).json({ success: false, message: getNewebPayMissingConfigMessage() });
+    }
+
     const { planId, planName, price, days, email, type } = req.body;
     
     const MerchantID = NEWEBPAY_MERCHANT_ID;
     const Version = NEWEBPAY_VERSION;
-    const actionUrl = NEWEBPAY_URL; // Official NewebPay production gateway
+    const actionUrl = NEWEBPAY_URL; // Official NewebPay gateway from server env
 
     const orderId = `VIP${Date.now()}`;
     const host = req.get('host');
@@ -4896,39 +4904,56 @@ async function startServer() {
   const useProdStatic = process.env.NODE_ENV === 'production' && hasBuiltDist;
 
   if (!useProdStatic && isDev) {
-    try {
-      process.env.DISABLE_HMR = 'true';
-      const { createServer: createViteServer } = await import('vite');
-      const vite = await createViteServer({
-        server: {
-          middlewareMode: true,
-          hmr: false,
-          ws: false,
-          watch: null,
-        },
-        appType: 'spa',
+    process.env.DISABLE_HMR = 'true';
+    const viteReadyPromise = import('vite')
+      .then(({ createServer: createViteServer }) =>
+        createViteServer({
+          server: {
+            middlewareMode: true,
+            hmr: false,
+            ws: false,
+            watch: null,
+          },
+          appType: 'spa',
+        })
+      )
+      .then((vite) => {
+        activeViteServer = vite;
+        return vite;
+      })
+      .catch((e) => {
+        console.error('[神狗勾 Server] Vite middleware init error:', e);
+        return null;
       });
-      activeViteServer = vite;
-      app.use(vite.middlewares);
-    } catch (e) {
-      console.error('[神狗勾 Server] Vite middleware init error:', e);
-    }
+
+    app.use((req, res, next) => {
+      if (activeViteServer) {
+        return activeViteServer.middlewares(req, res, next);
+      }
+      viteReadyPromise
+        .then((vite) => {
+          if (vite) {
+            vite.middlewares(req, res, next);
+          } else {
+            next();
+          }
+        })
+        .catch(() => next());
+    });
   }
 
-  if (useProdStatic || !activeViteServer) {
-    if (hasBuiltDist) {
-      app.use(express.static(distPath, staticOptions));
-      app.get('*', (_req, res) => {
-        const indexPath = path.join(distPath, 'index.html');
-        res.sendFile(indexPath, (err) => {
-          if (err && !res.headersSent) {
-            res.status(503).send('<!doctype html><html><body>應用程式尚未就緒，請稍後重試。</body></html>');
-          }
-        });
+  if (hasBuiltDist) {
+    app.use(express.static(distPath, staticOptions));
+    app.get('*', (_req, res) => {
+      const indexPath = path.join(distPath, 'index.html');
+      res.sendFile(indexPath, (err) => {
+        if (err && !res.headersSent) {
+          res.status(503).send('<!doctype html><html><body>應用程式尚未就緒，請稍後重試。</body></html>');
+        }
       });
-    } else if (!activeViteServer) {
-      console.error('[神狗勾 Server] Neither Vite middleware nor built dist/index.html is available.');
-    }
+    });
+  } else if (useProdStatic) {
+    console.error('[神狗勾 Server] Neither Vite middleware nor built dist/index.html is available.');
   }
 
   const tryListen = (targetPort = PORT, retries = 25, delay = 300) => {

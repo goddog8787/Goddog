@@ -10,7 +10,7 @@ import { auth, logOut, signInWithGoogle } from '../../lib/firebase';
 import { isMockOrder, confirmOrderReceipt, getGenuineUserOrders } from '../../lib/orderVerification';
 import { OrderModal, NotificationModal, PrinterModal, AddressModal, ReferralModal, AchievementModal, SettingsModal, HistoryModal, CouponModal, FAQModal, classifyOrderStatusLabel } from './ProfileModals';
 import { getStoredRecentlyViewedSync, loadCustomerUserData, isMemberVipActive } from '../../lib/customerPersistence';
-import { LanguageCode } from '../../types';
+import { LanguageCode, CurrencyCode } from '../../types';
 
 export interface ProfilePageProps {
   onLoginClick?: () => void;
@@ -25,6 +25,11 @@ export interface ProfilePageProps {
   onAddToCart?: (product: any) => void;
   onOpenSupport?: (prompt?: string) => void;
   lang?: LanguageCode;
+  onChangeLang?: (lang: LanguageCode) => void;
+  currency?: CurrencyCode;
+  onChangeCurrency?: (currency: CurrencyCode) => void;
+  isDarkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
 export const ProfilePage: React.FC<ProfilePageProps> = ({ 
@@ -40,6 +45,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onAddToCart,
   onOpenSupport,
   lang = 'zh-TW',
+  onChangeLang,
+  currency = 'TWD',
+  onChangeCurrency,
+  isDarkMode = false,
+  onToggleDarkMode,
 }) => {
   const safeOrders = Array.isArray(orders) ? orders : [];
   const navigate = useNavigate();
@@ -372,17 +382,27 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
           </div>
 
-          {/* Desktop Quick Account Actions */}
-          <div className="hidden lg:flex items-center gap-3 shrink-0">
+          {/* Quick Account Actions */}
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
+              type="button"
+              onClick={() => openModal('settings')}
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-white transition-colors cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              {lang === 'en' ? 'Settings' : lang === 'ja' ? '設定' : '個人設定'}
+            </button>
+            <button
+              type="button"
               onClick={() => openModal("orders", "all")}
-              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-white transition-colors cursor-pointer"
+              className="hidden sm:inline-flex px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-white transition-colors cursor-pointer"
             >
               {lang === 'en' ? 'Order History' : lang === 'ja' ? '注文履歴' : '查看所有訂單'}
             </button>
             <button
+              type="button"
               onClick={() => navigate('/')}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-sm transition-colors cursor-pointer"
+              className="hidden lg:inline-flex px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-sm transition-colors cursor-pointer"
             >
               {lang === 'en' ? 'Back to Store' : lang === 'ja' ? 'ストアへ戻る' : '繼續選購耗材'}
             </button>
@@ -657,6 +677,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         onClose={() => setActiveModal(null)}
         member={member}
         setMember={setMember}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={onToggleDarkMode}
+        lang={lang}
+        onChangeLang={onChangeLang}
+        currency={currency}
+        onChangeCurrency={onChangeCurrency}
         onAccountDeleted={async () => {
           setActiveModal(null);
           if (onLogout) {
@@ -669,7 +695,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         }}
       />
       <FAQModal isOpen={activeModal === 'faq'} onClose={() => setActiveModal(null)} />
-      <NotificationModal isOpen={activeModal === 'notifications'} onClose={() => setActiveModal(null)} member={member} />
+      <NotificationModal isOpen={activeModal === 'notifications'} onClose={() => setActiveModal(null)} member={member} setMember={setMember} />
       <HistoryModal
         isOpen={activeModal === 'history'}
         onClose={() => setActiveModal(null)}

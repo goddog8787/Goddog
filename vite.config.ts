@@ -43,12 +43,6 @@ export default defineConfig(() => {
             if (id.includes('/lucide-react/')) {
               return 'vendor-icons';
             }
-            if (id.includes('/crypto-js/')) {
-              return 'vendor-crypto';
-            }
-            if (id.includes('/@google/genai/')) {
-              return 'vendor-genai';
-            }
           },
         },
       },

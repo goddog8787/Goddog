@@ -152,7 +152,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedPrintOrders, setSelectedPrintOrders] = useState<Order[]>([]);
   const [isPrintLabelModalOpen, setIsPrintLabelModalOpen] = useState(false);
 
-  // Logistics Settings State
+  // Logistics Settings State (NewebPay HashKey/HashIV are strictly managed via backend env vars, never stored in browser)
   const [logisticsSettings, setLogisticsSettings] = useState<LogisticsSettings>(() => {
     const saved = localStorage.getItem('printcore_logistics_settings');
     if (saved) {
@@ -161,8 +161,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         if (parsed && typeof parsed.senderAddress === 'string' && (parsed.senderAddress.includes('1-50') || parsed.senderAddress.includes('福樂村'))) {
           parsed.senderAddress = '台灣線上物流集貨中心';
         }
-        if (parsed && parsed.newebpayLogisticsHashKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ') {
-          parsed.newebpayLogisticsHashKey = 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ';
+        if (parsed) {
+          delete parsed.newebpayLogisticsHashKey;
+          delete parsed.newebpayLogisticsHashIV;
         }
         return parsed;
       } catch (e) {
@@ -182,9 +183,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       dispatchLeadTime: '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
       packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
-      newebpayLogisticsMerchantId: 'MS1843364339',
-      newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ',
-      newebpayLogisticsHashIV: 'P4rlxhbNjCyiK5qC',
+      newebpayLogisticsMerchantId: '',
       newebpayLogisticsTestMode: false,
       senderName: '神狗勾 3D 台灣官方旗艦店',
       senderPhone: '0911-331-772',
@@ -194,42 +193,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   useEffect(() => {
     loadNewebPayConfigFromFirestore().then((remote) => {
-      if (remote && remote.newebpayLogisticsMerchantId) {
+      if (remote) {
+        const {
+          newebpayLogisticsHashKey: _omitKey,
+          newebpayLogisticsHashIV: _omitIv,
+          ...safeRemote
+        } = remote;
         setLogisticsSettings((prev) => ({
           ...prev,
-          ...remote,
-          newebpayLogisticsHashKey:
-            remote.newebpayLogisticsHashKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ'
-              ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ'
-              : remote.newebpayLogisticsHashKey,
+          ...safeRemote,
         }));
       }
     });
   }, []);
 
   const handleSaveLogisticsSettings = (newSettings: LogisticsSettings) => {
-    const rawKey = (newSettings.newebpayLogisticsHashKey || '').trim();
+    const {
+      newebpayLogisticsHashKey: _omitKey,
+      newebpayLogisticsHashIV: _omitIv,
+      ...safeSettings
+    } = newSettings;
     const cleaned: LogisticsSettings = {
-      ...newSettings,
-      newebpayLogisticsMerchantId: (newSettings.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
-      newebpayLogisticsHashKey:
-        rawKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ' : rawKey,
-      newebpayLogisticsHashIV: (newSettings.newebpayLogisticsHashIV || '').trim(),
+      ...safeSettings,
+      newebpayLogisticsMerchantId: (safeSettings.newebpayLogisticsMerchantId || '').trim(),
     };
     setLogisticsSettings(cleaned);
     localStorage.setItem('printcore_logistics_settings', JSON.stringify(cleaned));
     saveNewebPayConfigToFirestore(cleaned);
-    const apiBase = getBackendApiBase();
-    fetch(`${apiBase}/api/payment/config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        merchantId: cleaned.newebpayLogisticsMerchantId,
-        hashKey: cleaned.newebpayLogisticsHashKey,
-        hashIV: cleaned.newebpayLogisticsHashIV,
-        testMode: cleaned.newebpayLogisticsTestMode,
-      }),
-    }).catch(() => {});
   };
 
   const handleSaveProductEdit = (updated: FilamentProduct) => {

@@ -30,7 +30,7 @@ import { MemberProfile, LanguageCode } from '../../types';
 import { SEO } from '../../components/SEO';
 import { saveCustomerUserData, saveCustomerProfileDoc } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
-import { createClientNewebPayPeriodCheckout } from '../../lib/newebpayClient';
+import { requestServerNewebPayPeriodCheckout } from '../../lib/newebpayClient';
 
 interface SubscriptionPageProps {
   member: MemberProfile | null;
@@ -415,47 +415,23 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
       const email = member?.email || auth.currentUser?.email || 'customer@gmail.com';
       const uid = member?.id || auth.currentUser?.uid || '';
       const priceVal = Number(plan.price);
-      let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
+      const checkoutRes = await requestServerNewebPayPeriodCheckout({
+        planId: plan.id,
+        planName: plan.name,
+        price: priceVal,
+        days: Number(plan.durationDays) || 30,
+        email: email,
+        frequencyLabel: plan.frequencyLabel,
+        userId: uid,
+      });
 
-      try {
-        const res = await fetch('/api/payment/period-checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            planId: plan.id,
-            planName: plan.name,
-            price: priceVal,
-            days: Number(plan.durationDays) || 30,
-            email: email,
-            frequencyLabel: plan.frequencyLabel,
-            userId: uid,
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.success && data.formParams) {
-            checkoutData = data;
-          }
-        }
-      } catch (networkErr) {
-        console.warn('[Period Checkout] 切換至前端藍新加密模組:', networkErr);
-      }
+      const checkoutData =
+        checkoutRes.success && checkoutRes.url && checkoutRes.formParams
+          ? { url: checkoutRes.url, formParams: checkoutRes.formParams }
+          : null;
 
       if (!checkoutData) {
-        checkoutData = createClientNewebPayPeriodCheckout({
-          planId: plan.id,
-          planName: plan.name,
-          price: priceVal,
-          days: Number(plan.durationDays) || 30,
-          email: email,
-          frequencyLabel: plan.frequencyLabel,
-          userId: uid,
-        });
-      }
-
-      if (!checkoutData || !checkoutData.formParams) {
-        throw new Error('無法啟動藍新金流系統，請稍候重試');
+        throw new Error(checkoutRes.message || '無法啟動藍新定期定額金流系統，請稍候重試');
       }
 
       localStorage.setItem('printcore_pending_subscription', JSON.stringify({

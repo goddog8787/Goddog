@@ -1027,28 +1027,24 @@ export async function loadAIConfigFromFirestore(): Promise<{
   return null;
 }
 
-// Firestore NewebPay & Logistics Config Sync Helper (ensures goddog.space always uses the latest Admin HashKey / HashIV)
-const sanitizeNewebPayHashKey = (rawKey: unknown): string => {
-  const trimmed = String(rawKey || '').trim();
-  return trimmed === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ'
-    ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ'
-    : trimmed;
-};
-
+// Firestore Logistics Config Sync Helper (strictly excludes HashKey / HashIV secrets; those stay in server env vars only)
 export async function saveNewebPayConfigToFirestore(settings: Record<string, any>) {
   try {
+    const {
+      newebpayLogisticsHashKey: _omitKey,
+      newebpayLogisticsHashIV: _omitIv,
+      ...safeSettings
+    } = settings || {};
     const payload = {
-      ...settings,
-      newebpayLogisticsMerchantId: String(settings.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
-      newebpayLogisticsHashKey: sanitizeNewebPayHashKey(settings.newebpayLogisticsHashKey),
-      newebpayLogisticsHashIV: String(settings.newebpayLogisticsHashIV || '').trim(),
-      newebpayLogisticsTestMode: Boolean(settings.newebpayLogisticsTestMode),
+      ...safeSettings,
+      newebpayLogisticsMerchantId: String(safeSettings.newebpayLogisticsMerchantId || '').trim(),
+      newebpayLogisticsTestMode: Boolean(safeSettings.newebpayLogisticsTestMode),
       updatedAt: new Date().toISOString(),
     };
     await setDoc(doc(db, 'settings', 'logistics_config'), payload, { merge: true });
     return payload;
   } catch (error) {
-    console.warn('Firestore NewebPay config sync fallback:', error);
+    console.warn('Firestore logistics config sync fallback:', error);
     return null;
   }
 }
@@ -1059,12 +1055,11 @@ export async function loadNewebPayConfigFromFirestore(): Promise<Record<string, 
     if (snap.exists()) {
       const data = snap.data();
       if (data) {
-        const cleaned = {
-          ...data,
-          ...(data.newebpayLogisticsHashKey
-            ? { newebpayLogisticsHashKey: sanitizeNewebPayHashKey(data.newebpayLogisticsHashKey) }
-            : {}),
-        };
+        const {
+          newebpayLogisticsHashKey: _omitKey,
+          newebpayLogisticsHashIV: _omitIv,
+          ...cleaned
+        } = data;
         if (typeof window !== 'undefined') {
           localStorage.setItem('printcore_logistics_settings', JSON.stringify(cleaned));
         }

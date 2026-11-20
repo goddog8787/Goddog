@@ -1091,17 +1091,32 @@ export async function loadCustomerProfileDoc(
     const userDocRef = doc(db, 'users', cleanUid);
     const snap = await getDoc(userDocRef);
 
-    // Also check subcollection userData/profile in case extra fields were saved there
+    // Also check subcollection userData/profile and userData/settings in case extra fields were saved there
     let subProfile: any = null;
+    let subSettings: any = null;
     try {
-      const subSnap = await getDoc(doc(db, 'users', cleanUid, 'userData', 'profile'));
+      const [subSnap, settingsSnap] = await Promise.all([
+        getDoc(doc(db, 'users', cleanUid, 'userData', 'profile')),
+        getDoc(doc(db, 'users', cleanUid, 'userData', 'settings')),
+      ]);
       if (subSnap.exists() && subSnap.data()?.data) {
         subProfile = JSON.parse(subSnap.data().data);
+      }
+      if (settingsSnap.exists() && settingsSnap.data()?.data) {
+        subSettings = JSON.parse(settingsSnap.data().data);
       }
     } catch {}
 
     if (snap.exists() || subProfile) {
       const rootData = snap.exists() ? snap.data() : {};
+      const mergedSettings = {
+        orderNotif: true,
+        promoNotif: false,
+        ...(localCached?.settings || {}),
+        ...(subProfile?.settings || {}),
+        ...(rootData?.settings || {}),
+        ...(subSettings || {}),
+      };
       const merged = sanitizeCustomerProfile({
         ...(localCached || {}),
         ...(subProfile || {}),
@@ -1115,6 +1130,9 @@ export async function loadCustomerProfileDoc(
           fallbackUser?.displayName ||
           fallbackUser?.email?.split('@')[0] ||
           '創客會員',
+        phone: rootData.phone ?? subProfile?.phone ?? localCached?.phone ?? '',
+        birthday: rootData.birthday ?? subProfile?.birthday ?? localCached?.birthday ?? '',
+        settings: mergedSettings,
         tier: rootData.tier || subProfile?.tier || localCached?.tier || fallbackUser?.tier || 'Bronze',
         points:
           typeof rootData.points === 'number'

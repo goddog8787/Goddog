@@ -287,10 +287,10 @@ LINEPAY_CHANNEL_SECRET=你的ChannelSecret`;
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1">
             <span className="text-[11px] font-bold text-slate-500">商戶特店識別碼 Merchant ID</span>
             <div className="font-mono text-xs font-bold text-slate-800">
-              MS1843364339
+              由後端 NEWEBPAY_MERCHANT_ID 載入
             </div>
             <p className="text-[10px] text-slate-400 mt-1">
-              藍新 NewebPay 官方 Apple Pay 專屬特店識別碼
+              藍新 NewebPay 官方 Apple Pay 專屬特店識別碼（嚴格隔離於伺服器環境變數）
             </p>
           </div>
 

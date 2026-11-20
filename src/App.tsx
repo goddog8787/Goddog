@@ -2030,6 +2030,11 @@ export default function App() {
             isLoggedIn={isLoggedIn}
             onLogout={handleLogout}
             lang={lang}
+            onChangeLang={handleUpdateLang}
+            currency={currency}
+            onChangeCurrency={handleUpdateCurrency}
+            isDarkMode={isDarkMode}
+            onToggleDarkMode={toggleDarkMode}
             onLoginClick={() => setIsAuthOpen(true)} 
             onOpenTracking={(trk) => {
               if (trk && trk !== '77391829310' && !trk.includes('77391829310')) {

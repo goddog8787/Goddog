@@ -26,7 +26,7 @@ import {
 } from '../../types';
 import { formatPrice, translations, translateProductName, translateProduct } from '../../utils/i18n';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
-import { auth, loadNewebPayConfigFromFirestore } from '../../lib/firebase';
+import { auth } from '../../lib/firebase';
 import { 
   downloadOrderProofJSON, 
   downloadOrderProofPDF 
@@ -35,7 +35,7 @@ import { OrderCertificateModal } from './OrderCertificateModal';
 import { CvsStoreSelectorModal } from './CvsStoreSelectorModal';
 import { TrustCertModal } from './TrustCertModal';
 import { validateCoupon } from '../../utils/couponManager';
-import { createClientNewebPayCheckout, getActiveNewebPayCredentials } from '../../lib/newebpayClient';
+import { requestServerNewebPayCheckout } from '../../lib/newebpayClient';
 import { getBackendApiBase } from '../../lib/geminiClient';
 import { TaiwanAddressInput } from './TaiwanAddressInput';
 import { loadCustomerUserData, isMemberVipActive } from '../../lib/customerPersistence';
@@ -114,17 +114,42 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    let cancelled = false;
+    const uid = member?.id && !member.id.startsWith('guest') ? member.id : (auth.currentUser?.uid || 'guest');
+
+    const applyInvoicePref = (parsed: any) => {
+      if (cancelled || !parsed) return;
+      if (parsed?.invoiceType === 'cloud' || parsed?.invoiceType === 'mobile_barcode' || parsed?.invoiceType === 'tax_id') {
+        setInvoiceType(parsed.invoiceType);
+        setInvoiceCarrierValue(typeof parsed.invoiceCarrierValue === 'string' ? parsed.invoiceCarrierValue : '');
+      }
+    };
+
+    let hydratedFromLocal = false;
     try {
-      const uid = member?.id && !member.id.startsWith('guest') ? member.id : (auth.currentUser?.uid || 'guest');
       const savedPref = localStorage.getItem(`printcore_invoice_pref_${uid}`);
       if (savedPref) {
-        const parsed = JSON.parse(savedPref);
-        if (parsed?.invoiceType === 'cloud' || parsed?.invoiceType === 'mobile_barcode' || parsed?.invoiceType === 'tax_id') {
-          setInvoiceType(parsed.invoiceType);
-          setInvoiceCarrierValue(typeof parsed.invoiceCarrierValue === 'string' ? parsed.invoiceCarrierValue : '');
-        }
+        applyInvoicePref(JSON.parse(savedPref));
+        hydratedFromLocal = true;
       }
     } catch {}
+
+    if (!hydratedFromLocal && uid && uid !== 'guest') {
+      loadCustomerUserData(uid, 'invoice_pref')
+        .then((cloudPref) => {
+          if (!cancelled && cloudPref && typeof cloudPref === 'object') {
+            applyInvoicePref(cloudPref);
+            try {
+              localStorage.setItem(`printcore_invoice_pref_${uid}`, JSON.stringify(cloudPref));
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, member?.id]);
 
   // Payment gateway (default to credit_card)
@@ -378,13 +403,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   };
 
-  // Launch real NewebPay gateway form submit
+  // Launch real NewebPay gateway form submit (signed strictly by backend server)
   const triggerNewebPayCheckout = async (methodToUse: PaymentGateway = paymentGateway) => {
     setIsProcessing(true);
     try {
-      await loadNewebPayConfigFromFirestore().catch(() => null);
-      const activeCreds = getActiveNewebPayCredentials();
-
       const generatedOrderId = `GD${Date.now()}`;
       const ownerUid = (member?.id && !member.id.startsWith('guest')) ? member.id : (auth.currentUser?.uid || 'guest');
 
@@ -409,58 +431,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         invoiceCarrierValue,
       };
 
-      let checkoutData: { url: string; orderId?: string; formParams: Record<string, string> } | null = null;
+      const checkoutRes = await requestServerNewebPayCheckout({
+        orderId: generatedOrderId,
+        docId: `ord-${generatedOrderId}`,
+        returnFrom: 'checkout',
+        userId: ownerUid,
+        customerName: customerName || member?.name || '顧客',
+        amount: total,
+        email: customerEmail,
+        desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
+        paymentMethod: methodToUse,
+      });
 
-      try {
-        const apiBase = getBackendApiBase() || window.location.origin;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 1800);
-        const res = await fetch(`${apiBase}/api/payment/checkout`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            orderId: generatedOrderId,
-            docId: `ord-${generatedOrderId}`,
-            returnFrom: 'checkout',
-            userId: ownerUid,
-            customerName: customerName || member?.name || '顧客',
-            amount: total,
-            email: customerEmail,
-            desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
-            paymentMethod: methodToUse,
-            useSandbox: activeCreds.testMode,
-            merchantId: activeCreds.merchantId,
-            hashKey: activeCreds.hashKey,
-            hashIV: activeCreds.hashIV,
-            originUrl: window.location.origin,
-          }),
-        }).finally(() => clearTimeout(timer));
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.success && data.formParams) {
-            checkoutData = data;
-          }
-        }
-      } catch (networkErr) {
-        console.warn('[Checkout] 伺服器端結帳端點未啟動，自動切換至前端藍新金流加密模組:', networkErr);
-      }
+      const checkoutData =
+        checkoutRes.success && checkoutRes.url && checkoutRes.formParams
+          ? {
+              url: checkoutRes.url,
+              orderId: checkoutRes.orderId,
+              formParams: checkoutRes.formParams,
+            }
+          : null;
 
       if (!checkoutData) {
-        checkoutData = createClientNewebPayCheckout({
-          orderId: generatedOrderId,
-          docId: `ord-${generatedOrderId}`,
-          returnFrom: 'checkout',
-          amount: total,
-          email: customerEmail,
-          desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
-          paymentMethod: methodToUse,
-          merchantId: activeCreds.merchantId,
-          hashKey: activeCreds.hashKey,
-          hashIV: activeCreds.hashIV,
-          testMode: activeCreds.testMode,
-        });
+        setFormError(checkoutRes.message || '無法啟動藍新金流，請確認後端伺服器金流環境變數設定。');
+        return;
       }
 
       if (checkoutData && checkoutData.formParams) {

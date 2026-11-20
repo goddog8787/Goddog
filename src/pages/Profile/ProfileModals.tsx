@@ -7,6 +7,9 @@ import {
   deleteSingleCustomerRecentlyViewed,
   getStoredRecentlyViewedSync,
   saveCustomerOrderRecord,
+  saveCustomerProfileDoc,
+  loadCustomerProfileDoc,
+  saveStoredCustomerSession,
   isMemberVipActive,
 } from '../../lib/customerPersistence';
 import { isMockOrder, getGenuineUserOrders } from '../../lib/orderVerification';
@@ -30,18 +33,17 @@ import {
   bindReferralCodeForUser,
   processReferralOrderReward,
   deleteCustomerAccountAndData,
-  loadNewebPayConfigFromFirestore,
 } from '../../lib/firebase';
 import { TaiwanAddressInput } from '../../components/Storefront/TaiwanAddressInput';
 import { getStoreCoupons, validateCoupon } from '../../utils/couponManager';
-import { createClientNewebPayCheckout, getActiveNewebPayCredentials } from '../../lib/newebpayClient';
+import { requestServerNewebPayCheckout } from '../../lib/newebpayClient';
 import { getBackendApiBase } from '../../lib/geminiClient';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 import {
   X,
   MapPin,
@@ -76,6 +78,16 @@ import {
   Sparkles,
   RefreshCw,
   MessageSquare,
+  User,
+  Phone,
+  Mail,
+  Sun,
+  Moon,
+  Globe,
+  Coins,
+  AlertTriangle,
+  Database,
+  Receipt,
 } from 'lucide-react';
 import { OrderCertificateModal } from '../../components/Storefront/OrderCertificateModal';
 import { LogisticsTimelineModal } from '../../components/Storefront/LogisticsTimelineModal';
@@ -442,8 +454,6 @@ export const OrderModal: React.FC<{
 
     setIsPayingId(rawOrder.id || origOrderNo);
     try {
-      await loadNewebPayConfigFromFirestore().catch(() => null);
-      const activeCreds = getActiveNewebPayCredentials();
       const freshOrderId = `GD${Date.now()}`;
       const customerEmail = rawOrder.customerEmail || member?.email || auth.currentUser?.email || '';
       const desc = Array.isArray(rawOrder.items) && rawOrder.items.length > 0
@@ -495,55 +505,26 @@ export const OrderModal: React.FC<{
       const orderDocId = rawOrder.id || `ord-${origOrderNo}`;
       const ownerUid = rawOrder.userId || member?.id || auth.currentUser?.uid || 'guest';
 
-      let checkoutData: { url: string; formParams: Record<string, string> } | null = null;
-      try {
-        const apiBase = getBackendApiBase() || window.location.origin;
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 1600);
-        const res = await fetch(`${apiBase}/api/payment/checkout`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            orderId: freshOrderId,
-            docId: orderDocId,
-            returnFrom: 'profile',
-            userId: ownerUid,
-            customerName: rawOrder.customerName || member?.name || '顧客',
-            amount: amt,
-            email: customerEmail,
-            desc,
-            paymentMethod: rawOrder.paymentGateway || 'credit_card',
-            useSandbox: activeCreds.testMode,
-            merchantId: activeCreds.merchantId,
-            hashKey: activeCreds.hashKey,
-            hashIV: activeCreds.hashIV,
-            originUrl: window.location.origin,
-          }),
-        }).finally(() => clearTimeout(timer));
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data?.success && data?.formParams) {
-            checkoutData = data;
-          }
-        }
-      } catch {}
+      const checkoutRes = await requestServerNewebPayCheckout({
+        orderId: freshOrderId,
+        docId: orderDocId,
+        returnFrom: 'profile',
+        userId: ownerUid,
+        customerName: rawOrder.customerName || member?.name || '顧客',
+        amount: amt,
+        email: customerEmail,
+        desc,
+        paymentMethod: rawOrder.paymentGateway || 'credit_card',
+      });
+
+      const checkoutData =
+        checkoutRes.success && checkoutRes.url && checkoutRes.formParams
+          ? { url: checkoutRes.url, formParams: checkoutRes.formParams }
+          : null;
 
       if (!checkoutData) {
-        checkoutData = createClientNewebPayCheckout({
-          orderId: freshOrderId,
-          docId: orderDocId,
-          returnFrom: 'profile',
-          amount: amt,
-          email: customerEmail,
-          desc,
-          paymentMethod: rawOrder.paymentGateway || 'credit_card',
-          merchantId: activeCreds.merchantId,
-          hashKey: activeCreds.hashKey,
-          hashIV: activeCreds.hashIV,
-          testMode: activeCreds.testMode,
-        });
+        showToast(checkoutRes.message || '無法啟動藍新金流，請確認後端伺服器金流環境變數設定。');
+        return;
       }
 
       if (checkoutData?.formParams) {
@@ -3105,39 +3086,281 @@ export const AchievementModal: React.FC<{
     </ModalWrapper>
   );
 };
+const isValidTaiwanTaxIdSetting = (taxId: string) => {
+  if (!/^\d{8}$/.test(taxId)) return false;
+  const weights = [1, 2, 1, 2, 1, 2, 4, 1];
+  let sum = 0;
+  for (let i = 0; i < 8; i++) {
+    const prod = Number(taxId[i]) * weights[i];
+    sum += Math.floor(prod / 10) + (prod % 10);
+  }
+  return sum % 5 === 0 || (taxId[6] === '7' && (sum + 1) % 5 === 0);
+};
+
 export const SettingsModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   member?: any;
   setMember?: (m: any) => void;
   onAccountDeleted?: () => Promise<void> | void;
-}> = ({ isOpen, onClose, member, setMember, onAccountDeleted }) => {
+  isDarkMode?: boolean;
+  onToggleDarkMode?: () => void;
+  lang?: LanguageCode;
+  onChangeLang?: (lang: LanguageCode) => void;
+  currency?: CurrencyCode;
+  onChangeCurrency?: (currency: CurrencyCode) => void;
+}> = ({
+  isOpen,
+  onClose,
+  member,
+  setMember,
+  onAccountDeleted,
+  isDarkMode = false,
+  onToggleDarkMode,
+  lang = 'zh-TW',
+  onChangeLang,
+  currency = 'TWD',
+  onChangeCurrency,
+}) => {
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  // Profile fields
+  const [displayName, setDisplayName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [birthday, setBirthday] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Default invoice carrier preference (shared with CheckoutModal)
+  const [invoiceType, setInvoiceType] = useState<'cloud' | 'mobile_barcode' | 'tax_id'>('cloud');
+  const [invoiceCarrierValue, setInvoiceCarrierValue] = useState('');
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+
+  // Cloud sync & cache states
+  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
+
+  // Security states
   const [isResetting, setIsResetting] = useState(false);
+  const [resetCooldown, setResetCooldown] = useState(0);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
   const orderNotif = member?.settings?.orderNotif ?? true;
   const promoNotif = member?.settings?.promoNotif ?? false;
 
-  useEffect(() => {
-    if (isOpen) {
-      setConfirmDeleteOpen(false);
-      setIsDeleting(false);
-    }
-  }, [isOpen]);
+  const currentUser = auth?.currentUser;
+  const providers = currentUser?.providerData || [];
+  const isGoogleOnlyUser =
+    providers.length > 0 && providers.every((p) => p.providerId === 'google.com');
+  const activeUid = member?.id && !String(member.id).startsWith('guest')
+    ? String(member.id)
+    : (currentUser?.uid || '');
 
-  const showToast = (text: string, ok: boolean = true) => {
+  const showToast = useCallback((text: string, ok: boolean = true) => {
     setToast({ ok, text });
-    setTimeout(() => setToast(null), 4000);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const t = window.setInterval(() => {
+      setResetCooldown((c) => (c > 1 ? c - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [resetCooldown]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    setConfirmDeleteOpen(false);
+    setDeleteConfirmText('');
+    setIsDeleting(false);
+    setDisplayName(member?.name || '');
+    setPhone(member?.phone || '');
+    setBirthday(member?.birthday || '');
+
+    // Load saved invoice preference (synced with CheckoutModal & cloud backup)
+    const uid = activeUid || 'guest';
+    let hydratedFromLocal = false;
+    try {
+      const rawInv = localStorage.getItem(`printcore_invoice_pref_${uid}`);
+      if (rawInv) {
+        const parsed = JSON.parse(rawInv);
+        if (parsed?.invoiceType === 'cloud' || parsed?.invoiceType === 'mobile_barcode' || parsed?.invoiceType === 'tax_id') {
+          setInvoiceType(parsed.invoiceType);
+          setInvoiceCarrierValue(parsed.invoiceCarrierValue || '');
+          hydratedFromLocal = true;
+        }
+      }
+    } catch {}
+
+    if (!hydratedFromLocal) {
+      setInvoiceType('cloud');
+      setInvoiceCarrierValue('');
+      if (activeUid) {
+        loadCustomerUserData(activeUid, 'invoice_pref')
+          .then((cloudPref) => {
+            if (cancelled || !cloudPref || typeof cloudPref !== 'object') return;
+            if (
+              cloudPref.invoiceType === 'cloud' ||
+              cloudPref.invoiceType === 'mobile_barcode' ||
+              cloudPref.invoiceType === 'tax_id'
+            ) {
+              setInvoiceType(cloudPref.invoiceType);
+              setInvoiceCarrierValue(typeof cloudPref.invoiceCarrierValue === 'string' ? cloudPref.invoiceCarrierValue : '');
+              try {
+                localStorage.setItem(`printcore_invoice_pref_${activeUid}`, JSON.stringify(cloudPref));
+              } catch {}
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, member?.name, member?.phone, member?.birthday, activeUid]);
+
+  const persistUpdatedMember = useCallback(
+    async (updated: any, extraSettingsToSync?: Record<string, any>) => {
+      if (setMember) {
+        setMember(updated);
+      }
+      try {
+        localStorage.setItem('printcore_member', JSON.stringify(updated));
+        if (updated?.id && !String(updated.id).startsWith('guest')) {
+          localStorage.setItem(`printcore_user_profile_${updated.id}`, JSON.stringify(updated));
+          saveStoredCustomerSession({
+            id: updated.id,
+            name: updated.name || '',
+            email: updated.email || '',
+            tier: updated.tier || 'Bronze',
+            points: typeof updated.points === 'number' ? updated.points : 0,
+            totalSpent: typeof updated.totalSpent === 'number' ? updated.totalSpent : 0,
+            isLoggedIn: true,
+          });
+        }
+      } catch {}
+
+      if (updated?.id && !String(updated.id).startsWith('guest')) {
+        const tasks: Promise<any>[] = [
+          saveCustomerProfileDoc(updated.id, updated),
+          saveUserProfileToFirestore(updated),
+        ];
+        if (extraSettingsToSync) {
+          tasks.push(saveCustomerUserData(updated.id, 'settings', extraSettingsToSync));
+        }
+        await Promise.allSettled(tasks);
+      }
+    },
+    [setMember]
+  );
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!member || isSavingProfile) return;
+
+    const cleanName = displayName.trim();
+    const cleanPhone = phone.trim();
+    const cleanBirthday = birthday.trim();
+
+    if (!cleanName || cleanName.length < 1) {
+      showToast('請輸入有效的會員暱稱。', false);
+      return;
+    }
+
+    if (cleanPhone) {
+      const digits = cleanPhone.replace(/\D/g, '');
+      if (digits.length < 8 || digits.length > 15) {
+        showToast('聯絡電話格式有誤，請輸入 8～15 碼有效號碼（例：0912345678）。', false);
+        return;
+      }
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const updated = {
+        ...member,
+        name: cleanName,
+        phone: cleanPhone,
+        birthday: cleanBirthday,
+      };
+      await persistUpdatedMember(updated);
+
+      if (auth?.currentUser && cleanName !== auth.currentUser.displayName) {
+        await updateProfile(auth.currentUser, { displayName: cleanName }).catch(() => {});
+      }
+
+      showToast('個人基本資料已儲存並同步至雲端！', true);
+    } catch {
+      showToast('儲存個人資料時發生異常，請稍後再試。', false);
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
-  const toggleSetting = async (key: string) => {
+  const handleSaveInvoicePref = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSavingInvoice) return;
+
+    const normalizedCarrier = invoiceCarrierValue.trim().toUpperCase();
+    if (invoiceType === 'mobile_barcode') {
+      if (!/^\/[0-9A-Z.+\-]{7}$/.test(normalizedCarrier)) {
+        showToast('手機條碼載具須為「/」開頭共 8 碼（例如：/AB1234.）。', false);
+        return;
+      }
+    } else if (invoiceType === 'tax_id') {
+      if (!isValidTaiwanTaxIdSetting(normalizedCarrier)) {
+        showToast('公司統一編號格式錯誤，請輸入正確的 8 碼營利事業統一編號。', false);
+        return;
+      }
+    }
+
+    setIsSavingInvoice(true);
+    try {
+      const uid = activeUid || 'guest';
+      const payload = {
+        invoiceType,
+        invoiceCarrierValue: invoiceType === 'cloud' ? '' : normalizedCarrier,
+      };
+      localStorage.setItem(`printcore_invoice_pref_${uid}`, JSON.stringify(payload));
+      if (activeUid) {
+        await saveCustomerUserData(activeUid, 'invoice_pref', payload).catch(() => {});
+      }
+      setInvoiceCarrierValue(payload.invoiceCarrierValue);
+      showToast('預設電子發票設定已儲存，下次結帳將自動帶入！', true);
+    } catch {
+      showToast('儲存發票設定失敗，請稍後再試。', false);
+    } finally {
+      setIsSavingInvoice(false);
+    }
+  };
+
+  const toggleSetting = async (key: 'orderNotif' | 'promoNotif') => {
     if (!setMember || !member) return;
     const currentSettings = member.settings || {};
     const currentValue =
-      currentSettings[key] !== undefined ? currentSettings[key] : key === 'orderNotif';
+      currentSettings[key] !== undefined ? Boolean(currentSettings[key]) : key === 'orderNotif';
     const nextSettings = {
+      orderNotif: currentSettings.orderNotif ?? true,
+      promoNotif: currentSettings.promoNotif ?? false,
       ...currentSettings,
       [key]: !currentValue,
     };
@@ -3145,39 +3368,73 @@ export const SettingsModal: React.FC<{
       ...member,
       settings: nextSettings,
     };
-    setMember(updated);
-    try {
-      localStorage.setItem('printcore_member', JSON.stringify(updated));
-    } catch {}
-    if (updated.id && updated.id !== 'guest') {
-      saveCustomerUserData(updated.id, 'settings', nextSettings).catch(() => {});
-      saveUserProfileToFirestore(updated).catch(() => {});
-    }
+    await persistUpdatedMember(updated, nextSettings);
     showToast(
       `已${!currentValue ? '開啟' : '關閉'}「${key === 'orderNotif' ? '訂單狀態通知' : '最新優惠與活動'}」並同步至雲端`,
       true
     );
   };
 
+  const handleSyncCloudProfile = async () => {
+    if (!activeUid || isSyncingCloud) {
+      showToast('請先登入會員帳號後再進行雲端同步。', false);
+      return;
+    }
+    setIsSyncingCloud(true);
+    try {
+      const fresh = await loadCustomerProfileDoc(activeUid, {
+        email: member?.email || currentUser?.email,
+        displayName: member?.name || currentUser?.displayName,
+        points: member?.points,
+        tier: member?.tier,
+      });
+      if (fresh && setMember) {
+        setMember(fresh);
+        setDisplayName(fresh.name || '');
+        setPhone(fresh.phone || '');
+        setBirthday(fresh.birthday || '');
+        showToast('已從雲端同步最新會員點數、等級與設定！', true);
+      } else {
+        showToast('目前資料已是最新狀態。', true);
+      }
+    } catch {
+      showToast('雲端同步暫時無法連線，請稍後再試。', false);
+    } finally {
+      setIsSyncingCloud(false);
+    }
+  };
+
+  const handleClearLocalCache = async () => {
+    if (isClearingCache) return;
+    setIsClearingCache(true);
+    try {
+      if (activeUid) {
+        await clearCustomerRecentlyViewed(activeUid).catch(() => {});
+      }
+      try {
+        localStorage.removeItem('printcore_recently_viewed');
+        localStorage.removeItem('printcore_saved_tracking_numbers');
+      } catch {}
+      showToast('已清除本機瀏覽暫存紀錄（保留登入狀態與購物車）。', true);
+    } catch {
+      showToast('清除快取失敗，請稍後再試。', false);
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
+
   const handlePasswordReset = async () => {
-    if (isResetting) return;
+    if (isResetting || resetCooldown > 0) return;
 
-    const currentUser = auth?.currentUser;
     const targetEmail = (currentUser?.email || member?.email || '').trim();
-
     if (!targetEmail) {
       showToast('無法取得您的註冊信箱，請重新登入後再試。', false);
       return;
     }
 
-    // Check if logged in strictly via Google OAuth (no password provider attached)
-    const providers = currentUser?.providerData || [];
-    const isGoogleOnlyUser =
-      providers.length > 0 && providers.every((p) => p.providerId === 'google.com');
-
     if (isGoogleOnlyUser) {
       showToast(
-        '此帳號為 Google 快速登入（無獨立密碼），如需修改密碼請直接前往您的 Google 帳戶安全性設定變更。',
+        '此帳號為 Google 快速登入（無獨立密碼），如需修改密碼請前往 Google 帳戶安全性設定變更。',
         true
       );
       return;
@@ -3186,14 +3443,16 @@ export const SettingsModal: React.FC<{
     setIsResetting(true);
     try {
       await sendPasswordResetEmail(auth, targetEmail);
+      setResetCooldown(60);
       showToast(`密碼重設信已發送至 ${targetEmail}，請至收件匣（含垃圾郵件匣）查收！`, true);
     } catch (error: any) {
       console.warn('Password reset info:', error?.code, error?.message);
       if (error?.code === 'auth/too-many-requests') {
-        showToast('發送次數過於頻繁，請稍候幾分鐘再試。', false);
+        setResetCooldown(60);
+        showToast('發送次數過於頻繁，請稍候 1 分鐘再試。', false);
       } else if (error?.code === 'auth/user-not-found' || error?.code === 'auth/invalid-email') {
         showToast(
-          '此測試／本機帳號尚未註冊於 Firebase 密碼系統，請改用信箱重新註冊或使用 Google 帳號登入。',
+          '此本機帳號尚未註冊於 Firebase 密碼系統，請改用信箱重新註冊或使用 Google 帳號登入。',
           false
         );
       } else {
@@ -3206,11 +3465,15 @@ export const SettingsModal: React.FC<{
 
   const handleConfirmDeleteAccount = async () => {
     if (isDeleting) return;
+    if (deleteConfirmText.trim() !== '刪除帳號') {
+      showToast('請完整輸入「刪除帳號」四字以確認永久刪除。', false);
+      return;
+    }
     setIsDeleting(true);
     try {
       const res = await deleteCustomerAccountAndData(member?.id);
       if (res.requiresRecentLogin) {
-        showToast('雲端會員檔案已清除；若要徹底註銷 Google 驗證憑證，下次登入後可再次執行。', true);
+        showToast('雲端會員檔案已清除；若要徹底註銷登入憑證，重新登入後可再次執行。', true);
       } else {
         showToast('帳號與所有個人資料已成功清除。', true);
       }
@@ -3228,7 +3491,7 @@ export const SettingsModal: React.FC<{
   };
 
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="系統設定">
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="帳號與系統設定">
       <div className="space-y-6">
         <AnimatePresence>
           {toast && (
@@ -3238,23 +3501,283 @@ export const SettingsModal: React.FC<{
               exit={{ opacity: 0, y: -8 }}
               className={`p-3.5 rounded-2xl text-xs font-bold flex items-start gap-2 border shadow-sm ${
                 toast.ok
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                  : 'bg-rose-50 border-rose-200 text-rose-700'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                  : 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-200'
               }`}
             >
-              <Check className="w-4 h-4 shrink-0 mt-0.5" />
+              {toast.ok ? (
+                <Check className="w-4 h-4 shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              )}
               <span className="leading-relaxed">{toast.text}</span>
             </motion.div>
           )}
         </AnimatePresence>
 
+        {/* 1. 個人基本資料 */}
         <div>
-          <h4 className="font-bold text-slate-900 text-sm mb-3 px-1">通知偏好</h4>
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+          <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3 px-1 flex items-center gap-2">
+            <User className="w-4 h-4 text-indigo-500" />
+            個人基本資料
+          </h4>
+          <form
+            onSubmit={handleSaveProfile}
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3.5"
+          >
+            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-slate-400">登入帳號信箱</p>
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate flex items-center gap-1.5 mt-0.5">
+                  <Mail className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  {member?.email || currentUser?.email || '未綁定信箱'}
+                </p>
+              </div>
+              <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800 shrink-0">
+                {isGoogleOnlyUser ? 'Google 安全登入' : 'Email 密碼登入'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  創客暱稱 / 姓名
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  maxLength={32}
+                  placeholder="請輸入您的顯示名稱"
+                  className="w-full px-3 py-2 text-xs font-medium rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  聯絡手機
+                </label>
+                <div className="relative">
+                  <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    maxLength={16}
+                    placeholder="例如：0912345678"
+                    className="w-full pl-8 pr-3 py-2 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                生日（選填，用於生日會員禮核對）
+              </label>
+              <input
+                type="date"
+                value={birthday}
+                onChange={(e) => setBirthday(e.target.value)}
+                className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSavingProfile}
+              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isSavingProfile ? '儲存同步中...' : '儲存個人資料'}
+            </button>
+          </form>
+        </div>
+
+        {/* 2. 常用電子發票設定 */}
+        <div>
+          <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3 px-1 flex items-center gap-2">
+            <Receipt className="w-4 h-4 text-indigo-500" />
+            預設電子發票載具
+          </h4>
+          <form
+            onSubmit={handleSaveInvoicePref}
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3"
+          >
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'cloud' as const, label: '會員雲端載具' },
+                { id: 'mobile_barcode' as const, label: '手機條碼載具' },
+                { id: 'tax_id' as const, label: '公司統一編號' },
+              ].map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setInvoiceType(opt.id);
+                    if (opt.id === 'cloud') setInvoiceCarrierValue('');
+                  }}
+                  className={`py-2 px-2 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
+                    invoiceType === opt.id
+                      ? 'bg-indigo-50 dark:bg-indigo-950/70 border-indigo-500 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {invoiceType === 'mobile_barcode' && (
+              <input
+                type="text"
+                value={invoiceCarrierValue}
+                onChange={(e) => setInvoiceCarrierValue(e.target.value.toUpperCase())}
+                maxLength={8}
+                placeholder="請輸入 8 碼手機條碼（例如：/AB1234.）"
+                className="w-full px-3 py-2 text-xs font-mono uppercase rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              />
+            )}
+
+            {invoiceType === 'tax_id' && (
+              <input
+                type="text"
+                value={invoiceCarrierValue}
+                onChange={(e) => setInvoiceCarrierValue(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                maxLength={8}
+                placeholder="請輸入 8 碼公司統一編號"
+                className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              />
+            )}
+
+            <button
+              type="submit"
+              disabled={isSavingInvoice}
+              className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isSavingInvoice ? '儲存中...' : '儲存預設發票方式'}
+            </button>
+          </form>
+        </div>
+
+        {/* 3. 外觀與顯示偏好 */}
+        <div>
+          <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3 px-1 flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-indigo-500" />
+            外觀與顯示偏好
+          </h4>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+            {onToggleDarkMode && (
+              <div className="p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  {isDarkMode ? (
+                    <Moon className="w-4 h-4 text-indigo-400 shrink-0" />
+                  ) : (
+                    <Sun className="w-4 h-4 text-amber-500 shrink-0" />
+                  )}
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">深色模式</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {isDarkMode ? '目前已開啟深色護眼主題' : '目前已開啟明亮日間主題'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isDarkMode}
+                  onClick={() => {
+                    onToggleDarkMode();
+                    showToast(`已切換為${!isDarkMode ? '深色' : '淺色'}外觀主題`, true);
+                  }}
+                  className={`w-12 h-7 rounded-full flex items-center px-1 cursor-pointer transition-colors shrink-0 ${
+                    isDarkMode ? 'bg-indigo-500 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'
+                  }`}
+                >
+                  <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm" />
+                </button>
+              </div>
+            )}
+
+            {onChangeLang && (
+              <div className="p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Globe className="w-4 h-4 text-sky-500 shrink-0" />
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">顯示語言</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">切換商城介面語系</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                  {(
+                    [
+                      { code: 'zh-TW', label: '繁中' },
+                      { code: 'en', label: 'EN' },
+                      { code: 'ja', label: '日本語' },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => {
+                        onChangeLang(item.code);
+                        showToast(`介面語言已切換為 ${item.label}`, true);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                        lang === item.code
+                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {onChangeCurrency && (
+              <div className="p-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Coins className="w-4 h-4 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="font-bold text-slate-900 dark:text-white text-sm">計價幣別</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">切換商品價格參考幣別</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                  {(['TWD', 'USD', 'JPY'] as const).map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => {
+                        onChangeCurrency(code);
+                        showToast(`顯示幣別已切換為 ${code}`, true);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                        currency === code
+                          ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {code}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 4. 通知偏好 */}
+        <div>
+          <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3 px-1 flex items-center gap-2">
+            <Bell className="w-4 h-4 text-indigo-500" />
+            通知偏好
+          </h4>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
             <div className="p-4 flex items-center justify-between gap-3">
               <div>
-                <p className="font-bold text-slate-900 text-sm">訂單狀態通知</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">出貨與到貨時發送 Email</p>
+                <p className="font-bold text-slate-900 dark:text-white text-sm">訂單狀態通知</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">出貨、配達與超商取件時發送通知</p>
               </div>
               <button
                 type="button"
@@ -3262,7 +3785,7 @@ export const SettingsModal: React.FC<{
                 aria-checked={orderNotif}
                 onClick={() => toggleSetting('orderNotif')}
                 className={`w-12 h-7 rounded-full flex items-center px-1 cursor-pointer transition-colors shrink-0 ${
-                  orderNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 justify-start'
+                  orderNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'
                 }`}
               >
                 <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm" />
@@ -3270,8 +3793,8 @@ export const SettingsModal: React.FC<{
             </div>
             <div className="p-4 flex items-center justify-between gap-3">
               <div>
-                <p className="font-bold text-slate-900 text-sm">最新優惠與活動</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">接收限時特價與折價券資訊</p>
+                <p className="font-bold text-slate-900 dark:text-white text-sm">最新優惠與活動</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">接收限時特價與會員折價券資訊</p>
               </div>
               <button
                 type="button"
@@ -3279,7 +3802,7 @@ export const SettingsModal: React.FC<{
                 aria-checked={promoNotif}
                 onClick={() => toggleSetting('promoNotif')}
                 className={`w-12 h-7 rounded-full flex items-center px-1 cursor-pointer transition-colors shrink-0 ${
-                  promoNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 justify-start'
+                  promoNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'
                 }`}
               >
                 <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm" />
@@ -3288,54 +3811,132 @@ export const SettingsModal: React.FC<{
           </div>
         </div>
 
+        {/* 5. 資料同步與快取管理 */}
         <div>
-          <h4 className="font-bold text-slate-900 text-sm mb-3 px-1">帳號安全</h4>
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
+          <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3 px-1 flex items-center gap-2">
+            <Database className="w-4 h-4 text-indigo-500" />
+            資料同步與快取
+          </h4>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
             <button
               type="button"
-              onClick={handlePasswordReset}
-              disabled={isResetting}
-              className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors text-left group disabled:opacity-50 cursor-pointer"
+              onClick={handleSyncCloudProfile}
+              disabled={isSyncingCloud}
+              className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left group disabled:opacity-50 cursor-pointer"
             >
               <div>
-                <span className="font-bold text-slate-900 text-sm block">
-                  {isResetting ? '正在發送重設連結...' : '寄送更改密碼連結'}
+                <span className="font-bold text-slate-900 dark:text-white text-sm block">
+                  {isSyncingCloud ? '正在同步雲端資料...' : '重新同步雲端會員資料'}
                 </span>
-                {member?.email && (
-                  <span className="text-[11px] text-slate-400">將寄送至 {member.email}</span>
-                )}
+                <span className="text-[11px] text-slate-400">即時刷新狗勾幣點數、VIP 狀態與個人設定</span>
               </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors shrink-0" />
+              <RefreshCw
+                className={`w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0 ${
+                  isSyncingCloud ? 'animate-spin text-indigo-500' : ''
+                }`}
+              />
             </button>
+
+            <button
+              type="button"
+              onClick={handleClearLocalCache}
+              disabled={isClearingCache}
+              className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left group disabled:opacity-50 cursor-pointer"
+            >
+              <div>
+                <span className="font-bold text-slate-900 dark:text-white text-sm block">
+                  {isClearingCache ? '正在清除暫存...' : '清除本機瀏覽暫存'}
+                </span>
+                <span className="text-[11px] text-slate-400">清除最近瀏覽與查詢紀錄（保留登入狀態與購物車）</span>
+              </div>
+              <Trash2 className="w-4 h-4 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors shrink-0" />
+            </button>
+          </div>
+        </div>
+
+        {/* 6. 帳號安全 */}
+        <div>
+          <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-3 px-1 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-indigo-500" />
+            帳號安全
+          </h4>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+            {isGoogleOnlyUser ? (
+              <div className="p-4 flex items-start justify-between gap-3">
+                <div>
+                  <span className="font-bold text-slate-900 dark:text-white text-sm block">
+                    Google 帳號安全保護中
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block leading-relaxed">
+                    您使用 Google 快速登入（無獨立商城密碼），密碼與兩步驟驗證皆由 Google 帳戶統一管理。
+                  </span>
+                </div>
+                <Lock className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handlePasswordReset}
+                disabled={isResetting || resetCooldown > 0}
+                className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-left group disabled:opacity-50 cursor-pointer"
+              >
+                <div>
+                  <span className="font-bold text-slate-900 dark:text-white text-sm block">
+                    {isResetting
+                      ? '正在發送重設連結...'
+                      : resetCooldown > 0
+                      ? `已寄出重設信（${resetCooldown} 秒後可重試）`
+                      : '寄送更改密碼連結'}
+                  </span>
+                  {member?.email && (
+                    <span className="text-[11px] text-slate-400">將寄送至 {member.email}</span>
+                  )}
+                </div>
+                <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-200 transition-colors shrink-0" />
+              </button>
+            )}
 
             {!confirmDeleteOpen ? (
               <button
                 type="button"
                 onClick={() => setConfirmDeleteOpen(true)}
-                className="w-full p-4 flex items-center justify-between hover:bg-rose-50 transition-colors text-left group cursor-pointer"
+                className="w-full p-4 flex items-center justify-between hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors text-left group cursor-pointer"
               >
-                <span className="font-bold text-rose-600 text-sm">刪除帳號</span>
+                <div>
+                  <span className="font-bold text-rose-600 dark:text-rose-400 text-sm block">刪除帳號</span>
+                  <span className="text-[11px] text-slate-400">永久清除會員資料、地址與雲端紀錄</span>
+                </div>
                 <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-rose-500 transition-colors shrink-0" />
               </button>
             ) : (
-              <div className="p-4 bg-rose-50/90 space-y-3">
-                <p className="text-xs font-bold text-rose-800 leading-relaxed">
-                  確定要永久刪除帳號嗎？此動作將清除您的會員檔案、常用地址、購物車與通知紀錄，且無法復原。
+              <div className="p-4 bg-rose-50/90 dark:bg-rose-950/40 space-y-3">
+                <p className="text-xs font-bold text-rose-800 dark:text-rose-200 leading-relaxed">
+                  確定要永久刪除帳號嗎？此動作將清除您的會員檔案、常用地址、購物車與通知紀錄，且無法復原。請在下方輸入「刪除帳號」以確認：
                 </p>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="請輸入：刪除帳號"
+                  className="w-full px-3 py-2 text-xs font-bold rounded-xl bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                />
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setConfirmDeleteOpen(false)}
+                    onClick={() => {
+                      setConfirmDeleteOpen(false);
+                      setDeleteConfirmText('');
+                    }}
                     disabled={isDeleting}
-                    className="flex-1 py-2.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer"
+                    className="flex-1 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
                   >
                     取消保留
                   </button>
                   <button
                     type="button"
                     onClick={handleConfirmDeleteAccount}
-                    disabled={isDeleting}
-                    className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl disabled:opacity-50 cursor-pointer"
+                    disabled={isDeleting || deleteConfirmText.trim() !== '刪除帳號'}
+                    className="flex-1 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl disabled:opacity-40 cursor-pointer"
                   >
                     {isDeleting ? '正在清除資料...' : '確認永久刪除'}
                   </button>
@@ -3364,13 +3965,14 @@ export const FAQModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ i
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="常見問題 (FAQ)">
       <div className="space-y-3">
         {faqs.map((faq, i) => (
-          <div key={i} className="bg-white rounded-2xl border border-slate-200 overflow-hidden transition-shadow hover:shadow-sm">
+          <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden transition-shadow hover:shadow-sm">
             <button 
+              type="button"
               onClick={() => setOpenIdx(openIdx === i ? null : i)} 
-              className="w-full text-left p-4 font-bold text-slate-900 flex justify-between items-center bg-white"
+              className="w-full text-left p-4 font-bold text-slate-900 dark:text-white flex justify-between items-center bg-white dark:bg-slate-900 cursor-pointer"
             >
-              <span className="pr-4">{faq.q}</span>
-              <ChevronDown className={`w-5 h-5 shrink-0 transition-transform duration-300 ${openIdx === i ? 'rotate-180 text-indigo-600' : 'text-slate-400'}`} />
+              <span className="pr-4 text-sm">{faq.q}</span>
+              <ChevronDown className={`w-5 h-5 shrink-0 transition-transform duration-300 ${openIdx === i ? 'rotate-180 text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
             </button>
             <AnimatePresence>
               {openIdx === i && (
@@ -3380,7 +3982,7 @@ export const FAQModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ i
                   exit={{ height: 0, opacity: 0 }}
                   className="overflow-hidden"
                 >
-                  <div className="p-4 pt-0 text-sm text-slate-600 leading-relaxed border-t border-slate-50 mt-1">
+                  <div className="p-4 pt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed border-t border-slate-100 dark:border-slate-800">
                     {faq.a}
                   </div>
                 </motion.div>
@@ -3390,17 +3992,21 @@ export const FAQModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ i
         ))}
       </div>
       
-      <div className="mt-8 p-4 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-start gap-3">
-        <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center shrink-0">
-          <Bell className="w-5 h-5 text-indigo-600" />
+      <div className="mt-6 p-4 bg-indigo-50 dark:bg-indigo-950/50 rounded-2xl border border-indigo-100 dark:border-indigo-900 flex items-start gap-3">
+        <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/70 rounded-full flex items-center justify-center shrink-0">
+          <Bell className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
         </div>
         <div>
-          <h5 className="font-bold text-indigo-900 text-sm mb-1">還有其他問題嗎？</h5>
-          <p className="text-xs text-indigo-700/80 leading-relaxed mb-3">如果您在這裡找不到解答，歡迎隨時透過客服管道與我們聯繫，我們將盡快協助您。</p>
-          <button onClick={() => {
-            onClose();
-            navigate('/contact');
-          }} className="text-xs font-bold bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+          <h5 className="font-bold text-indigo-900 dark:text-indigo-100 text-sm mb-1">還有其他問題嗎？</h5>
+          <p className="text-xs text-indigo-700/80 dark:text-indigo-200/80 leading-relaxed mb-3">如果您在這裡找不到解答，歡迎隨時透過客服管道與我們聯繫，我們將盡快協助您。</p>
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              navigate('/contact');
+            }}
+            className="text-xs font-bold bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
             前往聯絡客服
           </button>
         </div>
@@ -3409,12 +4015,56 @@ export const FAQModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ i
   );
 };
 
-export const NotificationModal: React.FC<{ isOpen: boolean; onClose: () => void; member?: any }> = ({ isOpen, onClose, member }) => {
+export const NotificationModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  member?: any;
+  setMember?: (m: any) => void;
+}> = ({ isOpen, onClose, member, setMember }) => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const markedReadRef = useRef(false);
+
+  const orderNotif = member?.settings?.orderNotif ?? true;
+  const promoNotif = member?.settings?.promoNotif ?? false;
+
+  const toggleNotifPref = async (key: 'orderNotif' | 'promoNotif') => {
+    if (!setMember || !member) return;
+    const currentSettings = member.settings || {};
+    const currentValue =
+      currentSettings[key] !== undefined ? Boolean(currentSettings[key]) : key === 'orderNotif';
+    const nextSettings = {
+      orderNotif: currentSettings.orderNotif ?? true,
+      promoNotif: currentSettings.promoNotif ?? false,
+      ...currentSettings,
+      [key]: !currentValue,
+    };
+    const updated = {
+      ...member,
+      settings: nextSettings,
+    };
+    setMember(updated);
+    try {
+      localStorage.setItem('printcore_member', JSON.stringify(updated));
+      if (updated.id && !String(updated.id).startsWith('guest')) {
+        localStorage.setItem(`printcore_user_profile_${updated.id}`, JSON.stringify(updated));
+        await Promise.allSettled([
+          saveCustomerUserData(updated.id, 'settings', nextSettings),
+          saveCustomerProfileDoc(updated.id, updated),
+          saveUserProfileToFirestore(updated),
+        ]);
+      }
+    } catch {}
+    setStatusNotice(`已${!currentValue ? '開啟' : '關閉'}「${key === 'orderNotif' ? '訂單狀態通知' : '優惠活動通知'}」`);
+    window.setTimeout(() => setStatusNotice(null), 2500);
+  };
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      markedReadRef.current = false;
+      return;
+    }
     if (!member?.id || member.id === 'guest') {
       setNotifications([]);
       setLoading(false);
@@ -3451,62 +4101,134 @@ export const NotificationModal: React.FC<{ isOpen: boolean; onClose: () => void;
     };
   }, [isOpen, member?.id]);
 
-  const markAllAsRead = async () => {
-    if (!member?.id || member.id === 'guest') return;
+  useEffect(() => {
+    if (!isOpen || markedReadRef.current || !member?.id || member.id === 'guest') return;
     const unread = notifications.filter((n) => !n.read);
     if (unread.length === 0) return;
-    try {
-      const { db } = await import('../../lib/firebase');
-      const { writeBatch, doc } = await import('firebase/firestore');
-      const batch = writeBatch(db);
-      unread.forEach((n) => {
-        batch.update(doc(db, 'users', member.id, 'notifications', n.id), { read: true });
-      });
-      await batch.commit();
-    } catch (e) {
-      console.warn(e);
-    }
-  };
 
-  useEffect(() => {
-    if (isOpen && notifications.some((n) => !n.read)) {
-      markAllAsRead();
-    }
-  }, [isOpen, notifications]);
+    markedReadRef.current = true;
+    (async () => {
+      try {
+        const { db } = await import('../../lib/firebase');
+        const { writeBatch, doc } = await import('firebase/firestore');
+        const batch = writeBatch(db);
+        unread.forEach((n) => {
+          batch.update(doc(db, 'users', member.id, 'notifications', n.id), { read: true });
+        });
+        await batch.commit();
+      } catch (e) {
+        console.warn(e);
+      }
+    })();
+  }, [isOpen, notifications, member?.id]);
 
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="系統通知">
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="通知設定與系統訊息">
       <div className="space-y-4">
-        {loading ? (
-          <div className="p-8 text-center text-slate-400">載入中...</div>
-        ) : notifications.length === 0 ? (
-          <div className="p-12 flex flex-col items-center justify-center text-center bg-slate-50 rounded-3xl border border-slate-100">
-            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
-               <Bell className="w-8 h-8 text-slate-300" />
-            </div>
-            <h3 className="font-bold text-slate-600">目前沒有新通知</h3>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {notifications.map((n, idx) => (
-              <div key={n.id || idx} className={`p-4 rounded-2xl border ${n.read ? 'bg-white border-slate-100' : 'bg-indigo-50 border-indigo-100'}`}>
-                <div className="flex items-start gap-3">
-                   <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${n.read ? 'bg-slate-100 text-slate-400' : 'bg-indigo-100 text-indigo-600'}`}>
-                     <Bell className="w-5 h-5" />
-                   </div>
-                   <div>
-                     <div className="flex items-center gap-2 mb-1">
-                       <h4 className={`font-bold ${n.read ? 'text-slate-700' : 'text-slate-900'}`}>{n.title}</h4>
-                       {!n.read && <span className="w-2 h-2 rounded-full bg-rose-500"></span>}
-                     </div>
-                     <p className={`text-sm ${n.read ? 'text-slate-500' : 'text-slate-700'}`}>{n.message}</p>
-                     <p className="text-xs text-slate-400 mt-2">{new Date(n.createdAt).toLocaleString('zh-TW')}</p>
-                   </div>
-                </div>
+        {/* Quick Notification Preference Switches */}
+        {member && setMember && (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="p-3.5 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">訂單狀態通知</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">出貨、物流與到店取件即時提醒</p>
               </div>
-            ))}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={orderNotif}
+                onClick={() => toggleNotifPref('orderNotif')}
+                className={`w-11 h-6 rounded-full flex items-center px-0.5 cursor-pointer transition-colors shrink-0 ${
+                  orderNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'
+                }`}
+              >
+                <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm" />
+              </button>
+            </div>
+            <div className="p-3.5 flex items-center justify-between gap-3">
+              <div>
+                <p className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">最新優惠與活動</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">限時特價與折價券發放通知</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={promoNotif}
+                onClick={() => toggleNotifPref('promoNotif')}
+                className={`w-11 h-6 rounded-full flex items-center px-0.5 cursor-pointer transition-colors shrink-0 ${
+                  promoNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'
+                }`}
+              >
+                <motion.div layout className="w-5 h-5 bg-white rounded-full shadow-sm" />
+              </button>
+            </div>
           </div>
         )}
+
+        {statusNotice && (
+          <div className="px-3.5 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-200 text-xs font-bold flex items-center gap-1.5">
+            <Check className="w-3.5 h-3.5 shrink-0" />
+            <span>{statusNotice}</span>
+          </div>
+        )}
+
+        <div>
+          <h4 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm mb-2.5 px-1">近期通知紀錄</h4>
+          {loading ? (
+            <div className="p-8 text-center text-slate-400 text-xs">載入中...</div>
+          ) : notifications.length === 0 ? (
+            <div className="p-10 flex flex-col items-center justify-center text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+              <div className="w-14 h-14 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3">
+                <Bell className="w-7 h-7 text-slate-300 dark:text-slate-600" />
+              </div>
+              <h3 className="font-bold text-slate-600 dark:text-slate-300 text-sm">目前沒有新通知</h3>
+              <p className="text-[11px] text-slate-400 mt-1">訂單出貨或優惠發放時會顯示於此處</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {notifications.map((n, idx) => (
+                <div
+                  key={n.id || idx}
+                  className={`p-4 rounded-2xl border ${
+                    n.read
+                      ? 'bg-white dark:bg-slate-900 border-slate-200/80 dark:border-slate-800'
+                      : 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                        n.read
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                          : 'bg-indigo-100 dark:bg-indigo-900/70 text-indigo-600 dark:text-indigo-300'
+                      }`}
+                    >
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <h4
+                          className={`font-bold text-sm ${
+                            n.read ? 'text-slate-700 dark:text-slate-200' : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {n.title}
+                        </h4>
+                        {!n.read && <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />}
+                      </div>
+                      <p className={`text-xs leading-relaxed ${n.read ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-200'}`}>
+                        {n.message}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1.5">
+                        {n.createdAt ? new Date(n.createdAt).toLocaleString('zh-TW') : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </ModalWrapper>
   );

@@ -178,7 +178,7 @@ export function generateOrderCertificate(order: any): OrderCertificate {
     `TOTAL:${totalAmount}`,
     `TRACKING:${trackingNumber}`,
     `INVOICE:${invoiceNumber}`,
-    `MERCHANT:MS1843364339`,
+    `MERCHANT:GODDOG-NEWEBPAY-VERIFIED`,
     `SALT:GODDOG_GCP_SECURE_2026`,
   ].join('|');
 
@@ -190,7 +190,7 @@ export function generateOrderCertificate(order: any): OrderCertificate {
     certificateId: `GDD-CERT-${(orderNumber || '').replace(/[^a-zA-Z0-9-]/g, '')}`,
     issuedAt: new Date().toISOString(),
     issuer: {
-      merchantId: 'MS1843364339',
+      merchantId: 'GODDOG-NEWEBPAY-VERIFIED',
       storeName: '神狗勾 3D 列印耗材專賣 (Goddog Space)',
       legalOperator: '林子鈞 (Lin Zi Jun)',
       officialEmail: 'babe0615@gmail.com',
@@ -238,7 +238,7 @@ export function generateOrderCertificate(order: any): OrderCertificate {
     securityDeclaration: {
       purpose: '本憑證係作為神狗勾商城客戶訂單交易真實性、資料完整性及離線防偽備份之正式電子證明文件。',
       legalDisclaimer: '本文件由系統自動簽發，內含之 SHA-256 數位簽章與 Google Firebase 雲端資料庫紀錄互相錨定，任何未經授權之內容篡改均會導致數位簽章校驗失敗。',
-      verificationNotice: '如需查驗有效性，可至神狗勾商城或藍新金流官方特店系統核對訂單與特店代號 MS1843364339。',
+      verificationNotice: '如需查驗有效性，可至神狗勾商城或藍新金流官方特店系統核對訂單編號與交易紀錄。',
     },
   };
 }

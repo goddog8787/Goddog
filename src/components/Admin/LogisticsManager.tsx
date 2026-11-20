@@ -51,12 +51,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
     dispatchLeadTime: settings.dispatchLeadTime || '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
     packagingSpecs: settings.packagingSpecs || '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
     ecpayLogisticsMerchantId: settings.ecpayLogisticsMerchantId || '3002607',
-    newebpayLogisticsMerchantId: settings.newebpayLogisticsMerchantId || 'MS1843364339',
-    newebpayLogisticsHashKey:
-      settings.newebpayLogisticsHashKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' || !settings.newebpayLogisticsHashKey
-        ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ'
-        : settings.newebpayLogisticsHashKey,
-    newebpayLogisticsHashIV: settings.newebpayLogisticsHashIV || 'P4rlxhbNjCyiK5qC',
+    newebpayLogisticsMerchantId: settings.newebpayLogisticsMerchantId || '',
     newebpayLogisticsTestMode: settings.newebpayLogisticsTestMode ?? false,
     senderName: settings.senderName || '神狗勾 3D 台灣官方旗艦店',
     senderPhone: settings.senderPhone || '0911-331-772',
@@ -80,13 +75,14 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    const rawKey = (formData.newebpayLogisticsHashKey || '').trim();
-    const normalized = {
-      ...formData,
-      newebpayLogisticsMerchantId: (formData.newebpayLogisticsMerchantId || 'MS1843364339').trim(),
-      newebpayLogisticsHashKey:
-        rawKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ' : rawKey,
-      newebpayLogisticsHashIV: (formData.newebpayLogisticsHashIV || '').trim(),
+    const {
+      newebpayLogisticsHashKey: _omitKey,
+      newebpayLogisticsHashIV: _omitIv,
+      ...safeForm
+    } = formData;
+    const normalized: LogisticsSettings = {
+      ...safeForm,
+      newebpayLogisticsMerchantId: (safeForm.newebpayLogisticsMerchantId || '').trim(),
     };
     setFormData(normalized);
     onSaveSettings(normalized);
@@ -108,9 +104,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
       dispatchLeadTime: '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
       packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
-      newebpayLogisticsMerchantId: 'MS1843364339',
-      newebpayLogisticsHashKey: 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ',
-      newebpayLogisticsHashIV: 'P4rlxhbNjCyiK5qC',
+      newebpayLogisticsMerchantId: '',
       newebpayLogisticsTestMode: false,
       senderName: '神狗勾 3D 台灣官方旗艦店',
       senderPhone: '0911-331-772',
@@ -127,28 +121,11 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
     setConnectionTestResult(null);
 
     try {
-      const mId = (formData.newebpayLogisticsMerchantId || '').trim();
-      const rawKey = (formData.newebpayLogisticsHashKey || '').trim();
-      const hKey = rawKey === 'cNc71ejlg5iZFQLR2bBAHGOoRNs8q1NZ' ? 'cNc71ejlg5iZFQLR2bBAHG0oRNs8q1NZ' : rawKey;
-      const hIv = (formData.newebpayLogisticsHashIV || '').trim();
-
-      if (!mId || !hKey || !hIv) {
-        throw new Error('藍新特店代號或 HashKey / HashIV 尚未填寫完整');
-      }
-      if (hKey.length !== 32 || hIv.length !== 16) {
-        throw new Error(`藍新金鑰長度格式不符：HashKey 需為 32 字元 (目前 ${hKey.length} 字元)，HashIV 需為 16 字元 (目前 ${hIv.length} 字元)`);
-      }
-
       const apiBase = getBackendApiBase();
       const verifyRes = await fetch(`${apiBase}/api/payment/verify-keys`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          merchantId: mId,
-          hashKey: hKey,
-          hashIV: hIv,
-          testMode: formData.newebpayLogisticsTestMode,
-        }),
+        body: JSON.stringify({}),
       }).catch(() => null);
 
       if (verifyRes && verifyRes.headers.get('content-type')?.includes('application/json')) {
@@ -156,28 +133,27 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
         if (!vData.success) {
           setConnectionTestResult({
             success: false,
-            message: vData.message || '藍新金流回傳 MPG03009 (交易資料 SHA 256 檢查不符合)，請確認 HashKey 與 HashIV 是否與藍新後台一致。',
+            message: vData.message || '藍新金流驗證未通過，請確認後端環境變數 NEWEBPAY_MERCHANT_ID、NEWEBPAY_HASH_KEY 與 NEWEBPAY_HASH_IV 是否正確。',
             gatewayUrl: vData.gatewayUrl,
           });
           return;
         }
         setConnectionTestResult({
           success: true,
-          message: vData.message || `連線成功！藍新特店 (${mId}) MPG 金流與物流 SHA-256 簽章驗證通過！`,
+          message: vData.message || '連線成功！伺服器環境變數中之藍新金流金鑰已通過 MPG SHA-256 數位簽章驗證！',
           gatewayUrl: vData.gatewayUrl,
         });
         return;
       }
 
       setConnectionTestResult({
-        success: true,
-        message: `金鑰格式驗證通過！藍新特店 (${mId}) 32 碼 HashKey 與 16 碼 HashIV 已就緒，請點擊底部「儲存物流與金流設定」同步至雲端。`,
-        gatewayUrl: formData.newebpayLogisticsTestMode ? 'https://ccore.newebpay.com/MPG/mpg_gateway' : 'https://core.newebpay.com/MPG/mpg_gateway',
+        success: false,
+        message: '無法連線至後端金流驗證端點，請確認後端伺服器已啟動並完成環境變數設定。',
       });
     } catch (err: any) {
       setConnectionTestResult({
         success: false,
-        message: '連線檢查異常：' + (err.message || '請確認網路狀態與金鑰配置'),
+        message: '連線檢查異常：' + (err.message || '請確認網路狀態與後端環境變數配置'),
       });
     } finally {
       setIsTestingConnection(false);
@@ -319,72 +295,39 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
             </div>
           </div>
 
-          <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-xs text-amber-900 space-y-1">
+          <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 space-y-1.5">
             <div className="font-bold flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>為什麼結帳會出現「交易資料 SHA 256 檢查不符合 (錯誤代碼 : MPG03009)」？</span>
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>金鑰安全隔離架構（僅限後端伺服器環境變數管理）</span>
             </div>
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              當藍新正式環境商店（例如 <code>MS1843364339 神狗勾耗材商城</code>）後台的「API 串接金鑰 (HashKey / HashIV)」曾重新產生、或將測試區金鑰誤用於正式區時，藍新伺服器核對 SHA-256 簽章即會回傳 <strong>MPG03009</strong>。請至「藍新金流會員中心 &gt; 商店管理 &gt; 商店資料設定 &gt; API 串接金鑰」複製該商店最新的 <strong>32 碼 HashKey</strong> 與 <strong>16 碼 HashIV</strong> 貼入下方並點擊「儲存」，系統將自動透過雲端 Firestore 同步至 <code>goddog.space</code>！
+            <p className="text-[11px] text-emerald-800 leading-relaxed">
+              為確保商業級資訊安全，藍新金流 <strong>MerchantID</strong>、<strong>HashKey (32 碼)</strong> 與 <strong>HashIV (16 碼)</strong> 已完全移出前端原始碼與雲端資料庫，一律由後端伺服器環境變數（<code>NEWEBPAY_MERCHANT_ID</code>、<code>NEWEBPAY_HASH_KEY</code>、<code>NEWEBPAY_HASH_IV</code>、<code>NEWEBPAY_ENV</code>）讀取並於伺服器端完成 AES-256 / SHA-256 簽章。若需更換金鑰，請至部署平台的 Secrets / 環境變數面板更新並重啟伺服器，即可點擊下方按鈕進行後端簽章連線測試。
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-            <div>
-              <label className="font-bold text-slate-800 block mb-1">
-                藍新商店代號 (Merchant ID)
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.newebpayLogisticsMerchantId}
-                onChange={(e) =>
-                  setFormData({ ...formData, newebpayLogisticsMerchantId: e.target.value })
-                }
-                placeholder="例如: MS1843364339"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                請填入藍新金流後台取得之特店代號 (同支付商店代號)
-              </span>
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <span className="font-bold text-slate-800 block mb-1">藍新商店代號</span>
+              <code className="text-[11px] font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-slate-200 inline-block">
+                process.env.NEWEBPAY_MERCHANT_ID
+              </code>
+              <span className="text-[10px] text-slate-400 mt-1.5 block">由伺服器環境變數注入</span>
             </div>
 
-            <div>
-              <label className="font-bold text-slate-800 block mb-1">
-                藍新物流 HashKey (AES-256)
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.newebpayLogisticsHashKey}
-                onChange={(e) =>
-                  setFormData({ ...formData, newebpayLogisticsHashKey: e.target.value })
-                }
-                placeholder="32 字元 HashKey"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                用於 TradeInfo 壓碼與數位簽章
-              </span>
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <span className="font-bold text-slate-800 block mb-1">藍新 HashKey (AES-256)</span>
+              <code className="text-[11px] font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-slate-200 inline-block">
+                process.env.NEWEBPAY_HASH_KEY
+              </code>
+              <span className="text-[10px] text-slate-400 mt-1.5 block">僅存於後端，永不傳送至瀏覽器</span>
             </div>
 
-            <div>
-              <label className="font-bold text-slate-800 block mb-1">
-                藍新物流 HashIV (16 bytes)
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.newebpayLogisticsHashIV}
-                onChange={(e) =>
-                  setFormData({ ...formData, newebpayLogisticsHashIV: e.target.value })
-                }
-                placeholder="16 字元 HashIV"
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                CBC 向量初始值，確保交易傳輸防篡改
-              </span>
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <span className="font-bold text-slate-800 block mb-1">藍新 HashIV (16 bytes)</span>
+              <code className="text-[11px] font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-slate-200 inline-block">
+                process.env.NEWEBPAY_HASH_IV
+              </code>
+              <span className="text-[10px] text-slate-400 mt-1.5 block">僅存於後端，確保簽章不外洩</span>
             </div>
 
             <div className="sm:col-span-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-slate-600">
