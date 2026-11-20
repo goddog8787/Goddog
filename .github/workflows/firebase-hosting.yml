@@ -13,25 +13,30 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
-        run: npm ci || npm install
+        run: npm ci
+
+      - name: Check types
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
 
       - name: Build Project
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_FIREBASE_PROJECT_ID: goddog-shop
           VITE_FIREBASE_APP_ID: 1:470116154074:web:6b5fe2382911d3fc3ec3e3
           VITE_FIREBASE_DATABASE_ID: ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4
         run: npm run build
-
 
       - name: Deploy to Firebase Hosting
         env:

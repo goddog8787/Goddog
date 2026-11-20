@@ -34,7 +34,6 @@ import {
   Clock
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'motion/react';
 import { LanguageCode, CurrencyCode, MemberProfile, FilamentProduct, StoreAnnouncementConfig } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
 import { SearchAutocomplete } from './Storefront/SearchAutocomplete';
@@ -633,35 +632,25 @@ const NavbarInner: React.FC<NavbarProps> = ({
             )}
 
             {/* Shopping Cart Button */}
-            <motion.button
+            <button
               id="btn-open-cart"
+              type="button"
               onClick={effectiveCartOpen}
-              animate={isCartPulsing ? { scale: [1, 1.13, 0.96, 1] } : { scale: 1 }}
-              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              className="relative flex items-center justify-center w-9 h-9 sm:w-[90px] sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 dark:bg-sky-500 text-white hover:bg-slate-800 dark:hover:bg-sky-400 transition-colors duration-200 shadow-xs cursor-pointer shrink-0 overflow-visible"
+              className="btn-cart-tactile relative flex items-center justify-center w-9 h-9 sm:w-[90px] sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 dark:bg-sky-500 text-white hover:bg-slate-800 dark:hover:bg-sky-400 shadow-xs cursor-pointer shrink-0 overflow-visible"
               aria-label={t.cart || "購物車"}
               title={t.cart || "購物車"}
             >
-              <motion.span
-                animate={isCartPulsing ? { rotate: [0, -12, 8, 0] } : { rotate: 0 }}
-                transition={{ duration: 0.3 }}
-                className="inline-flex items-center justify-center shrink-0"
-              >
-                <ShoppingCart className="w-4 h-4 text-white shrink-0" />
-              </motion.span>
+              <ShoppingCart className="w-4 h-4 text-white shrink-0" />
               <span className="text-xs font-bold hidden sm:inline ml-1.5 whitespace-nowrap">{t.cart || "購物車"}</span>
               {cartCount > 0 && (
-                <motion.span
-                  key={cartCount}
-                  initial={{ scale: 0.78 }}
-                  animate={{ scale: isCartPulsing ? 1.18 : 1 }}
-                  transition={{ type: 'spring', stiffness: 460, damping: 20 }}
+                <span
+                  data-cart-pulse={isCartPulsing}
                   className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums leading-none"
                 >
                   {cartCount > 99 ? '99+' : cartCount}
-                </motion.span>
+                </span>
               )}
-            </motion.button>
+            </button>
 
             {/* Mobile Menu Toggle (三條橫線 - Always visible & prominent on the far right) */}
             <button

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, 
@@ -29,8 +29,10 @@ import confetti from 'canvas-confetti';
 import { MemberProfile, LanguageCode } from '../../types';
 import { SEO } from '../../components/SEO';
 import { saveCustomerUserData, saveCustomerProfileDoc } from '../../lib/customerPersistence';
-import { auth } from '../../lib/firebase';
-import { requestServerNewebPayPeriodCheckout } from '../../lib/newebpayClient';
+import { auth, authenticatedStoreFetch } from '../../lib/firebase';
+import { subscriptionTerms } from '../../data/subscriptionTerms';
+import { getStoreApiBase } from '../../lib/backendUrl';
+import { requestCheckout, submitCheckout } from '../../lib/newebpayClient';
 
 interface SubscriptionPageProps {
   member: MemberProfile | null;
@@ -61,8 +63,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         name: 'Monthly VIP',
         category: 'vip',
         duration: '30 Days',
-        durationDays: 30,
-        price: 199,
+        ...subscriptionTerms['vip-monthly'],
         originalPrice: 249,
         badge: 'Flexible',
         tagline: 'NT$ 199 / month',
@@ -74,8 +75,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         name: 'Quarterly VIP',
         category: 'vip',
         duration: '90 Days',
-        durationDays: 90,
-        price: 549,
+        ...subscriptionTerms['vip-quarterly'],
         originalPrice: 597,
         badge: 'Popular',
         tagline: 'Avg. NT$ 183 / month',
@@ -87,8 +87,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         name: 'Annual VIP',
         category: 'vip',
         duration: '365 Days',
-        durationDays: 365,
-        price: 1990,
+        ...subscriptionTerms['vip-yearly'],
         originalPrice: 2388,
         badge: 'Best Value',
         tagline: 'Avg. NT$ 166 / month',
@@ -103,8 +102,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         name: '月額 VIP',
         category: 'vip',
         duration: '30日間',
-        durationDays: 30,
-        price: 199,
+        ...subscriptionTerms['vip-monthly'],
         originalPrice: 249,
         badge: '手軽',
         tagline: '月あたり NT$ 199',
@@ -116,8 +114,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         name: '季額 VIP',
         category: 'vip',
         duration: '90日間',
-        durationDays: 90,
-        price: 549,
+        ...subscriptionTerms['vip-quarterly'],
         originalPrice: 597,
         badge: '人気',
         tagline: '月あたり NT$ 183',
@@ -129,8 +126,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
         name: '年額 VIP',
         category: 'vip',
         duration: '365日間',
-        durationDays: 365,
-        price: 1990,
+        ...subscriptionTerms['vip-yearly'],
         originalPrice: 2388,
         badge: '最得',
         tagline: '月あたり NT$ 166',
@@ -145,8 +141,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
       name: '月卡 VIP',
       category: 'vip',
       duration: '30 天',
-      durationDays: 30,
-      price: 199,
+      ...subscriptionTerms['vip-monthly'],
       originalPrice: 249,
       badge: '靈活體驗',
       tagline: '平均 NT$ 199 / 月',
@@ -158,8 +153,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
       name: '季卡 VIP',
       category: 'vip',
       duration: '90 天',
-      durationDays: 90,
-      price: 549,
+      ...subscriptionTerms['vip-quarterly'],
       originalPrice: 597,
       badge: '熱門首選',
       tagline: '平均 NT$ 183 / 月',
@@ -171,8 +165,7 @@ export function getAvailablePlans(lang: LanguageCode = 'zh-TW'): PlanOption[] {
       name: '年卡 VIP',
       category: 'vip',
       duration: '365 天',
-      durationDays: 365,
-      price: 1990,
+      ...subscriptionTerms['vip-yearly'],
       originalPrice: 2388,
       badge: '最超值',
       tagline: '平均 NT$ 166 / 月',
@@ -190,15 +183,15 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
 }) => {
   const lang: LanguageCode = (propLang as LanguageCode) || 'zh-TW';
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const creditedOrders = useRef(new Set<string>());
 
   const AVAILABLE_PLANS = useMemo(() => getAvailablePlans(lang), [lang]);
 
   const [selectedChangePlan, setSelectedChangePlan] = useState<PlanOption | null>(AVAILABLE_PLANS[1]);
   const [isChangingPlan, setIsChangingPlan] = useState(false);
   const [showCancelSection, setShowCancelSection] = useState(false);
-  const [cancelReason, setCancelReason] = useState('耗材目前充足，暫不需使用');
-  const [otherReasonText, setOtherReasonText] = useState('');
+  const [updatingRenewal, setUpdatingRenewal] = useState(false);
   
   const [inPageNotification, setInPageNotification] = useState<{
     type: 'success' | 'info' | 'warning';
@@ -249,24 +242,14 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
     card4: string;
     periodAmt: number;
     nextAuthDate: string;
-    userId?: string;
+    userId: string;
+    planName: string;
+    days: number;
+    frequencyLabel: string;
   }) => {
-    if (!params.periodNo || !params.authCode) {
-      return;
-    }
-
-    let pendingPlan: any = null;
-    try {
-      const saved = localStorage.getItem('printcore_pending_subscription');
-      if (saved) pendingPlan = JSON.parse(saved);
-    } catch (e) {
-      console.warn(e);
-    }
-
-    const planName = pendingPlan?.planName || 'VIP 會員方案';
-    const planDays = pendingPlan?.days || 30;
-    const frequencyLabel = pendingPlan?.frequencyLabel || '每月自動扣款';
-
+    const planName = params.planName;
+    const planDays = params.days;
+    const frequencyLabel = params.frequencyLabel;
     const newExpiry = new Date();
     newExpiry.setDate(newExpiry.getDate() + planDays);
 
@@ -333,64 +316,67 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
   };
 
   useEffect(() => {
-    const periodSuccess = searchParams.get('period_success') === 'true';
-    if (periodSuccess) {
-      const orderId = searchParams.get('orderId') || '';
-      let periodNo = searchParams.get('periodNo') || '';
-      let authCode = searchParams.get('authCode') || '';
-      let card4 = searchParams.get('card4') || '';
-      let periodAmt = Number(searchParams.get('periodAmt')) || 0;
-      let nextAuthDate = searchParams.get('nextAuthDate') || '';
-      let returnUserId = searchParams.get('userId') || '';
+    const controller = new AbortController();
+    const apiBase = getStoreApiBase();
+    const apiOrigin = new URL(apiBase || window.location.origin, window.location.origin).origin;
+    const activeUid = member?.id || auth.currentUser?.uid;
+    const verifying = new Set<string>();
 
-      const pendingRaw = localStorage.getItem('printcore_pending_subscription');
-      if (pendingRaw) {
-        try {
-          const pending = JSON.parse(pendingRaw);
-          if (!periodAmt && pending.price) periodAmt = Number(pending.price);
-          if (!returnUserId && pending.userId) returnUserId = pending.userId;
-          if (!periodNo) periodNo = `PER_${orderId || Date.now()}`;
-          if (!authCode) authCode = `AUTH_${Date.now().toString().slice(-6)}`;
-          if (!card4) card4 = '••••';
-        } catch {}
-      }
-
-      if (periodNo && authCode && periodAmt > 0) {
-        applySubscriptionSuccess({
-          orderId,
-          periodNo,
-          authCode,
-          card4,
-          periodAmt,
-          nextAuthDate,
-          userId: returnUserId
+    const verify = async (orderId: string) => {
+      if (!orderId || !activeUid || verifying.has(orderId) || creditedOrders.current.has(orderId)) return;
+      verifying.add(orderId);
+      try {
+        const response = await authenticatedStoreFetch(`/api/payment/period-verify?orderId=${encodeURIComponent(orderId)}`, {
+          signal: controller.signal,
         });
-      }
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (controller.signal.aborted) return;
+        if (data.verified !== true || data.orderId !== orderId || data.userId !== activeUid ||
+            !data.periodNo || !data.authCode || !(data.periodAmt > 0) || !(data.days > 0)) throw new Error();
 
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-
-    const handleWindowMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'NEWEBPAY_PERIOD_SUCCESS' && event.data?.data) {
-        const d = event.data.data;
-        if (d.periodNo && d.authCode && Number(d.periodAmt) > 0) {
-          applySubscriptionSuccess({
-            orderId: d.orderId || '',
-            periodNo: d.periodNo,
-            authCode: d.authCode,
-            card4: d.card4No || '',
-            periodAmt: Number(d.periodAmt) || 0,
-            nextAuthDate: d.nextAuthDate || ''
-          });
+        creditedOrders.current.add(orderId);
+        if (!member?.subscriptionHistory?.some(entry => entry.periodNo === data.periodNo && entry.type === 'initial')) {
+          applySubscriptionSuccess({ ...data, card4: data.card4No || '' });
         }
+        if (searchParams.get('period_success') === 'true') {
+          const remaining = new URLSearchParams(searchParams);
+          for (const key of ['period_success', 'orderId', 'periodNo', 'authCode', 'card4', 'periodAmt', 'nextAuthDate', 'userId']) remaining.delete(key);
+          setSearchParams(remaining, { replace: true });
+        }
+      } catch {
+        if (!controller.signal.aborted) setInPageNotification({
+          type: 'warning', title: '訂閱付款待確認', message: '尚未收到付款確認，請稍後重新整理查看。',
+        });
+      } finally {
+        verifying.delete(orderId);
       }
     };
 
+    if (searchParams.get('period_success') === 'true') void verify(searchParams.get('orderId') || '');
+    const handleWindowMessage = (event: MessageEvent) => {
+      if (event.origin === apiOrigin && event.data?.type === 'NEWEBPAY_PERIOD_SUCCESS') {
+        void verify(String(event.data.data?.orderId || ''));
+      }
+    };
     window.addEventListener('message', handleWindowMessage);
-    return () => window.removeEventListener('message', handleWindowMessage);
-  }, [searchParams]);
+    return () => {
+      controller.abort();
+      window.removeEventListener('message', handleWindowMessage);
+    };
+  }, [searchParams, setSearchParams, member]);
 
   const handleConfirmPlanChange = async (targetPlan?: PlanOption) => {
+    if (hasPlan && !isCancelled) {
+      setInPageNotification({
+        type: 'warning',
+        title: '請先暫停目前方案的自動扣款',
+        message: '藍新確認暫停後，即可切換方案，避免兩筆訂閱同時扣款。',
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     const plan = isPlanOption(targetPlan) ? targetPlan : selectedChangePlan;
     if (!plan || !isPlanOption(plan)) {
       setInPageNotification({
@@ -401,40 +387,32 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
       return;
     }
 
-    if (!member?.id && !auth.currentUser) {
-      if (onLoginClick) {
-        onLoginClick();
-        return;
-      }
+    await auth.authStateReady();
+    const customer = auth.currentUser;
+    if (!customer) {
+      onLoginClick?.();
+      return;
     }
 
     setIsChangingPlan(true);
     setInPageNotification(null);
 
     try {
-      const email = member?.email || auth.currentUser?.email || 'customer@gmail.com';
-      const uid = member?.id || auth.currentUser?.uid || '';
+      const email = customer.email || '';
+      const uid = customer.uid;
       const priceVal = Number(plan.price);
-      const checkoutRes = await requestServerNewebPayPeriodCheckout({
+      const checkoutData = await requestCheckout('period-checkout', {
         planId: plan.id,
         planName: plan.name,
         price: priceVal,
         days: Number(plan.durationDays) || 30,
-        email: email,
+        email,
         frequencyLabel: plan.frequencyLabel,
         userId: uid,
       });
 
-      const checkoutData =
-        checkoutRes.success && checkoutRes.url && checkoutRes.formParams
-          ? { url: checkoutRes.url, formParams: checkoutRes.formParams }
-          : null;
-
-      if (!checkoutData) {
-        throw new Error(checkoutRes.message || '無法啟動藍新定期定額金流系統，請稍候重試');
-      }
-
       localStorage.setItem('printcore_pending_subscription', JSON.stringify({
+        orderId: checkoutData.orderId,
         planId: plan.id,
         planName: plan.name,
         price: priceVal,
@@ -444,22 +422,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
         timestamp: Date.now(),
       }));
 
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = checkoutData.url;
-      if (window.self !== window.top) {
-        form.target = '_blank';
-      }
-      Object.keys(checkoutData.formParams).forEach((key) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = checkoutData!.formParams[key];
-        form.appendChild(input);
-      });
-      document.body.appendChild(form);
-      form.submit();
-      document.body.removeChild(form);
+      submitCheckout(checkoutData);
 
       setInPageNotification({
         type: 'info',
@@ -478,36 +441,50 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
     }
   };
 
-  const handleConfirmCancellation = () => {
-    if (!member) return;
-    const updated: MemberProfile = {
-      ...member,
-      subscriptionStatus: 'cancelled',
-      autoRenew: false
-    };
-
-    updateMemberProfile(updated, {
-      type: 'warning',
-      title: '已停止下期自動扣款',
-      message: `您的【${currentPlanName}】下期自動續約已停止，本期權益仍可使用至 ${expiryDate.toISOString().slice(0, 10)}（剩餘 ${daysRemaining} 天）。`
-    });
-
-    setShowCancelSection(false);
-  };
-
-  const handleResumeSubscription = () => {
-    if (!member) return;
-    const updated: MemberProfile = {
-      ...member,
-      subscriptionStatus: 'active',
-      autoRenew: true
-    };
-
-    updateMemberProfile(updated, {
-      type: 'success',
-      title: '已恢復自動續約',
-      message: `【${currentPlanName}】已重新開啟自動續約，將於 ${expiryDate.toISOString().slice(0, 10)} 自動延展會員權益。`
-    });
+  const updateRenewal = async (autoRenew: boolean) => {
+    if (!member || updatingRenewal) return;
+    if (!member.subscriptionPeriodNo) {
+      setInPageNotification({
+        type: 'warning', title: '查無委託單號',
+        message: '請聯絡客服確認這筆訂閱的自動扣款狀態。',
+      });
+      return;
+    }
+    setUpdatingRenewal(true);
+    try {
+      const response = await authenticatedStoreFetch('/api/payment/period-renewal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodNo: member.subscriptionPeriodNo, autoRenew }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const result = await response.json();
+      if (!response.ok || result?.success !== true || result.autoRenew !== autoRenew) {
+        throw new Error(result?.message || '尚未收到藍新確認。');
+      }
+      updateMemberProfile({
+        ...member,
+        autoRenew,
+        subscriptionStatus: autoRenew ? 'active' : 'cancelled',
+        subscriptionNextBillingDate: typeof result.nextAuthDate === 'string' ? result.nextAuthDate : '',
+      }, {
+        type: 'success',
+        title: autoRenew ? '藍新已確認恢復自動扣款' : '藍新已確認暫停自動扣款',
+        message: autoRenew
+          ? (result.nextAuthDate ? `下次扣款日為 ${result.nextAuthDate}。` : '扣款日期以藍新提供的委託資訊為準。')
+          : `本期權益可使用至 ${expiryDate.toISOString().slice(0, 10)}。`,
+      });
+      setShowCancelSection(false);
+    } catch (error) {
+      setInPageNotification({
+        type: 'warning',
+        title: '續扣狀態尚未更新',
+        message: error instanceof Error ? error.message : '請稍後重試，或聯絡客服確認。',
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setUpdatingRenewal(false);
+    }
   };
 
   if (!member && !onLoginClick) {
@@ -798,11 +775,12 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
             isCancelled ? (
               <button
                 type="button"
-                onClick={handleResumeSubscription}
+                onClick={() => void updateRenewal(true)}
+                disabled={updatingRenewal}
                 className="px-3.5 py-2 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>恢復自動續約</span>
+                <span>{updatingRenewal ? '正在確認…' : '恢復自動續約'}</span>
               </button>
             ) : (
               <button
@@ -859,32 +837,13 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({
                   <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
                   <span>確認停止下期自動續約？（本期權益仍保留至 {expiryDate.toISOString().slice(0, 10)}）</span>
                 </div>
-                <select
-                  value={cancelReason}
-                  onChange={(e) => setCancelReason(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-200"
-                >
-                  <option value="耗材目前充足，暫不需使用">耗材目前庫存充足，暫無列印需求</option>
-                  <option value="想改買其他規格線材">想改買其他規格線材或單卷購買</option>
-                  <option value="設備維修或升級中">3D 列印機正在維修或升級中</option>
-                  <option value="預算或個人考量">個人預算考量</option>
-                  <option value="其他">其他原因</option>
-                </select>
-                {cancelReason === '其他' && (
-                  <input
-                    type="text"
-                    placeholder="請輸入原因..."
-                    value={otherReasonText}
-                    onChange={(e) => setOtherReasonText(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs"
-                  />
-                )}
                 <div className="flex items-center gap-2.5 pt-1">
                   <button
-                    onClick={handleConfirmCancellation}
+                    onClick={() => void updateRenewal(false)}
+                    disabled={updatingRenewal}
                     className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs cursor-pointer"
                   >
-                    確認停止續訂
+                    {updatingRenewal ? '正在確認…' : '確認暫停續扣'}
                   </button>
                   <button
                     onClick={() => setShowCancelSection(false)}

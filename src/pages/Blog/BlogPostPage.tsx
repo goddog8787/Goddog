@@ -256,6 +256,7 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ adSenseConfig, lang:
 
         {/* Pure HTML5 Interactive Simulation for this article */}
         <ArticleInteractiveAnimation
+          key={rawArticle?.id ?? article.id}
           articleId={rawArticle?.id ?? article.id}
           lang={lang}
         />

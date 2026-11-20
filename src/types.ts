@@ -200,9 +200,6 @@ export interface LogisticsSettings {
   ecpayLogisticsMerchantId: string;
   // 藍新物流 (NewebPay Logistics) 設定（金鑰 HashKey / HashIV 嚴格由後端環境變數管理，禁止存於前端）
   newebpayLogisticsMerchantId: string;
-  newebpayLogisticsHashKey?: string;
-  newebpayLogisticsHashIV?: string;
-  newebpayLogisticsTestMode: boolean;
   senderName: string;
   senderPhone: string;
   senderAddress: string;

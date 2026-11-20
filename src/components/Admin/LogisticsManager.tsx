@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { Order, LogisticsSettings } from '../../types';
 import { NewebPayShippingLabelModal, createSampleOrderForTesting } from './NewebPayShippingLabelModal';
-import { getBackendApiBase } from '../../lib/geminiClient';
+import { getStoreApiBase } from '../../lib/backendUrl';
 
 interface LogisticsManagerProps {
   settings: LogisticsSettings;
@@ -51,8 +51,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
     dispatchLeadTime: settings.dispatchLeadTime || '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
     packagingSpecs: settings.packagingSpecs || '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
     ecpayLogisticsMerchantId: settings.ecpayLogisticsMerchantId || '3002607',
-    newebpayLogisticsMerchantId: settings.newebpayLogisticsMerchantId || '',
-    newebpayLogisticsTestMode: settings.newebpayLogisticsTestMode ?? false,
+    newebpayLogisticsMerchantId: settings.newebpayLogisticsMerchantId || 'MS1843364339',
     senderName: settings.senderName || '神狗勾 3D 台灣官方旗艦店',
     senderPhone: settings.senderPhone || '0911-331-772',
     senderAddress: settings.senderAddress && !settings.senderAddress.includes('1-50') && !settings.senderAddress.includes('福樂村')
@@ -70,22 +69,11 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
   const [connectionTestResult, setConnectionTestResult] = useState<{
     success: boolean;
     message: string;
-    gatewayUrl?: string;
   } | null>(null);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    const {
-      newebpayLogisticsHashKey: _omitKey,
-      newebpayLogisticsHashIV: _omitIv,
-      ...safeForm
-    } = formData;
-    const normalized: LogisticsSettings = {
-      ...safeForm,
-      newebpayLogisticsMerchantId: (safeForm.newebpayLogisticsMerchantId || '').trim(),
-    };
-    setFormData(normalized);
-    onSaveSettings(normalized);
+    onSaveSettings(formData);
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 3000);
   };
@@ -104,8 +92,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
       dispatchLeadTime: '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
       packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
-      newebpayLogisticsMerchantId: '',
-      newebpayLogisticsTestMode: false,
+      newebpayLogisticsMerchantId: 'MS1843364339',
       senderName: '神狗勾 3D 台灣官方旗艦店',
       senderPhone: '0911-331-772',
       senderAddress: '台灣線上物流集貨中心',
@@ -118,43 +105,18 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
 
   const handleTestNewebpayConnection = async () => {
     setIsTestingConnection(true);
-    setConnectionTestResult(null);
-
     try {
-      const apiBase = getBackendApiBase();
-      const verifyRes = await fetch(`${apiBase}/api/payment/verify-keys`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      }).catch(() => null);
-
-      if (verifyRes && verifyRes.headers.get('content-type')?.includes('application/json')) {
-        const vData = await verifyRes.json();
-        if (!vData.success) {
-          setConnectionTestResult({
-            success: false,
-            message: vData.message || '藍新金流驗證未通過，請確認後端環境變數 NEWEBPAY_MERCHANT_ID、NEWEBPAY_HASH_KEY 與 NEWEBPAY_HASH_IV 是否正確。',
-            gatewayUrl: vData.gatewayUrl,
-          });
-          return;
-        }
-        setConnectionTestResult({
-          success: true,
-          message: vData.message || '連線成功！伺服器環境變數中之藍新金流金鑰已通過 MPG SHA-256 數位簽章驗證！',
-          gatewayUrl: vData.gatewayUrl,
-        });
-        return;
-      }
-
+      const response = await fetch(`${getStoreApiBase()}/api/payment/config-status`);
+      if (!response.ok) throw new Error();
+      const config = await response.json();
       setConnectionTestResult({
-        success: false,
-        message: '無法連線至後端金流驗證端點，請確認後端伺服器已啟動並完成環境變數設定。',
+        success: config.configured === true,
+        message: config.configured
+          ? `付款伺服器已設定特店參數（${config.sandbox ? '測試環境' : '正式環境'}）。`
+          : '請在付款伺服器設定特店代號、Hash Key 與 Hash IV。',
       });
-    } catch (err: any) {
-      setConnectionTestResult({
-        success: false,
-        message: '連線檢查異常：' + (err.message || '請確認網路狀態與後端環境變數配置'),
-      });
+    } catch {
+      setConnectionTestResult({ success: false, message: '無法連線至付款伺服器。' });
     } finally {
       setIsTestingConnection(false);
     }
@@ -185,7 +147,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              設定藍新特店代號與 AES 密鑰、全台超商 (7-11/全家/萊爾富/OK) 運費、免運門檻與電子託運單列印
+              設定託運單特店代號、全台超商 (7-11/全家/萊爾富/OK) 運費、免運門檻與電子託運單列印
             </p>
           </div>
         </div>
@@ -198,7 +160,7 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
             className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60"
           >
             <Radio className={`w-4 h-4 ${isTestingConnection ? 'animate-spin' : 'text-indigo-600'}`} />
-            <span>{isTestingConnection ? '連線中...' : '測試藍新物流 API 連線'}</span>
+            <span>{isTestingConnection ? '連線中...' : '檢查付款伺服器設定'}</span>
           </button>
 
           <button
@@ -261,97 +223,24 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
           )}
           <div className="text-xs space-y-1">
             <div className="font-bold">{connectionTestResult.message}</div>
-            {connectionTestResult.gatewayUrl && (
-              <div className="text-[11px] opacity-80 font-mono">
-                連線閘道：{connectionTestResult.gatewayUrl}
-              </div>
-            )}
           </div>
         </div>
       )}
 
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Section 1: NewebPay Logistics API Credentials (藍新物流特店設定) */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2.5 text-slate-900 font-black text-sm">
-              <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
-                <Key className="w-4 h-4" />
-              </div>
-              <span>藍新金流與物流 (NewebPay MPG & Logistics) API 金鑰與連線參數</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.newebpayLogisticsTestMode}
-                  onChange={(e) =>
-                    setFormData({ ...formData, newebpayLogisticsTestMode: e.target.checked })
-                  }
-                  className="w-4 h-4 text-indigo-600 rounded"
-                />
-                <span>啟用測試環境 (Sandbox: ccore.newebpay.com)</span>
-              </label>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-xs text-emerald-900 space-y-1.5">
-            <div className="font-bold flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>金鑰安全隔離架構（僅限後端伺服器環境變數管理）</span>
-            </div>
-            <p className="text-[11px] text-emerald-800 leading-relaxed">
-              為確保商業級資訊安全，藍新金流 <strong>MerchantID</strong>、<strong>HashKey (32 碼)</strong> 與 <strong>HashIV (16 碼)</strong> 已完全移出前端原始碼與雲端資料庫，一律由後端伺服器環境變數（<code>NEWEBPAY_MERCHANT_ID</code>、<code>NEWEBPAY_HASH_KEY</code>、<code>NEWEBPAY_HASH_IV</code>、<code>NEWEBPAY_ENV</code>）讀取並於伺服器端完成 AES-256 / SHA-256 簽章。若需更換金鑰，請至部署平台的 Secrets / 環境變數面板更新並重啟伺服器，即可點擊下方按鈕進行後端簽章連線測試。
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
-              <span className="font-bold text-slate-800 block mb-1">藍新商店代號</span>
-              <code className="text-[11px] font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-slate-200 inline-block">
-                process.env.NEWEBPAY_MERCHANT_ID
-              </code>
-              <span className="text-[10px] text-slate-400 mt-1.5 block">由伺服器環境變數注入</span>
-            </div>
-
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
-              <span className="font-bold text-slate-800 block mb-1">藍新 HashKey (AES-256)</span>
-              <code className="text-[11px] font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-slate-200 inline-block">
-                process.env.NEWEBPAY_HASH_KEY
-              </code>
-              <span className="text-[10px] text-slate-400 mt-1.5 block">僅存於後端，永不傳送至瀏覽器</span>
-            </div>
-
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
-              <span className="font-bold text-slate-800 block mb-1">藍新 HashIV (16 bytes)</span>
-              <code className="text-[11px] font-mono text-indigo-700 bg-white px-2 py-1 rounded border border-slate-200 inline-block">
-                process.env.NEWEBPAY_HASH_IV
-              </code>
-              <span className="text-[10px] text-slate-400 mt-1.5 block">僅存於後端，確保簽章不外洩</span>
-            </div>
-
-            <div className="sm:col-span-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-slate-600">
-              <div className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-indigo-600 shrink-0" />
-                <span>
-                  <strong>電子地圖選店回傳網址 (ReplyURL)：</strong>
-                  <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-indigo-700">
-                    /api/payment/logistics/reply
-                  </code>
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  <strong>貨態即時更新通知 (NotifyURL)：</strong>
-                  <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-emerald-700">
-                    /api/payment/logistics/notify
-                  </code>
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <section className="bg-white p-6 rounded-3xl border border-slate-200 space-y-3">
+          <h3 className="text-sm font-bold">藍新金流設定</h3>
+          <p className="text-xs text-slate-600">
+            請在付款伺服器設定 NEWEBPAY_MERCHANT_ID、NEWEBPAY_HASH_KEY、NEWEBPAY_HASH_IV。
+            此處的特店代號用於列印託運單。
+          </p>
+          <label className="block text-xs font-bold">
+            託運單特店代號
+            <input type="text" value={formData.newebpayLogisticsMerchantId}
+              onChange={(event) => setFormData({ ...formData, newebpayLogisticsMerchantId: event.target.value })}
+              className="mt-1 block w-full max-w-sm px-3 py-2 rounded-xl border border-slate-200" />
+          </label>
+        </section>
 
         {/* Section 2: Free Shipping & Channel Rates */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

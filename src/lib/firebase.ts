@@ -1,3 +1,4 @@
+import { getStoreApiBase } from './backendUrl';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
   getAuth,
@@ -520,6 +521,15 @@ export async function logOut(): Promise<void> {
 }
 
 // Subscribe to auth state
+export async function authenticatedStoreFetch(path: string, options: RequestInit = {}) {
+  await auth.authStateReady();
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('請先登入。');
+  const headers = new Headers(options.headers);
+  headers.set('Authorization', 'Bearer ' + token);
+  return fetch(getStoreApiBase() + path, { ...options, headers });
+}
+
 export function subscribeToAuth(callback: (user: User | null) => void): () => void {
   try {
     return onAuthStateChanged(auth, callback);
@@ -1027,24 +1037,33 @@ export async function loadAIConfigFromFirestore(): Promise<{
   return null;
 }
 
-// Firestore Logistics Config Sync Helper (strictly excludes HashKey / HashIV secrets; those stay in server env vars only)
+// Older releases cached payment credentials alongside the shipping preferences.
+export function publicLogisticsSettings<T extends Record<string, any>>(settings: T) {
+  const { newebpayLogisticsHashKey, newebpayLogisticsHashIV, ...shipping } = settings;
+  return shipping;
+}
+
+export function clearLegacyLogisticsCredentials() {
+  try {
+    const key = 'printcore_logistics_settings';
+    const saved = localStorage.getItem(key);
+    if (!saved) return;
+    const settings = JSON.parse(saved);
+    if (settings && ('newebpayLogisticsHashKey' in settings || 'newebpayLogisticsHashIV' in settings)) {
+      localStorage.setItem(key, JSON.stringify(publicLogisticsSettings(settings)));
+    }
+  } catch {
+    // Storage may be unavailable in private browsing.
+  }
+}
+
 export async function saveNewebPayConfigToFirestore(settings: Record<string, any>) {
   try {
-    const {
-      newebpayLogisticsHashKey: _omitKey,
-      newebpayLogisticsHashIV: _omitIv,
-      ...safeSettings
-    } = settings || {};
-    const payload = {
-      ...safeSettings,
-      newebpayLogisticsMerchantId: String(safeSettings.newebpayLogisticsMerchantId || '').trim(),
-      newebpayLogisticsTestMode: Boolean(safeSettings.newebpayLogisticsTestMode),
-      updatedAt: new Date().toISOString(),
-    };
-    await setDoc(doc(db, 'settings', 'logistics_config'), payload, { merge: true });
+    const payload = { ...publicLogisticsSettings(settings), updatedAt: new Date().toISOString() };
+    await setDoc(doc(db, 'settings', 'logistics_config'), payload);
     return payload;
   } catch (error) {
-    console.warn('Firestore logistics config sync fallback:', error);
+    console.warn('Could not sync shipping settings:', error);
     return null;
   }
 }
@@ -1052,25 +1071,10 @@ export async function saveNewebPayConfigToFirestore(settings: Record<string, any
 export async function loadNewebPayConfigFromFirestore(): Promise<Record<string, any> | null> {
   try {
     const snap = await getDoc(doc(db, 'settings', 'logistics_config'));
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data) {
-        const {
-          newebpayLogisticsHashKey: _omitKey,
-          newebpayLogisticsHashIV: _omitIv,
-          ...cleaned
-        } = data;
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('printcore_logistics_settings', JSON.stringify(cleaned));
-        }
-        return cleaned;
-      }
-      return data;
-    }
-  } catch (error) {
-    // Ignore silently
+    return snap.exists() ? publicLogisticsSettings(snap.data()) : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 // Real-Time Firestore AI Bridge for goddog.space -> server.ts Gemini 4 Hydrogen Engine
@@ -1181,43 +1185,34 @@ export async function deleteCustomerAccountAndData(userId?: string | null): Prom
   requiresRecentLogin?: boolean;
   error?: string;
 }> {
-  const cleanUid = (userId || auth.currentUser?.uid || '').trim();
-  let requiresRecentLogin = false;
-
-  // 1. Delete user subcollections & user profile document in Firestore
-  if (cleanUid) {
-    for (const subName of ['userData', 'notifications']) {
-      try {
-        const subSnap = await getDocs(collection(db, 'users', cleanUid, subName));
-        if (!subSnap.empty) {
-          const batch = writeBatch(db);
-          subSnap.docs.forEach((d) => batch.delete(d.ref));
-          await batch.commit();
-        }
-      } catch (subErr) {
-        console.warn(`Firestore ${subName} cleanup warning:`, subErr);
-      }
-    }
-
-    try {
-      await deleteDoc(doc(db, 'users', cleanUid));
-    } catch (docErr) {
-      console.warn('Firestore user profile deletion warning:', docErr);
-    }
+  const currentUser = auth.currentUser;
+  if (!currentUser || (userId && currentUser.uid !== userId)) {
+    return { ok: false, requiresRecentLogin: true };
+  }
+  const cleanUid = currentUser.uid;
+  const credentials = await currentUser.getIdTokenResult();
+  const authAge = Date.now() - Date.parse(credentials.authTime);
+  if (!Number.isFinite(authAge) || authAge > 4 * 60 * 1000) {
+    return { ok: false, requiresRecentLogin: true };
   }
 
-  // 2. Delete Firebase Auth user if signed into Firebase Auth
-  const currentUser = auth.currentUser;
-  if (currentUser) {
-    try {
-      await deleteUser(currentUser);
-    } catch (authErr: any) {
-      if (authErr?.code === 'auth/requires-recent-login') {
-        requiresRecentLogin = true;
-      } else {
-        console.warn('Firebase Auth deleteUser warning:', authErr);
-      }
-    }
+  // Resolve all records before deleting any, then limit batches to Firestore's write ceiling.
+  const userRef = doc(db, 'users', cleanUid);
+  const snapshots = await Promise.all(
+    ['userData', 'notifications'].map(name => getDocs(collection(userRef, name)))
+  );
+  const references = [...snapshots.flatMap(snapshot => snapshot.docs.map(record => record.ref)), userRef];
+  for (let offset = 0; offset < references.length; offset += 450) {
+    const batch = writeBatch(db);
+    references.slice(offset, offset + 450).forEach(reference => batch.delete(reference));
+    await batch.commit();
+  }
+
+  try {
+    await deleteUser(currentUser);
+  } catch (error: any) {
+    if (error?.code === 'auth/requires-recent-login') return { ok: false, requiresRecentLogin: true };
+    throw error;
   }
 
   // 3. Remove matching entries from local registered accounts & all printcore_*_<uid> keys
@@ -1241,7 +1236,7 @@ export async function deleteCustomerAccountAndData(userId?: string | null): Prom
       const k = localStorage.key(i);
       if (!k) continue;
       if (
-        (cleanUid && k.startsWith('printcore_') && k.includes(cleanUid)) ||
+        (k.startsWith('printcore_') && k.endsWith(`_${cleanUid}`)) ||
         k === 'printcore_member' ||
         k === 'printcore_active_customer_session' ||
         k === 'printcore_active_customer' ||
@@ -1260,6 +1255,6 @@ export async function deleteCustomerAccountAndData(userId?: string | null): Prom
     await logOut();
   } catch {}
 
-  return { ok: true, requiresRecentLogin };
+  return { ok: true };
 }
 

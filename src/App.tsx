@@ -10,39 +10,23 @@ import {
   SearchAutocomplete 
 } from './components/Storefront/SearchAutocomplete';
 import { FlyToCartOverlay } from './components/Storefront/FlyToCartOverlay';
-const loadDraggableChatWidget = () => import('./components/Storefront/DraggableChatWidget');
-const DraggableChatWidget = React.lazy(() => loadDraggableChatWidget().then(m => ({ default: m.DraggableChatWidget })));
+const DraggableChatWidget = React.lazy(() => import('./components/Storefront/DraggableChatWidget').then(m => ({ default: m.DraggableChatWidget })));
 
-// Named lazy chunk loaders so frequently tapped modals can be prefetched during idle time
-const loadProductDetailModal = () => import('./components/Storefront/ProductDetailModal');
-const loadCartDrawer = () => import('./components/Storefront/CartDrawer');
-const loadCheckoutModal = () => import('./components/Storefront/CheckoutModal');
-const loadTrackingModal = () => import('./components/Storefront/TrackingModal');
-const loadCustomerSupportModal = () => import('./components/Storefront/CustomerSupportModal');
-const loadAuthModal = () => import('./components/Auth/AuthModal');
-const loadWishlistDrawer = () => import('./components/Storefront/WishlistDrawer');
-const loadRecentlyViewedSection = () => import('./components/Storefront/RecentlyViewedSection');
-const loadAdminDashboard = () => import('./components/Admin/AdminDashboard');
-const loadAIAdvisorModal = () => import('./components/Storefront/AIAdvisorModal');
-const loadFilamentLabModal = () => import('./components/Storefront/FilamentLabModal');
-const loadProductComparisonModal = () => import('./components/Storefront/ProductComparisonModal');
-const loadSpoolRecycleModal = () => import('./components/Storefront/SpoolRecycleModal');
-const loadHistoryModal = () => import('./pages/Profile/ProfileModals');
 
-const ProductDetailModal = React.lazy(() => loadProductDetailModal().then(m => ({ default: m.ProductDetailModal })));
-const CartDrawer = React.lazy(() => loadCartDrawer().then(m => ({ default: m.CartDrawer })));
-const CheckoutModal = React.lazy(() => loadCheckoutModal().then(m => ({ default: m.CheckoutModal })));
-const TrackingModal = React.lazy(() => loadTrackingModal().then(m => ({ default: m.TrackingModal })));
-const CustomerSupportModal = React.lazy(() => loadCustomerSupportModal().then(m => ({ default: m.CustomerSupportModal })));
-const AuthModal = React.lazy(() => loadAuthModal().then(m => ({ default: m.AuthModal })));
-const WishlistDrawer = React.lazy(() => loadWishlistDrawer().then(m => ({ default: m.WishlistDrawer })));
-const RecentlyViewedSection = React.lazy(() => loadRecentlyViewedSection().then(m => ({ default: m.RecentlyViewedSection })));
-const AdminDashboard = React.lazy(() => loadAdminDashboard().then(m => ({ default: m.AdminDashboard })));
-const AIAdvisorModal = React.lazy(() => loadAIAdvisorModal().then(m => ({ default: m.AIAdvisorModal })));
-const FilamentLabModal = React.lazy(() => loadFilamentLabModal().then(m => ({ default: m.FilamentLabModal })));
-const ProductComparisonModal = React.lazy(() => loadProductComparisonModal().then(m => ({ default: m.ProductComparisonModal })));
-const SpoolRecycleModal = React.lazy(() => loadSpoolRecycleModal().then(m => ({ default: m.SpoolRecycleModal })));
-const HistoryModal = React.lazy(() => loadHistoryModal().then(m => ({ default: m.HistoryModal })));
+const ProductDetailModal = React.lazy(() => import('./components/Storefront/ProductDetailModal').then(m => ({ default: m.ProductDetailModal })));
+const CartDrawer = React.lazy(() => import('./components/Storefront/CartDrawer').then(m => ({ default: m.CartDrawer })));
+const CheckoutModal = React.lazy(() => import('./components/Storefront/CheckoutModal').then(m => ({ default: m.CheckoutModal })));
+const TrackingModal = React.lazy(() => import('./components/Storefront/TrackingModal').then(m => ({ default: m.TrackingModal })));
+const CustomerSupportModal = React.lazy(() => import('./components/Storefront/CustomerSupportModal').then(m => ({ default: m.CustomerSupportModal })));
+const AuthModal = React.lazy(() => import('./components/Auth/AuthModal').then(m => ({ default: m.AuthModal })));
+const WishlistDrawer = React.lazy(() => import('./components/Storefront/WishlistDrawer').then(m => ({ default: m.WishlistDrawer })));
+const RecentlyViewedSection = React.lazy(() => import('./components/Storefront/RecentlyViewedSection').then(m => ({ default: m.RecentlyViewedSection })));
+const AdminDashboard = React.lazy(() => import('./components/Admin/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const AIAdvisorModal = React.lazy(() => import('./components/Storefront/AIAdvisorModal').then(m => ({ default: m.AIAdvisorModal })));
+const FilamentLabModal = React.lazy(() => import('./components/Storefront/FilamentLabModal').then(m => ({ default: m.FilamentLabModal })));
+const ProductComparisonModal = React.lazy(() => import('./components/Storefront/ProductComparisonModal').then(m => ({ default: m.ProductComparisonModal })));
+const SpoolRecycleModal = React.lazy(() => import('./components/Storefront/SpoolRecycleModal').then(m => ({ default: m.SpoolRecycleModal })));
+const HistoryModal = React.lazy(() => import('./pages/Profile/ProfileModals').then(m => ({ default: m.HistoryModal })));
 
 function ModalLoadingFallback() {
   return (
@@ -63,6 +47,7 @@ import {
   recordRealAddToCart, 
   recordRealCheckoutStart 
 } from './lib/realAnalytics';
+import { getStoreApiBase } from './lib/backendUrl';
 import { isMockOrder } from './lib/orderVerification';
 import { 
   FilamentProduct, 
@@ -82,7 +67,6 @@ import {
   subscribeToCloudCatalog,
   recordAdminProductUpsert,
 } from './lib/productPersistence';
-import { doc, getDoc } from 'firebase/firestore';
 import { 
   saveOrderToFirestore, 
   saveUserProfileToFirestore, 
@@ -92,7 +76,7 @@ import {
   saveMonetizationConfigToFirestore,
   loadMonetizationConfigFromFirestore,
   auth,
-  db
+  authenticatedStoreFetch
 } from './lib/firebase';
 import {
   normalizeCustomerId,
@@ -168,7 +152,7 @@ const SubscriptionPage = React.lazy(() => import('./pages/Subscription/Subscript
 const MaterialGuidePage = React.lazy(() => import('./pages/MaterialGuide/MaterialGuidePage').then(m => ({ default: m.MaterialGuidePage })));
 const Footer = React.lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 import { SEO } from './components/SEO';
-import { evaluateProductDeepSearch } from './utils/productSearch';
+import { prepareProductSearch, evaluateProductDeepSearch } from './utils/productSearch';
 import { getStoreAnnouncementConfig } from './utils/announcementManager';
 import { StoreAnnouncementConfig } from './types';
 
@@ -409,7 +393,7 @@ export default function App() {
   }, [lang]);
 
   // Storewide Announcement & Broadcast State
-  const [announcement, setAnnouncement] = useState<StoreAnnouncementConfig>(getStoreAnnouncementConfig());
+  const [announcement, setAnnouncement] = useState<StoreAnnouncementConfig>(getStoreAnnouncementConfig);
 
   useEffect(() => {
     const handleAnnouncementUpdate = () => {
@@ -438,67 +422,20 @@ export default function App() {
     return () => window.clearTimeout(timerId);
   }, [products]);
 
-  // Warm high-frequency lazy modal & drawer chunks in background during browser idle time so mobile taps respond at 0ms
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let cancelled = false;
-    const warmQueue: Array<() => Promise<unknown>> = [
-      loadProductDetailModal,
-      loadCartDrawer,
-      loadWishlistDrawer,
-      loadCustomerSupportModal,
-      loadAIAdvisorModal,
-      loadAuthModal,
-      loadFilamentLabModal,
-      loadProductComparisonModal,
-      loadTrackingModal,
-      loadSpoolRecycleModal,
-      loadCheckoutModal,
-    ];
-
-    let idx = 0;
-    let timerId: number | undefined;
-
-    const runNext = () => {
-      if (cancelled || idx >= warmQueue.length) return;
-      const loader = warmQueue[idx++];
-      loader().catch(() => {});
-      scheduleNext();
-    };
-
-    const scheduleNext = () => {
-      if (cancelled || idx >= warmQueue.length) return;
-      const idleWin = window as unknown as {
-        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-      };
-      if (typeof idleWin.requestIdleCallback === 'function') {
-        idleWin.requestIdleCallback(runNext, { timeout: 1800 });
-      } else {
-        timerId = window.setTimeout(runNext, 250);
-      }
-    };
-
-    const startTimer = window.setTimeout(scheduleNext, 900);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(startTimer);
-      if (timerId !== undefined) window.clearTimeout(timerId);
-    };
-  }, []);
-
   // Real-time synchronization of Admin product catalog edits/additions/deletions from Cloud & Server
   useEffect(() => {
     const unsubCatalog = subscribeToCloudCatalog(INITIAL_PRODUCTS, (cloudMergedProducts) => {
+      const productsById = new Map(cloudMergedProducts.map(product => [product.id, product]));
       setProducts(cloudMergedProducts);
       setViewingProduct((prev) => {
         if (!prev) return null;
-        return cloudMergedProducts.find((p) => p.id === prev.id) || prev;
+        return productsById.get(prev.id) || prev;
       });
       setCartItems((prevCart) => {
         if (!Array.isArray(prevCart) || prevCart.length === 0) return prevCart;
         let changed = false;
         const nextCart = prevCart.map((item) => {
-          const latestProd = cloudMergedProducts.find((p) => p.id === item.product?.id);
+          const latestProd = productsById.get(item.product?.id);
           if (
             latestProd &&
             (latestProd.price !== item.product.price ||
@@ -585,74 +522,86 @@ export default function App() {
       }
     } catch {}
 
-    fetch('/api/payment/verified-orders')
-      .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
-      .then(data => {
-        if (data?.success && Array.isArray(data.orders) && data.orders.length > 0) {
-          setOrders(prev => {
-            const verifiedById = new Map<string, any>();
-            data.orders.forEach((vo: any) => {
-              if (vo.orderId) verifiedById.set(vo.orderId, vo);
-            });
-
-            let changed = false;
-            const updatedPrev = prev.map((o) => {
-              const vo = verifiedById.get(o.orderNumber);
-              if (vo && o.paymentStatus === 'pending') {
-                changed = true;
-                return {
-                  ...o,
-                  paymentStatus: 'paid' as const,
-                  orderStatus: (o.orderStatus === 'new' ? 'picking' : o.orderStatus) as Order['orderStatus'],
-                  isVerifiedByNewebPay: true,
-                  tradeNo: vo.tradeNo || o.tradeNo,
-                  payTime: vo.payTime || o.payTime,
-                };
-              }
-              return o;
-            });
-
-            const existingNos = new Set(updatedPrev.map(o => o.orderNumber));
-            const newVerified: Order[] = [];
-            data.orders.forEach((vo: any) => {
-              if (vo.orderId && !existingNos.has(vo.orderId)) {
-                newVerified.push({
-                  id: `ord-${Date.now()}-${vo.orderId}`,
-                  orderNumber: vo.orderId,
-                  createdAt: vo.payTime || new Date().toISOString(),
-                  customerName: '線上買家',
-                  customerEmail: '',
-                  customerPhone: '',
-                  shippingMethod: 'UNIMARTC2C',
-                  storeOrAddress: '7-11 門市',
-                  items: [],
-                  subtotal: vo.amt || 0,
-                  shippingFee: 0,
-                  discount: 0,
-                  pointsDeduction: 0,
-                  pointsEarned: Math.floor((vo.amt || 0) * 0.01),
-                  total: vo.amt || 0,
-                  paymentGateway: 'credit_card',
-                  paymentStatus: 'paid',
-                  orderStatus: 'picking',
-                  trackingNumber: vo.tradeNo || '',
-                  invoiceNumber: `TW-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${String(vo.orderId || '').replace(/\D/g, '').slice(-8) || '00000001'}`,
-                  invoiceType: 'cloud',
-                  isVerifiedByNewebPay: true,
-                  tradeNo: vo.tradeNo,
-                  payTime: vo.payTime,
-                });
-              }
-            });
-            if (newVerified.length > 0 || changed) {
-              return [...newVerified, ...updatedPrev];
-            }
-            return prev;
-          });
-        }
-      })
-      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'admin') return;
+    const controller = new AbortController();
+    const unsubscribe = subscribeToAuth(user => {
+      if (!user?.emailVerified || user.email !== 'babe0615@gmail.com') return;
+        authenticatedStoreFetch('/api/payment/verified-orders', { signal: controller.signal })
+          .then(res => (res.ok && res.headers.get('content-type')?.includes('application/json') ? res.json() : null))
+          .then(data => {
+            if (!controller.signal.aborted && data?.success && Array.isArray(data.orders) && data.orders.length > 0) {
+              setOrders(prev => {
+                const verifiedById = new Map<string, any>();
+                data.orders.forEach((vo: any) => {
+                  if (vo.orderId) verifiedById.set(vo.orderId, vo);
+                });
+
+                let changed = false;
+                const updatedPrev = prev.map((o) => {
+                  const vo = verifiedById.get(o.orderNumber);
+                  if (vo && o.paymentStatus === 'pending') {
+                    changed = true;
+                    return {
+                      ...o,
+                      paymentStatus: 'paid' as const,
+                      orderStatus: (o.orderStatus === 'new' ? 'picking' : o.orderStatus) as Order['orderStatus'],
+                      isVerifiedByNewebPay: true,
+                      tradeNo: vo.tradeNo || o.tradeNo,
+                      payTime: vo.payTime || o.payTime,
+                    };
+                  }
+                  return o;
+                });
+
+                const existingNos = new Set(updatedPrev.map(o => o.orderNumber));
+                const newVerified: Order[] = [];
+                data.orders.forEach((vo: any) => {
+                  if (vo.orderId && !existingNos.has(vo.orderId)) {
+                    newVerified.push({
+                      id: `ord-${Date.now()}-${vo.orderId}`,
+                      orderNumber: vo.orderId,
+                      createdAt: vo.payTime || new Date().toISOString(),
+                      customerName: '線上買家',
+                      customerEmail: '',
+                      customerPhone: '',
+                      shippingMethod: 'UNIMARTC2C',
+                      storeOrAddress: '7-11 門市',
+                      items: [],
+                      subtotal: vo.amt || 0,
+                      shippingFee: 0,
+                      discount: 0,
+                      pointsDeduction: 0,
+                      pointsEarned: Math.floor((vo.amt || 0) * 0.01),
+                      total: vo.amt || 0,
+                      paymentGateway: 'credit_card',
+                      paymentStatus: 'paid',
+                      orderStatus: 'picking',
+                      trackingNumber: vo.tradeNo || '',
+                      invoiceNumber: `TW-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${String(vo.orderId || '').replace(/\D/g, '').slice(-8) || '00000001'}`,
+                      invoiceType: 'cloud',
+                      isVerifiedByNewebPay: true,
+                      tradeNo: vo.tradeNo,
+                      payTime: vo.payTime,
+                    });
+                  }
+                });
+                if (newVerified.length > 0 || changed) {
+                  return [...newVerified, ...updatedPrev];
+                }
+                return prev;
+              });
+            }
+          })
+          .catch(() => {});
+    });
+    return () => {
+      controller.abort();
+      unsubscribe();
+    };
+  }, [activeTab]);
 
   // Defer genuine visitor analytics until browser is idle so first interaction stays instant
   useEffect(() => {
@@ -767,16 +716,45 @@ export default function App() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutPointsToUse, setCheckoutPointsToUse] = useState(0);
   const [checkoutCouponCode, setCheckoutCouponCode] = useState('');
-  const [viewingProduct, setViewingProduct] = useState<FilamentProduct | null>(null);
+  const [overlayProduct, setViewingProduct] = useState<FilamentProduct | null>(null);
+  const linkedId = location.pathname === '/' ? new URLSearchParams(location.search).get('product') : null;
+  const viewingProduct = location.pathname === '/'
+    ? (linkedId ? products.find(product => product.id === linkedId) ?? null : null)
+    : overlayProduct;
+
 
   const memberIdRef = useRef(member?.id);
   memberIdRef.current = member?.id;
   const isLoggedInRef = useRef(false);
 
   const handleOpenProductDetail = useCallback((p: FilamentProduct) => {
-    setViewingProduct(p);
+    if (location.pathname === '/') {
+      const params = new URLSearchParams(location.search);
+      if (params.get('product') !== p.id) {
+        params.set('product', p.id);
+        navigate({ pathname: '/', search: params.toString(), hash: location.hash }, {
+          state: { ...location.state, openedProduct: true },
+          replace: Boolean(linkedId && location.state?.openedProduct),
+          preventScrollReset: true,
+        });
+      }
+    } else {
+      setViewingProduct(p);
+    }
     saveCustomerRecentlyViewed(memberIdRef.current || auth.currentUser?.uid, p).catch(() => {});
-  }, []);
+  }, [location, linkedId, navigate]);
+
+  const closeProductDetail = () => {
+    setViewingProduct(null);
+    if (!linkedId) return;
+    if (location.state?.openedProduct) {
+      navigate(-1);
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    params.delete('product');
+    navigate({ pathname: '/', search: params.toString(), hash: location.hash }, { replace: true, preventScrollReset: true });
+  };
   const [isAIAdvisorOpen, setIsAIAdvisorOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const [trackingNumberInput, setTrackingNumberInput] = useState('');
@@ -792,11 +770,8 @@ export default function App() {
     }
   });
 
-  const isOwnerAdmin = Boolean(
-    isLoggedIn &&
-    ((member?.email && member.email.trim().toLowerCase() === 'babe0615@gmail.com') ||
-      (auth.currentUser?.email && auth.currentUser.email.trim().toLowerCase() === 'babe0615@gmail.com'))
-  );
+  const isOwnerAdmin = Boolean(isLoggedIn && auth.currentUser?.emailVerified &&
+    auth.currentUser.email?.toLowerCase() === 'babe0615@gmail.com');
 
   const analytics = useMemo(
     () => (activeTab === 'admin' && isOwnerAdmin ? computeRealAnalytics(orders, products) : ({} as any)),
@@ -873,10 +848,15 @@ export default function App() {
     });
   }, []);
 
+  function addAvailableProductToCart(product: FilamentProduct) {
+    const color = product.colors?.find(option => option.stock === undefined || option.stock > 0);
+    if (product.stock <= 0 || !color) return false;
+    handleAddToCart(product, color, product.diameter, 1);
+    return true;
+  }
+
   const handleAddAllWishlistToCart = (savedList: FilamentProduct[]) => {
-    savedList.forEach((p) => {
-      handleAddToCart(p, p.colors[0], p.diameter, 1);
-    });
+    savedList.forEach(addAvailableProductToCart);
   };
 
   const handleRewardPoints = (points: number) => {
@@ -1016,93 +996,14 @@ export default function App() {
     const isPaymentReturn = params.get('payment_verified') === 'true' || params.get('payment_success') === 'true';
     const isPaymentFailed = params.get('payment_verified') === 'false';
     const orderId = params.get('orderId');
-    const docId = params.get('docId');
     const returnFrom = params.get('from');
 
     if (isClientBack) {
-      const handleClientBackReturn = async () => {
-        try {
-          const existingSession = getStoredCustomerSession();
-          const existingUid = existingSession && existingSession.isLoggedIn ? normalizeCustomerId(existingSession.id) : null;
-
-          if (!existingUid && (orderId || docId)) {
-            let recoveredUid: string | null = null;
-            let recoveredName = '';
-            let recoveredEmail = '';
-
-            try {
-              if (orderId) {
-                const handoffRes = await fetch(`/api/payment/session-handoff?orderId=${encodeURIComponent(orderId)}`);
-                const cType = handoffRes.headers.get('content-type') || '';
-                if (handoffRes.ok && cType.includes('application/json')) {
-                  const handoff = await handoffRes.json();
-                  if (handoff?.success && handoff?.userId) {
-                    recoveredUid = normalizeCustomerId(handoff.userId);
-                    recoveredName = handoff.customerName || '';
-                    recoveredEmail = handoff.customerEmail || '';
-                  }
-                }
-              }
-            } catch {}
-
-            if (!recoveredUid) {
-              const candidateDocIds = Array.from(
-                new Set([docId, orderId ? `ord-${orderId}` : null, orderId].filter(Boolean) as string[])
-              );
-              for (const candidateId of candidateDocIds) {
-                try {
-                  const snap = await getDoc(doc(db, 'orders', candidateId));
-                  if (snap.exists()) {
-                    const data = snap.data() as any;
-                    const uid = normalizeCustomerId(data?.userId);
-                    if (uid) {
-                      recoveredUid = uid;
-                      recoveredName = data?.customerName || '';
-                      recoveredEmail = data?.customerEmail || '';
-                      setOrders((prev) => {
-                        const orderObj = { ...data, id: data.id || candidateId } as Order;
-                        const exists = prev.some((o) => o.id === orderObj.id || o.orderNumber === orderObj.orderNumber);
-                        return exists ? prev : [orderObj, ...prev];
-                      });
-                      break;
-                    }
-                  }
-                } catch {}
-              }
-            }
-
-            if (recoveredUid) {
-              const restoredProfile = sanitizeCustomerProfile({
-                ...INITIAL_MEMBER,
-                id: recoveredUid,
-                name: recoveredName || recoveredEmail?.split('@')[0] || '創客會員',
-                email: recoveredEmail || '',
-              });
-              setIsLoggedIn(true);
-              setMember(restoredProfile);
-              saveStoredCustomerSession({
-                id: restoredProfile.id,
-                name: restoredProfile.name,
-                email: restoredProfile.email,
-                tier: restoredProfile.tier,
-                points: restoredProfile.points,
-                totalSpent: restoredProfile.totalSpent || 0,
-                isLoggedIn: true,
-              });
-              syncUserData(recoveredUid, restoredProfile);
-            }
-          }
-
-          setToastNotification({
-            type: 'info',
-            message: '已返回神狗勾商城，您可至「我的訂單 > 待付款」核對入帳或重新付款。',
-          });
-        } finally {
-          navigate(returnFrom === 'profile' ? '/profile' : '/', { replace: true });
-        }
-      };
-
-      handleClientBackReturn();
+      setToastNotification({
+        type: 'info',
+        message: '已返回神狗勾商城，您可至「我的訂單 > 待付款」核對入帳或重新付款。',
+      });
+      navigate(returnFrom === 'profile' ? '/profile' : '/', { replace: true });
       return;
     }
 
@@ -1127,36 +1028,39 @@ export default function App() {
             } catch {}
           }
 
-          const checkAmt = params.get('amt') || pending?.total || 0;
+          if (!pending || pending.orderId !== orderId) {
+            setToastNotification({ type: 'info', message: '請至訂單記錄查看這筆付款的最新狀態。' });
+            navigate(returnFrom === 'profile' ? '/profile' : '/', { replace: true });
+            return;
+          }
+          const checkAmt = pending.total;
           let isPaid = false;
-          let verifiedTradeNo = params.get('tradeNo') || `NB${Date.now()}`;
+          let verifiedTradeNo = '';
           let verifiedPayTime = new Date().toLocaleString('zh-TW', { hour12: false }).slice(0, 16);
           let finalTotal = Number(checkAmt) || pending?.total || 0;
           let verifyData: any = null;
           
           try {
             // 嚴格向後端與藍新官方伺服器 (QueryTradeInfo) 檢驗該筆訂單是否真實付款成功 (TradeStatus === 1)
-            const verifyRes = await fetch(`/api/payment/verify-status?orderId=${encodeURIComponent(orderId)}&amt=${encodeURIComponent(checkAmt)}`);
+            const verifyRes = await fetch(`${getStoreApiBase()}/api/payment/verify-status?orderId=${encodeURIComponent(orderId)}&amt=${encodeURIComponent(checkAmt)}`);
             if (verifyRes.ok) {
               verifyData = await verifyRes.json();
-              if (verifyData?.success && verifyData?.isPaid) {
+              if (verifyData?.success && verifyData.isPaid && verifyData.order?.orderId === orderId &&
+                  verifyData.order.tradeNo && Number(verifyData.order.amt) === Number(checkAmt)) {
                 isPaid = true;
                 verifiedTradeNo = verifyData.order?.tradeNo || verifiedTradeNo;
                 verifiedPayTime = verifyData.order?.payTime || verifiedPayTime;
                 finalTotal = Number(verifyData.order?.amt) || finalTotal;
               }
-            } else if (params.get('payment_success') === 'true' && orderId) {
-              // 靜態託管（如 Firebase Hosting）備援防線：金流閘道成功回調
-              isPaid = true;
             }
-          } catch (netErr) {
-            console.warn('[NewebPay Payment] 後端驗證端點未連線，啟用客戶端安全回調驗證:', netErr);
-            if (params.get('payment_success') === 'true' && orderId) {
-              isPaid = true;
-            }
+          } catch (error) {
+            console.warn('[NewebPay] Payment verification unavailable', error);
           }
 
           if (isPaid) {
+            // A second return or a later checkout may have replaced this pending order while verifying.
+            if (localStorage.getItem('printcore_pending_order') !== savedPending) return;
+            localStorage.removeItem('printcore_pending_order');
 
             const newOrder: Order = {
               id: `ord-${Date.now()}`,
@@ -1227,7 +1131,6 @@ export default function App() {
             // 成功入帳後才扣除購物車並扣減商品庫存
             setCartItems([]);
             saveCustomerCart(ownerUid, [], { explicitClear: true }).catch(console.warn);
-            localStorage.removeItem('printcore_pending_order');
 
             if (Array.isArray(newOrder.items) && newOrder.items.length > 0) {
               setProducts((prevCatalog) => {
@@ -1310,8 +1213,6 @@ export default function App() {
     }
 
     if (params.get('vip_success') === 'true') {
-      const planType = params.get('planType') || 'VIP 方案';
-      const days = parseInt(params.get('days') || '30', 10);
       const orderId = params.get('orderId') || '';
 
       const verifyAndGrantVip = async () => {
@@ -1322,52 +1223,34 @@ export default function App() {
             return;
           }
 
-          let isVipVerified = false;
-          try {
-            // 向伺服器驗證該筆訂單是否確實通過藍新金流扣款成功
-            const res = await fetch(`/api/payment/verify-paid-order?orderId=${encodeURIComponent(orderId)}`);
-            if (res.ok) {
-              const data = await res.json();
-              isVipVerified = !!data.verified;
-            } else if (params.get('vip_success') === 'true') {
-              isVipVerified = true;
-            }
-          } catch {
-            if (params.get('vip_success') === 'true') {
-              isVipVerified = true;
-            }
-          }
-
-          if (!isVipVerified) {
+          const response = await authenticatedStoreFetch(`/api/payment/verify-paid-order?orderId=${encodeURIComponent(orderId)}`);
+          const receipt = response.ok ? await response.json() : null;
+          if (!receipt?.verified || receipt.orderId !== orderId || !receipt.days || !receipt.verifiedAt) {
             console.warn('[NewebPay VIP] 未通過金流扣款校驗，拒絕開通 VIP 權益');
             navigate('/', { replace: true });
             return;
           }
 
-          const nowIso = new Date().toISOString();
-          const newExpiry = new Date();
+          const nowIso = receipt.verifiedAt;
+          const days = Number(receipt.days);
+          const newExpiry = new Date(nowIso);
           newExpiry.setDate(newExpiry.getDate() + days);
-
-          let pendingSub: { price?: number; planName?: string; planType?: string } | null = null;
-          try {
-            const rawPending = localStorage.getItem('printcore_pending_subscription');
-            if (rawPending) {
-              pendingSub = JSON.parse(rawPending);
-              localStorage.removeItem('printcore_pending_subscription');
-            }
-          } catch {}
-
           setMember((prev: MemberProfile) => {
+            if (prev.subscriptionHistory?.some(entry => entry.id === orderId)) return prev;
             const updated: MemberProfile = sanitizeCustomerProfile({
               ...prev,
               tier: 'Gold',
-              subscriptionPlan: pendingSub?.planType || planType,
+              subscriptionPlan: receipt.planName,
               subscriptionStatus: 'active',
               autoRenew: true,
               subscriptionStartDate: nowIso,
               subscriptionExpiry: newExpiry.toISOString(),
               subscriptionNextBillingDate: newExpiry.toISOString(),
-              subscriptionAmount: typeof pendingSub?.price === 'number' ? pendingSub.price : prev?.subscriptionAmount,
+              subscriptionAmount: receipt.amt,
+              subscriptionHistory: [{
+                id: orderId, date: nowIso.slice(0, 10), amount: receipt.amt, planName: receipt.planName,
+                periodNo: '', authCode: '', invoiceNumber: '', status: 'success', type: 'initial',
+              }, ...(prev.subscriptionHistory || [])],
               points: (prev?.points || 0) + Math.floor(days * 1),
             });
             localStorage.setItem('printcore_member', JSON.stringify(updated));
@@ -1390,7 +1273,7 @@ export default function App() {
 
           setToastNotification({
             type: 'success',
-            message: `🎉 藍新金流扣款成功！恭喜開通【創客 VIP ${planType}】（有效期限 ${days} 天），立享全館 97 折與專屬權益！`
+            message: `🎉 藍新金流扣款成功！恭喜開通【創客 VIP ${receipt.planName}】（有效期限 ${days} 天），立享全館 97 折與專屬權益！`
           });
         } catch (e) {
           console.error('VIP verification error:', e);
@@ -1757,7 +1640,7 @@ export default function App() {
     quantity: number
   ) => {
     handleAddToCart(product, color, diameter, quantity);
-    setViewingProduct(null);
+    closeProductDetail();
     setCheckoutPointsToUse(0);
     setCheckoutCouponCode('');
     recordRealCheckoutStart();
@@ -1906,10 +1789,10 @@ export default function App() {
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const filteredAndSortedProducts = useMemo(() => {
-    const hasActiveQuery = deferredSearchQuery.trim().length > 0;
+  const scoredProducts = useMemo(() => {
+    const query = prepareProductSearch(deferredSearchQuery);
     const activeFamily = STOREFRONT_MATERIAL_FAMILIES.find((f) => f.id === selectedMaterial);
-    const scored = products
+    return products
       .map((p) => {
         const matchesMat =
           selectedMaterial === 'All'
@@ -1918,14 +1801,17 @@ export default function App() {
             ? activeFamily.match(p.material || '')
             : p.material === selectedMaterial;
         if (!matchesMat) return null;
-        const evalRes = evaluateProductDeepSearch(p, deferredSearchQuery);
+        const evalRes = evaluateProductDeepSearch(p, query);
         if (!evalRes.matched) return null;
         return { product: p, score: evalRes.score };
       })
       .filter((item): item is { product: FilamentProduct; score: number } => item !== null);
 
-    scored.sort((a, b) => {
-      if (hasActiveQuery && b.score !== a.score) {
+  }, [products, selectedMaterial, deferredSearchQuery]);
+
+  const filteredAndSortedProducts = useMemo(() => {
+    const scored = [...scoredProducts].sort((a, b) => {
+      if (b.score !== a.score) {
         return b.score - a.score;
       }
       if (sortBy === 'price_low') return a.product.price - b.product.price;
@@ -1935,7 +1821,7 @@ export default function App() {
     });
 
     return scored.map((item) => item.product);
-  }, [products, selectedMaterial, deferredSearchQuery, sortBy]);
+  }, [scoredProducts, sortBy]);
 
   const cartCount = useMemo(() => cartItems.reduce((acc, item) => acc + item.quantity, 0), [cartItems]);
 
@@ -2045,16 +1931,17 @@ export default function App() {
               setIsTrackingOpen(true);
             }} 
             onOpenProductDetail={(item) => {
-              const full = products.find(p => p.id === item.id) || item;
-              handleOpenProductDetail(full);
-              navigate('/');
+              const full = products.find(p => p.id === item.id);
+              if (full) {
+                saveCustomerRecentlyViewed(memberIdRef.current || auth.currentUser?.uid, full).catch(() => {});
+                navigate(`/?product=${encodeURIComponent(full.id)}`);
+              }
             }}
             onAddToCart={(item) => {
               const full = products.find(p => p.id === item.id);
-              if (full) {
-                handleAddToCart(full, full.colors[0], full.diameter, 1);
-              }
+              return full ? addAvailableProductToCart(full) : false;
             }}
+            onOpenWishlist={handleOpenWishlist}
             onOpenSupport={(promptText) => {
               if (promptText) setSupportInitialPrompt(promptText);
               setIsCustomerSupportOpen(true);
@@ -2447,7 +2334,7 @@ export default function App() {
                 lang={lang}
                 member={member}
                 onSelectProduct={handleOpenProductDetail}
-                onAddToCart={(p) => handleAddToCart(p, p.colors?.[0] || { name: '預設', hex: '#000000', stock: 10 }, p.diameter || '1.75mm', 1)}
+                onAddToCart={addAvailableProductToCart}
                 onOpenHistoryModal={() => setIsHistoryOpen(true)}
               />
             </Suspense>
@@ -2565,11 +2452,11 @@ export default function App() {
             currency={currency}
             lang={lang}
             member={member}
-            onClose={() => setViewingProduct(null)}
+            onClose={closeProductDetail}
             onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
             onQuickCheckout={handleQuickCheckout}
             onAskAI={(p) => {
-              setViewingProduct(null);
+              closeProductDetail();
               const promptText =
                 lang === 'en'
                   ? `What are the best slicer settings, nozzle/bed temps, and printer compatibility tips for ${p.name} (${p.material})?`
@@ -2744,7 +2631,7 @@ export default function App() {
           wishlistIds={wishlistIds}
           products={products}
           onRemoveFromWishlist={handleToggleWishlist}
-          onAddToCart={(p) => handleAddToCart(p, p.colors?.[0] || { name: '預設', hex: '#000000', stock: 10 }, p.diameter || '1.75mm', 1)}
+          onAddToCart={addAvailableProductToCart}
           onAddAllToCart={handleAddAllWishlistToCart}
           currency={currency}
           lang={lang}
@@ -2761,8 +2648,8 @@ export default function App() {
           currency={currency}
           onOpenProductDetail={handleOpenProductDetail}
           onAddToCart={(item) => {
-            const full = products.find(p => p.id === item.id) || item;
-            handleAddToCart(full, full.colors?.[0] || { name: '預設', hex: '#000000' }, full.diameter || '1.75mm', 1);
+            const full = products.find(p => p.id === item.id);
+            return full ? addAvailableProductToCart(full) : false;
           }}
         />
       )}

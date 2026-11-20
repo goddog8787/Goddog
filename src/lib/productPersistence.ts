@@ -8,7 +8,7 @@ import {
   onSnapshot,
   setDoc,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { auth, authenticatedStoreFetch, db } from './firebase';
 import { FilamentProduct } from '../types';
 
 const DELTA_STORAGE_KEY = 'printcore_admin_catalog_delta_v1';
@@ -293,6 +293,10 @@ export async function syncCatalogDeltaToCloud(
   changedProduct?: FilamentProduct,
   deletedProductId?: string
 ): Promise<void> {
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user?.emailVerified || !['babe0615@gmail.com', 'goddog@gmail.com'].includes(user.email || '')) return;
+
   const cleanDelta = sanitizeForFirestore({
     ...delta,
     schemaVersion: CURRENT_DELTA_SCHEMA_VERSION,
@@ -328,7 +332,7 @@ export async function syncCatalogDeltaToCloud(
       delta: cleanDelta,
       fullProducts: fullProducts ? sanitizeForFirestore(fullProducts) : undefined,
     });
-    fetch('/api/catalog/sync', {
+    authenticatedStoreFetch('/api/catalog/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       keepalive: bodyStr.length < 60000,

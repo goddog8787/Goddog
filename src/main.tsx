@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import App from './App.tsx';
+import { clearLegacyLogisticsCredentials } from './lib/firebase';
 import './index.css';
 
 interface ErrorBoundaryProps {
@@ -48,16 +49,10 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
                 重新載入頁面
               </button>
               <button
-                onClick={() => {
-                  try {
-                    localStorage.clear();
-                    sessionStorage.clear();
-                  } catch {}
-                  window.location.href = '/';
-                }}
+                onClick={() => window.location.assign('/')}
                 className="w-full py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition"
               >
-                清除暫存並重啟
+                返回商城首頁
               </button>
             </div>
           </div>
@@ -68,6 +63,7 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
+clearLegacyLogisticsCredentials();
 const rootElement = document.getElementById('root');
 if (rootElement) {
   createRoot(rootElement).render(

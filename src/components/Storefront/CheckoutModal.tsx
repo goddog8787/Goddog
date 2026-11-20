@@ -35,8 +35,7 @@ import { OrderCertificateModal } from './OrderCertificateModal';
 import { CvsStoreSelectorModal } from './CvsStoreSelectorModal';
 import { TrustCertModal } from './TrustCertModal';
 import { validateCoupon } from '../../utils/couponManager';
-import { requestServerNewebPayCheckout } from '../../lib/newebpayClient';
-import { getBackendApiBase } from '../../lib/geminiClient';
+import { newCheckoutOrderId, requestCheckout, submitCheckout } from '../../lib/newebpayClient';
 import { TaiwanAddressInput } from './TaiwanAddressInput';
 import { loadCustomerUserData, isMemberVipActive } from '../../lib/customerPersistence';
 
@@ -407,7 +406,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const triggerNewebPayCheckout = async (methodToUse: PaymentGateway = paymentGateway) => {
     setIsProcessing(true);
     try {
-      const generatedOrderId = `GD${Date.now()}`;
+      const generatedOrderId = newCheckoutOrderId();
       const ownerUid = (member?.id && !member.id.startsWith('guest')) ? member.id : (auth.currentUser?.uid || 'guest');
 
       const pendingOrderInfo = {
@@ -431,7 +430,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         invoiceCarrierValue,
       };
 
-      const checkoutRes = await requestServerNewebPayCheckout({
+      const checkoutData = await requestCheckout('checkout', {
         orderId: generatedOrderId,
         docId: `ord-${generatedOrderId}`,
         returnFrom: 'checkout',
@@ -439,101 +438,67 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         customerName: customerName || member?.name || '顧客',
         amount: total,
         email: customerEmail,
-        desc: cartItems.map((i) => `${i.product.name} x${i.quantity}`).join(', '),
+        desc: cartItems.map((item) => `${item.product.name} x${item.quantity}`).join(', '),
         paymentMethod: methodToUse,
+        originUrl: window.location.origin,
       });
 
-      const checkoutData =
-        checkoutRes.success && checkoutRes.url && checkoutRes.formParams
-          ? {
-              url: checkoutRes.url,
-              orderId: checkoutRes.orderId,
-              formParams: checkoutRes.formParams,
-            }
-          : null;
+      const effectiveOrderId = checkoutData.orderId || generatedOrderId;
+      localStorage.setItem(
+        'printcore_pending_order',
+        JSON.stringify({ ...pendingOrderInfo, orderId: effectiveOrderId })
+      );
 
-      if (!checkoutData) {
-        setFormError(checkoutRes.message || '無法啟動藍新金流，請確認後端伺服器金流環境變數設定。');
-        return;
+      const pendingOrderRecord: Order = {
+        id: `ord-${effectiveOrderId}`,
+        orderNumber: effectiveOrderId,
+        createdAt: new Date().toISOString(),
+        customerName: customerName || member?.name || '顧客',
+        customerEmail: customerEmail || member?.email || '',
+        customerPhone: customerPhone || member?.phone || '',
+        shippingMethod,
+        storeOrAddress: shippingAddress || '',
+        items: cartItems.map((c) => ({
+          productId: c.product.id,
+          name: c.product.name,
+          colorName: c.selectedColor.name,
+          colorHex: c.selectedColor.hex,
+          price: c.product.price,
+          quantity: c.quantity,
+          imageUrl: c.product.imageUrl,
+          material: c.product.material,
+          diameter: c.selectedDiameter,
+        })),
+        subtotal,
+        shippingFee,
+        discount,
+        couponCode: appliedCoupon?.code || '',
+        pointsDeduction: pointsToUse,
+        pointsEarned,
+        paymentFee,
+        total,
+        paymentGateway: methodToUse,
+        paymentStatus: 'pending',
+        orderStatus: 'new',
+        trackingNumber: '',
+        invoiceNumber: `PENDING-${effectiveOrderId.slice(-6)}`,
+        invoiceType,
+        invoiceCarrierValue,
+        userId: ownerUid,
+        isVerifiedByNewebPay: false,
+      };
+
+      if (onPendingOrderCreated) {
+        await Promise.race([
+          Promise.resolve(onPendingOrderCreated(pendingOrderRecord)),
+          new Promise<void>((resolve) => setTimeout(resolve, 1100)),
+        ]).catch(() => {});
       }
 
-      if (checkoutData && checkoutData.formParams) {
-        const effectiveOrderId = checkoutData.orderId || generatedOrderId;
-        localStorage.setItem(
-          'printcore_pending_order',
-          JSON.stringify({ ...pendingOrderInfo, orderId: effectiveOrderId })
-        );
-
-        const pendingOrderRecord: Order = {
-          id: `ord-${effectiveOrderId}`,
-          orderNumber: effectiveOrderId,
-          createdAt: new Date().toISOString(),
-          customerName: customerName || member?.name || '顧客',
-          customerEmail: customerEmail || member?.email || '',
-          customerPhone: customerPhone || member?.phone || '',
-          shippingMethod,
-          storeOrAddress: shippingAddress || '',
-          items: cartItems.map((c) => ({
-            productId: c.product.id,
-            name: c.product.name,
-            colorName: c.selectedColor.name,
-            colorHex: c.selectedColor.hex,
-            price: c.product.price,
-            quantity: c.quantity,
-            imageUrl: c.product.imageUrl,
-            material: c.product.material,
-            diameter: c.selectedDiameter,
-          })),
-          subtotal,
-          shippingFee,
-          discount,
-          couponCode: appliedCoupon?.code || '',
-          pointsDeduction: pointsToUse,
-          pointsEarned,
-          paymentFee,
-          total,
-          paymentGateway: methodToUse,
-          paymentStatus: 'pending',
-          orderStatus: 'new',
-          trackingNumber: '',
-          invoiceNumber: `PENDING-${effectiveOrderId.slice(-6)}`,
-          invoiceType,
-          invoiceCarrierValue,
-          userId: ownerUid,
-          isVerifiedByNewebPay: false,
-        };
-
-        if (onPendingOrderCreated) {
-          await Promise.race([
-            Promise.resolve(onPendingOrderCreated(pendingOrderRecord)),
-            new Promise<void>((resolve) => setTimeout(resolve, 1100)),
-          ]).catch(() => {});
-        }
-
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = checkoutData.url;
-        if (window.self !== window.top) {
-          form.target = '_blank';
-        }
-
-        Object.keys(checkoutData.formParams).forEach((key) => {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = key;
-          input.value = checkoutData!.formParams[key];
-          form.appendChild(input);
-        });
-
-        document.body.appendChild(form);
-        form.submit();
-        return;
-      } else {
-        setFormError('無法啟動藍新金流，請確認網路連線或稍後再試。');
-      }
+      submitCheckout(checkoutData);
     } catch (err) {
       console.error(err);
-      setFormError('啟動付款流程時發生未知的錯誤，請稍後再試或選擇其他付款方式。');
+      setFormError('付款服務暫時無法使用，購物車已保留。請稍後再試。');
     } finally {
       setIsProcessing(false);
     }
@@ -1400,11 +1365,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     id="start-payment-gateway-btn"
                     onClick={handleStartPayment}
                     disabled={isProcessing}
-                    className="w-full py-3.5 px-4 sm:px-5 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20"
+                    className="btn-tactile-primary w-full py-3.5 px-4 sm:px-5 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20"
                   >
                     {isProcessing ? (
                       <div className="flex items-center gap-2">
-                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0"></span>
+                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin motion-reduce:animate-none shrink-0"></span>
                         <span className="text-center text-balance leading-snug">正在連線藍新金流加密授權...</span>
                       </div>
                     ) : (

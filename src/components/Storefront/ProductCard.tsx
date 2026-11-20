@@ -54,7 +54,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
   const [pickedColor, setPickedColor] = useState<ColorOption>(availableColors[0]);
   const [pickedQty, setPickedQty] = useState<number>(1);
   const [isColorSheetOpen, setIsColorSheetOpen] = useState(false);
-  const [selectedDiameter] = useState<'1.75mm' | '2.85mm'>(liveProduct.diameter);
+  const selectedDiameter = liveProduct.diameter;
   const [isAddedAnimation, setIsAddedAnimation] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isImageLoaded, setIsImageLoaded] = useState(false);
@@ -195,6 +195,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
             {onToggleCompare && (
               <button
                 type="button"
+                aria-pressed={isCompared}
                 onClick={() => onToggleCompare(product.id)}
                 className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all duration-150 cursor-pointer hover:scale-105 active:scale-90 ${
                   isCompared
@@ -222,6 +223,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
             {onToggleWishlist && (
               <button
                 type="button"
+                aria-pressed={isWishlisted}
                 onClick={() => onToggleWishlist(product.id)}
                 className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shadow-xs transition-all duration-150 cursor-pointer hover:scale-105 active:scale-90 ${
                   isWishlisted
@@ -302,7 +304,12 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
 
           {/* 第 2 列：商品標題（去重品牌前綴、平衡斷行、穩定雙行高度） */}
           <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug text-balance line-clamp-2 min-h-[2.6em] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-            {cleanTitle}
+            <a href={`/?product=${encodeURIComponent(product.id)}`} onClick={(event) => {
+              event.stopPropagation();
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              onViewDetail(liveProduct);
+            }}>{cleanTitle}</a>
           </h3>
         </div>
 
@@ -319,7 +326,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
             type="button"
             onClick={handleOpenColorSheet}
             disabled={liveProduct.stock <= 0}
-            className={`group/cart h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 active:scale-95 ${
+            className={`btn-tactile-primary group/cart h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
               liveProduct.stock <= 0
                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                 : isAddedAnimation
@@ -529,31 +536,4 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
   );
 };
 
-function areProductCardPropsEqual(prev: ProductCardProps, next: ProductCardProps): boolean {
-  return (
-    prev.product.id === next.product.id &&
-    prev.product.name === next.product.name &&
-    prev.product.brand === next.product.brand &&
-    prev.product.material === next.product.material &&
-    prev.product.diameter === next.product.diameter &&
-    prev.product.price === next.product.price &&
-    prev.product.originalPrice === next.product.originalPrice &&
-    prev.product.stock === next.product.stock &&
-    prev.product.imageUrl === next.product.imageUrl &&
-    prev.product.rating === next.product.rating &&
-    prev.product.reviewsCount === next.product.reviewsCount &&
-    prev.product.colors === next.product.colors &&
-    prev.currency === next.currency &&
-    prev.lang === next.lang &&
-    prev.isWishlisted === next.isWishlisted &&
-    prev.isCompared === next.isCompared &&
-    prev.priority === next.priority &&
-    prev.onAddToCart === next.onAddToCart &&
-    prev.onViewDetail === next.onViewDetail &&
-    prev.onToggleWishlist === next.onToggleWishlist &&
-    prev.onToggleCompare === next.onToggleCompare &&
-    prev.onReviewSubmitted === next.onReviewSubmitted
-  );
-}
-
-export const ProductCard = React.memo(ProductCardInner, areProductCardPropsEqual);
+export const ProductCard = React.memo(ProductCardInner);

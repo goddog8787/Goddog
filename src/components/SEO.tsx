@@ -16,15 +16,22 @@ interface SEOProps {
   schema?: Record<string, any> | Record<string, any>[];
 }
 
+function productImageUrl(image: string | undefined, origin: string, fallback: string): string {
+  if (!image) return fallback;
+  try {
+    const resolved = new URL(image, origin);
+    return ['https:', 'http:'].includes(resolved.protocol) ? resolved.href : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function buildSingleProductJsonLd(
   prod: FilamentProduct,
   originUrl: string
 ): Record<string, any> {
   const productUrl = `${originUrl}/?product=${encodeURIComponent(prod.id)}`;
-  const imageUrl =
-    prod.imageUrl && prod.imageUrl.startsWith('http')
-      ? prod.imageUrl
-      : `${originUrl}/wolf-logo.jpg`;
+  const imageUrl = productImageUrl(prod.imageUrl, originUrl, `${originUrl}/wolf-logo.jpg`);
 
   const featureProps = Array.isArray(prod.features)
     ? prod.features.filter(Boolean).map((feat) => ({
@@ -95,7 +102,6 @@ function buildSingleProductJsonLd(
       url: productUrl,
       priceCurrency: 'TWD',
       price: String(prod.price),
-      priceValidUntil: '2027-12-31',
       itemCondition: 'https://schema.org/NewCondition',
       availability:
         prod.stock > 0
@@ -106,13 +112,13 @@ function buildSingleProductJsonLd(
         name: '神狗勾 3D 列印耗材商城',
       },
     },
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: String(prod.rating || 4.9),
-      reviewCount: String(Math.max(1, prod.reviewsCount || 28)),
-      bestRating: '5',
-      worstRating: '1',
-    },
+    ...(prod.reviewsCount > 0 && prod.rating > 0 && prod.rating <= 5 ? {
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: String(prod.rating),
+        reviewCount: String(prod.reviewsCount),
+      },
+    } : {}),
   };
 }
 
@@ -163,7 +169,7 @@ export const SEO: React.FC<SEOProps> = React.memo(({
       )
     : undefined;
 
-  const finalDesc = description || productDesc || defaultDesc;
+  const finalDesc = productDesc || description || defaultDesc;
 
   const finalKeywords = useMemo(() => {
     const autoKeywords = buildProductSEOKeywords(products || [], product);
@@ -184,12 +190,7 @@ export const SEO: React.FC<SEOProps> = React.memo(({
     return `${origin}${path}`;
   }, [canonicalUrl, url, product?.id]);
 
-  const resolvedOgImage = useMemo(() => {
-    if (product?.imageUrl && product.imageUrl.startsWith('http')) {
-      return product.imageUrl;
-    }
-    return ogImage;
-  }, [product?.imageUrl, ogImage]);
+  const resolvedOgImage = productImageUrl(product?.imageUrl, resolvedCanonical, ogImage);
 
   const computedJsonLd = useMemo(() => {
     const customSchema = jsonLd || schema;
@@ -232,7 +233,7 @@ export const SEO: React.FC<SEOProps> = React.memo(({
             itemListElement: topProducts.map((p, index) => ({
               '@type': 'ListItem',
               position: index + 1,
-              item: buildSingleProductJsonLd(p, origin),
+              item: { '@id': `${origin}/?product=${encodeURIComponent(p.id)}#product` },
             })),
           },
         ],

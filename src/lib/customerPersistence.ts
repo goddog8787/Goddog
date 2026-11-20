@@ -886,17 +886,15 @@ export async function saveCustomerUserData(
   userId: string | null | undefined,
   collectionName: string,
   data: any
-): Promise<void> {
+): Promise<boolean> {
   const cleanUid = normalizeCustomerId(userId);
-  if (!cleanUid) {
-    try {
-      localStorage.setItem(`printcore_user_${collectionName}_guest`, JSON.stringify(data));
-    } catch {}
-    return;
-  }
+  const updatedAt = new Date().toISOString();
+  const serialized = JSON.stringify(data);
   try {
-    localStorage.setItem(`printcore_user_${collectionName}_${cleanUid}`, JSON.stringify(data));
+    localStorage.setItem(`printcore_user_${collectionName}_${cleanUid || 'guest'}`, serialized);
+    if (cleanUid) localStorage.setItem(`printcore_sync_time_${collectionName}_${cleanUid}`, updatedAt);
   } catch {}
+  if (!cleanUid) return false;
 
   try {
     const ref = doc(db, 'users', cleanUid, 'userData', collectionName);
@@ -904,11 +902,13 @@ export async function saveCustomerUserData(
       id: collectionName,
       userId: cleanUid,
       type: collectionName,
-      data: JSON.stringify(data),
-      updatedAt: new Date().toISOString(),
+      data: serialized,
+      updatedAt,
     });
+    return true;
   } catch (error) {
     console.warn(`Firestore ${collectionName} save fallback:`, error);
+    return false;
   }
 }
 
@@ -917,37 +917,39 @@ export async function loadCustomerUserData(
   collectionName: string
 ): Promise<any | null> {
   const cleanUid = normalizeCustomerId(userId);
-  const effectiveKey = cleanUid
-    ? `printcore_user_${collectionName}_${cleanUid}`
-    : `printcore_user_${collectionName}_guest`;
-
-  let localData: any = null;
-  try {
-    const raw = localStorage.getItem(effectiveKey);
-    if (raw) localData = JSON.parse(raw);
-  } catch {}
-
-  if (cleanUid) {
+  const key = `printcore_user_${collectionName}_${cleanUid || 'guest'}`;
+  const timeKey = `printcore_sync_time_${collectionName}_${cleanUid}`;
+  const getLocalData = () => {
     try {
-      const ref = doc(db, 'users', cleanUid, 'userData', collectionName);
-      const snap = await getDoc(ref);
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data?.data) {
-          const parsed = JSON.parse(data.data);
-          localStorage.setItem(effectiveKey, data.data);
-          return parsed;
-        }
-      } else if (localData !== null) {
-        // Sync existing local data to Firestore
-        saveCustomerUserData(cleanUid, collectionName, localData).catch(() => {});
-      }
-    } catch (error) {
-      console.warn(`Firestore ${collectionName} load fallback:`, error);
+      const raw = localStorage.getItem(key);
+      return raw === null ? null : JSON.parse(raw);
+    } catch {
+      return null;
     }
-  }
+  };
+  if (!cleanUid) return getLocalData();
 
-  return localData;
+  try {
+    const snap = await getDoc(doc(db, 'users', cleanUid, 'userData', collectionName));
+    const saved = snap.exists() ? snap.data() : null;
+    const localTime = Date.parse(localStorage.getItem(timeKey) || '');
+    const remoteTime = Date.parse(saved?.updatedAt || '');
+    if (typeof saved?.data === 'string' && (!Number.isFinite(localTime) || remoteTime >= localTime)) {
+      const parsed = JSON.parse(saved.data);
+      localStorage.setItem(key, saved.data);
+      if (saved.updatedAt) localStorage.setItem(timeKey, saved.updatedAt);
+      return parsed;
+    }
+
+    const latest = getLocalData();
+    if (latest !== null && !snap.metadata.fromCache) {
+      void saveCustomerUserData(cleanUid, collectionName, latest);
+    }
+    return latest;
+  } catch (error) {
+    console.warn(`Firestore ${collectionName} load fallback:`, error);
+    return getLocalData();
+  }
 }
 
 /**

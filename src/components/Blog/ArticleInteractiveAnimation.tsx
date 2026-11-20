@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Code2, Copy, Check, RotateCcw, Play, ChevronDown, ChevronUp } from 'lucide-react';
-import { getBlogArticleAnimation } from '../../data/blogAnimations';
+import { type BlogAnimationEntry, loadBlogArticleAnimation } from '../../data/blogAnimations';
 import { LanguageCode } from '../../types';
 
 interface ArticleInteractiveAnimationProps {
@@ -12,7 +12,19 @@ export const ArticleInteractiveAnimation: React.FC<ArticleInteractiveAnimationPr
   articleId,
   lang = 'zh-TW',
 }) => {
-  const animation = useMemo(() => getBlogArticleAnimation(articleId), [articleId]);
+  const [animation, setAnimation] = useState<BlogAnimationEntry | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setLoadFailed(false);
+    loadBlogArticleAnimation(articleId).then(entry => {
+      if (active) setAnimation(entry);
+    }).catch(() => {
+      if (active) setLoadFailed(true);
+    });
+    return () => { active = false; };
+  }, [articleId, attempt]);
   const [reloadKey, setReloadKey] = useState(0);
   const [showSource, setShowSource] = useState(false);
   const [copiedHtml, setCopiedHtml] = useState(false);
@@ -36,6 +48,11 @@ export const ArticleInteractiveAnimation: React.FC<ArticleInteractiveAnimationPr
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  if (loadFailed) return (
+    <button type="button" className="my-4 underline" onClick={() => setAttempt(value => value + 1)}>
+      {lang === 'en' ? 'Reload simulation' : lang === 'ja' ? '実験を再読み込み' : '重新載入互動實驗'}
+    </button>
+  );
   if (!animation) return null;
 
   const htmlLineCount = animation.html.split('\n').length;

@@ -36,12 +36,12 @@ import {
 } from '../../lib/firebase';
 import { TaiwanAddressInput } from '../../components/Storefront/TaiwanAddressInput';
 import { getStoreCoupons, validateCoupon } from '../../utils/couponManager';
-import { requestServerNewebPayCheckout } from '../../lib/newebpayClient';
-import { getBackendApiBase } from '../../lib/geminiClient';
+import { newCheckoutOrderId, requestCheckout, submitCheckout } from '../../lib/newebpayClient';
+import { getStoreApiBase } from '../../lib/backendUrl';
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useId, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { sendPasswordResetEmail, updateProfile } from 'firebase/auth';
 import {
@@ -93,6 +93,42 @@ import { OrderCertificateModal } from '../../components/Storefront/OrderCertific
 import { LogisticsTimelineModal } from '../../components/Storefront/LogisticsTimelineModal';
 
 const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }> = ({ isOpen, onClose, title, children }) => {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const prefersReducedMotion = useReducedMotion();
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!isOpen || !dialog) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.focus({ preventScroll: true });
+    const onKeyDown = (event: KeyboardEvent) => {
+      const focused = document.activeElement;
+      if ((focused !== document.body && !dialog.contains(focused)) || event.defaultPrevented) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]'
+      )].filter(element => element.getClientRects().length > 0);
+      const first = focusable[0] ?? dialog;
+      const last = focusable.at(-1) ?? dialog;
+      if (focused === document.body || focused === dialog || (event.shiftKey ? focused === first : focused === last)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, [isOpen]);
+
   const modalNode = (
     <AnimatePresence>
       {isOpen && (
@@ -105,14 +141,19 @@ const ModalWrapper: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
             className="fixed inset-0 bg-slate-950/65 z-[110]"
           />
           <motion.div
-            initial={{ opacity: 0, y: 100 }}
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            tabIndex={-1}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 100 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
+            exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: 100 }}
             className="fixed inset-x-0 bottom-0 z-[111] bg-slate-50 dark:bg-slate-950 rounded-t-[28px] overflow-hidden flex flex-col max-w-2xl mx-auto shadow-2xl"
             style={{ maxHeight: '88dvh' }}
           >
             <div className="flex items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <h3 className="font-black text-base sm:text-lg text-slate-900 dark:text-white tracking-tight text-balance truncate">{title}</h3>
+              <h3 id={titleId} className="font-black text-base sm:text-lg text-slate-900 dark:text-white tracking-tight text-balance truncate">{title}</h3>
               <button
                 type="button"
                 onClick={onClose}
@@ -172,7 +213,6 @@ export const OrderModal: React.FC<{
   setOrders?: (orders: any) => void;
   member?: any;
   setMember?: (member: any) => void;
-  onConfirmReceipt?: (orderId: string) => Promise<void> | void;
   onGoReview?: (productId: string) => void;
   onOpenTracking?: (trackingNumber: string) => void;
   onOpenSupport?: (prompt?: string) => void;
@@ -184,7 +224,6 @@ export const OrderModal: React.FC<{
   setOrders,
   member,
   setMember,
-  onConfirmReceipt,
   onGoReview,
   onOpenTracking,
   onOpenSupport,
@@ -364,26 +403,17 @@ export const OrderModal: React.FC<{
         });
 
   const persistOrderStateUpdate = async (targetOrder: any, patch: Record<string, any>) => {
-    const updatedOrder = {
-      ...targetOrder,
-      ...patch,
-    };
+    const updatedOrder = { ...targetOrder, ...patch, updatedAt: new Date().toISOString() };
     setSyncedOrders((prev) =>
       prev.map((o) =>
         o.id === targetOrder.id || o.orderNumber === targetOrder.orderNumber ? updatedOrder : o
       )
     );
-    if (setOrders) {
-      setOrders((prev: any[]) =>
-        Array.isArray(prev)
-          ? prev.map((o) =>
-              o.id === targetOrder.id || o.orderNumber === targetOrder.orderNumber
-                ? updatedOrder
-                : o
-            )
-          : [updatedOrder]
-      );
-    }
+    setOrders?.((previous: any[]) => {
+      const orders = Array.isArray(previous) ? previous : [];
+      const index = orders.findIndex(o => o.id === targetOrder.id || o.orderNumber === targetOrder.orderNumber);
+      return index === -1 ? [updatedOrder, ...orders] : orders.map((o, i) => i === index ? updatedOrder : o);
+    });
     if (member?.id && member.id !== 'guest') {
       saveCustomerOrderRecord(updatedOrder, member.id).catch(() => {});
     }
@@ -406,7 +436,7 @@ export const OrderModal: React.FC<{
     const amt = Number(rawOrder.totalAmount ?? rawOrder.total ?? rawOrder.subtotal ?? 0);
     setIsPayingId(rawOrder.id || orderNo);
     try {
-      const apiBase = getBackendApiBase() || window.location.origin;
+      const apiBase = getStoreApiBase() || window.location.origin;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(
@@ -454,16 +484,31 @@ export const OrderModal: React.FC<{
 
     setIsPayingId(rawOrder.id || origOrderNo);
     try {
-      const freshOrderId = `GD${Date.now()}`;
+      const freshOrderId = newCheckoutOrderId();
       const customerEmail = rawOrder.customerEmail || member?.email || auth.currentUser?.email || '';
       const desc = Array.isArray(rawOrder.items) && rawOrder.items.length > 0
         ? rawOrder.items.map((i: any) => `${i.name || '3D列印耗材'} x${i.quantity || 1}`).join(', ')
         : `神狗勾3D列印耗材訂單 ${origOrderNo}`;
 
+      const orderDocId = rawOrder.id || `ord-${origOrderNo}`;
+      const ownerUid = rawOrder.userId || member?.id || auth.currentUser?.uid || 'guest';
+
+      const checkoutData = await requestCheckout('checkout', {
+        orderId: freshOrderId,
+        docId: orderDocId,
+        returnFrom: 'profile',
+        userId: ownerUid,
+        customerName: rawOrder.customerName || member?.name || '顧客',
+        amount: amt,
+        email: customerEmail,
+        desc,
+        paymentMethod: rawOrder.paymentGateway || 'credit_card',
+        originUrl: window.location.origin,
+      });
       localStorage.setItem(
         'printcore_pending_order',
         JSON.stringify({
-          orderId: freshOrderId,
+          orderId: checkoutData.orderId,
           replacesOrderId: rawOrder.id || origOrderNo,
           replacesOrderNumber: origOrderNo,
           userId: rawOrder.userId || member?.id || 'guest',
@@ -502,50 +547,9 @@ export const OrderModal: React.FC<{
         })
       );
 
-      const orderDocId = rawOrder.id || `ord-${origOrderNo}`;
-      const ownerUid = rawOrder.userId || member?.id || auth.currentUser?.uid || 'guest';
-
-      const checkoutRes = await requestServerNewebPayCheckout({
-        orderId: freshOrderId,
-        docId: orderDocId,
-        returnFrom: 'profile',
-        userId: ownerUid,
-        customerName: rawOrder.customerName || member?.name || '顧客',
-        amount: amt,
-        email: customerEmail,
-        desc,
-        paymentMethod: rawOrder.paymentGateway || 'credit_card',
-      });
-
-      const checkoutData =
-        checkoutRes.success && checkoutRes.url && checkoutRes.formParams
-          ? { url: checkoutRes.url, formParams: checkoutRes.formParams }
-          : null;
-
-      if (!checkoutData) {
-        showToast(checkoutRes.message || '無法啟動藍新金流，請確認後端伺服器金流環境變數設定。');
-        return;
-      }
-
-      if (checkoutData?.formParams) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = checkoutData.url;
-        if (window.self !== window.top) {
-          form.target = '_blank';
-        }
-        Object.keys(checkoutData.formParams).forEach((key) => {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = key;
-          input.value = checkoutData!.formParams[key];
-          form.appendChild(input);
-        });
-        document.body.appendChild(form);
-        form.submit();
-        return;
-      }
-      showToast('⚠️ 無法啟動藍新付款，請稍後再試。');
+      submitCheckout(checkoutData);
+    } catch {
+      showToast('付款服務暫時無法使用，請稍後再試。');
     } finally {
       setIsPayingId(null);
     }
@@ -570,13 +574,9 @@ export const OrderModal: React.FC<{
   const handleConfirm = async (orderId: string, rawOrder: any) => {
     setIsConfirmingId(orderId);
     try {
-      if (onConfirmReceipt) {
-        await onConfirmReceipt(orderId);
-      }
       await persistOrderStateUpdate(rawOrder, {
-        orderStatus: 'delivered',
-        status: 'delivered',
-        paymentStatus: 'paid',
+        orderStatus: 'completed',
+        status: 'completed',
         deliveredAt: new Date().toISOString(),
       });
       showToast(`🎉 已確認收貨！訂單移至「已完成」，您現在可以評價商品分享心得。`);
@@ -1426,12 +1426,14 @@ export const AddressModal: React.FC<{
   };
 
   useEffect(() => {
+    let current = true;
     if (isOpen) {
       setIsEditingForm(false);
       setEditingId(null);
       setFormError('');
       loadCustomerUserData(member?.id, 'addresses').then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (!current) return;
+        if (Array.isArray(data)) {
           const hasDefault = data.some((a: any) => a?.isDefault);
           const normalized = hasDefault ? data : data.map((a: any, i: number) => ({ ...a, isDefault: i === 0 }));
           setAddresses(normalized);
@@ -1452,6 +1454,7 @@ export const AddressModal: React.FC<{
         }
       });
     }
+    return () => { current = false; };
   }, [isOpen, member?.id]);
 
   const syncDefaultAddressToMember = (nextAddrs: any[]) => {
@@ -1515,8 +1518,8 @@ export const AddressModal: React.FC<{
       setFormError('請輸入收件人姓名');
       return;
     }
-    if (!cleanPhone) {
-      setFormError('請輸入聯絡電話');
+    if (!/^[+\d][\d ()-]*$/.test(cleanPhone) || !/^\d{8,15}$/.test(cleanPhone.replace(/\D/g, ''))) {
+      setFormError('請輸入 8 至 15 碼的聯絡電話');
       return;
     }
     if (!cleanAddr || cleanAddr.length < 4) {
@@ -1771,22 +1774,30 @@ export const ReferralModal: React.FC<{
     }
   }, [member, setMember, uniqueReferralCode]);
 
+  const refreshReferralRef = useRef(refreshReferralStatsFromCloud);
+  refreshReferralRef.current = refreshReferralStatsFromCloud;
   useEffect(() => {
-    if (isOpen) {
-      refreshReferralStatsFromCloud();
-    }
-  }, [isOpen, refreshReferralStatsFromCloud]);
+    if (isOpen) void refreshReferralRef.current();
+  }, [isOpen, member?.id]);
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteLink);
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      setBindStatusMsg({ ok: false, text: '無法複製連結，請選取上方連結手動複製。' });
+    }
   };
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(uniqueReferralCode);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(uniqueReferralCode);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+    } catch {
+      setBindStatusMsg({ ok: false, text: '無法複製代碼，請選取代碼手動複製。' });
+    }
   };
 
   const referralRecords: any[] = Array.isArray(member?.referralRecords)
@@ -2129,7 +2140,7 @@ export const CouponModal: React.FC<{ isOpen: boolean; onClose: () => void; membe
     <ModalWrapper isOpen={isOpen} onClose={onClose} title="我的優惠券">
       <div className="bg-slate-50 p-4 rounded-2xl mb-5 border border-slate-200">
         <h4 className="font-bold text-slate-900 text-sm mb-2">輸入優惠代碼領取</h4>
-        <div className="flex gap-2">
+        <form className="flex gap-2" onSubmit={event => { event.preventDefault(); handleRedeem(); }}>
           <input
             type="text"
             value={code}
@@ -2138,14 +2149,13 @@ export const CouponModal: React.FC<{ isOpen: boolean; onClose: () => void; membe
             className="flex-1 px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:border-indigo-500 font-mono uppercase text-sm"
           />
           <button
-            type="button"
-            onClick={handleRedeem}
+            type="submit"
             disabled={redeeming || !code.trim()}
             className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 disabled:opacity-50 cursor-pointer text-sm shrink-0"
           >
             {redeeming ? '兌換中...' : '兌換'}
           </button>
-        </div>
+        </form>
         {msg && (
           <p className={`text-xs font-bold mt-2 ${msg.ok ? 'text-emerald-600' : 'text-rose-500'}`}>
             {msg.text}
@@ -2230,7 +2240,7 @@ export const HistoryModal: React.FC<{
   onClose: () => void; 
   member?: any;
   onOpenProductDetail?: (productOrId: any) => void;
-  onAddToCart?: (item: any) => void;
+  onAddToCart?: (item: any) => boolean;
   lang?: LanguageCode;
   currency?: CurrencyCode;
 }> = ({ isOpen, onClose, member, onOpenProductDetail, onAddToCart, lang: propLang, currency = 'TWD' }) => {
@@ -2295,9 +2305,7 @@ export const HistoryModal: React.FC<{
 
   const handleAdd = (item: any, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (onAddToCart) {
-      onAddToCart(item);
-    }
+    if (!onAddToCart?.(item)) return;
     setAddedIds((prev) => ({ ...prev, [item.id]: true }));
     setTimeout(() => {
       setAddedIds((prev) => ({ ...prev, [item.id]: false }));
@@ -3262,7 +3270,6 @@ export const SettingsModal: React.FC<{
       if (updated?.id && !String(updated.id).startsWith('guest')) {
         const tasks: Promise<any>[] = [
           saveCustomerProfileDoc(updated.id, updated),
-          saveUserProfileToFirestore(updated),
         ];
         if (extraSettingsToSync) {
           tasks.push(saveCustomerUserData(updated.id, 'settings', extraSettingsToSync));
@@ -3302,13 +3309,13 @@ export const SettingsModal: React.FC<{
         phone: cleanPhone,
         birthday: cleanBirthday,
       };
-      await persistUpdatedMember(updated);
+      void persistUpdatedMember(updated).catch(() => {});
 
-      if (auth?.currentUser && cleanName !== auth.currentUser.displayName) {
-        await updateProfile(auth.currentUser, { displayName: cleanName }).catch(() => {});
+      if (auth.currentUser && cleanName !== auth.currentUser.displayName) {
+        void updateProfile(auth.currentUser, { displayName: cleanName }).catch(() => {});
       }
 
-      showToast('個人基本資料已儲存並同步至雲端！', true);
+      showToast('個人基本資料已儲存。', true);
     } catch {
       showToast('儲存個人資料時發生異常，請稍後再試。', false);
     } finally {
@@ -3341,11 +3348,9 @@ export const SettingsModal: React.FC<{
         invoiceCarrierValue: invoiceType === 'cloud' ? '' : normalizedCarrier,
       };
       localStorage.setItem(`printcore_invoice_pref_${uid}`, JSON.stringify(payload));
-      if (activeUid) {
-        await saveCustomerUserData(activeUid, 'invoice_pref', payload).catch(() => {});
-      }
       setInvoiceCarrierValue(payload.invoiceCarrierValue);
-      showToast('預設電子發票設定已儲存，下次結帳將自動帶入！', true);
+      showToast('發票設定已儲存在此裝置。', true);
+      if (activeUid) void saveCustomerUserData(activeUid, 'invoice_pref', payload);
     } catch {
       showToast('儲存發票設定失敗，請稍後再試。', false);
     } finally {
@@ -3368,9 +3373,9 @@ export const SettingsModal: React.FC<{
       ...member,
       settings: nextSettings,
     };
-    await persistUpdatedMember(updated, nextSettings);
+    void persistUpdatedMember(updated, nextSettings);
     showToast(
-      `已${!currentValue ? '開啟' : '關閉'}「${key === 'orderNotif' ? '訂單狀態通知' : '最新優惠與活動'}」並同步至雲端`,
+      `已${!currentValue ? '開啟' : '關閉'}「${key === 'orderNotif' ? '訂單狀態通知' : '最新優惠與活動'}」`,
       true
     );
   };
@@ -3408,10 +3413,8 @@ export const SettingsModal: React.FC<{
     if (isClearingCache) return;
     setIsClearingCache(true);
     try {
-      if (activeUid) {
-        await clearCustomerRecentlyViewed(activeUid).catch(() => {});
-      }
       try {
+        if (activeUid) localStorage.removeItem(`printcore_user_recent_${activeUid}`);
         localStorage.removeItem('printcore_recently_viewed');
         localStorage.removeItem('printcore_saved_tracking_numbers');
       } catch {}
@@ -3426,7 +3429,7 @@ export const SettingsModal: React.FC<{
   const handlePasswordReset = async () => {
     if (isResetting || resetCooldown > 0) return;
 
-    const targetEmail = (currentUser?.email || member?.email || '').trim();
+    const targetEmail = currentUser?.email?.trim();
     if (!targetEmail) {
       showToast('無法取得您的註冊信箱，請重新登入後再試。', false);
       return;
@@ -3473,10 +3476,14 @@ export const SettingsModal: React.FC<{
     try {
       const res = await deleteCustomerAccountAndData(member?.id);
       if (res.requiresRecentLogin) {
-        showToast('雲端會員檔案已清除；若要徹底註銷登入憑證，重新登入後可再次執行。', true);
-      } else {
-        showToast('帳號與所有個人資料已成功清除。', true);
+        showToast('請重新登入以驗證身分，再執行刪除。', false);
+        return;
       }
+      if (!res.ok) {
+        showToast(res.error || '刪除帳號失敗，請稍後再試。', false);
+        return;
+      }
+      showToast('帳號及會員資料已刪除。', true);
       if (onAccountDeleted) {
         await onAccountDeleted();
       } else {
@@ -4072,32 +4079,41 @@ export const NotificationModal: React.FC<{
     }
 
     setLoading(true);
-    let unsubscribe: any = null;
+    setNotifications([]);
+    markedReadRef.current = false;
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
     const fetchNotifications = async () => {
       try {
         const { db } = await import('../../lib/firebase');
         const { collection, query, orderBy, onSnapshot } = await import('firebase/firestore');
+        if (cancelled) return;
         const q = query(collection(db, 'users', member.id, 'notifications'), orderBy('createdAt', 'desc'));
         unsubscribe = onSnapshot(
           q,
           (snapshot) => {
+            if (cancelled) return;
             const notifs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
             setNotifications(notifs);
             setLoading(false);
           },
           (err) => {
+            if (cancelled) return;
             console.warn('Notifications snapshot fallback:', err);
             setLoading(false);
           }
         );
       } catch (e) {
-        console.warn(e);
-        setLoading(false);
+        if (!cancelled) {
+          console.warn(e);
+          setLoading(false);
+        }
       }
     };
     fetchNotifications();
     return () => {
-      if (unsubscribe) unsubscribe();
+      cancelled = true;
+      unsubscribe?.();
     };
   }, [isOpen, member?.id]);
 
@@ -4137,6 +4153,7 @@ export const NotificationModal: React.FC<{
                 type="button"
                 role="switch"
                 aria-checked={orderNotif}
+                aria-label="訂單狀態通知"
                 onClick={() => toggleNotifPref('orderNotif')}
                 className={`w-11 h-6 rounded-full flex items-center px-0.5 cursor-pointer transition-colors shrink-0 ${
                   orderNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'
@@ -4154,6 +4171,7 @@ export const NotificationModal: React.FC<{
                 type="button"
                 role="switch"
                 aria-checked={promoNotif}
+                aria-label="優惠活動通知"
                 onClick={() => toggleNotifPref('promoNotif')}
                 className={`w-11 h-6 rounded-full flex items-center px-0.5 cursor-pointer transition-colors shrink-0 ${
                   promoNotif ? 'bg-indigo-500 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'
