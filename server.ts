@@ -1,4 +1,5 @@
 import express from 'express';
+import { SUPPORTED_AI_MODELS } from './src/types';
 import { getSubscriptionTerms } from './src/data/subscriptionTerms.ts';
 import { initializeApp as initializeAdminApp } from 'firebase-admin/app';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
@@ -317,8 +318,12 @@ let totalCustomerQueriesServed: number = 0;
 let aiClient: GoogleGenAI | null = null;
 let lastUsedApiKey: string = '';
 
+function configuredGeminiKey() {
+  return process.env.GEMINI_API_KEY?.trim() || runtimeCustomApiKey || process.env.GOOGLE_API_KEY?.trim() || '';
+}
+
 function getAIClient(customApiKey?: string): GoogleGenAI | null {
-  const apiKey = (customApiKey || runtimeCustomApiKey || process.env.GEMINI_API_KEY || '').trim();
+  const apiKey = customApiKey?.trim() || configuredGeminiKey();
   if (!apiKey) return null;
   
   if (customApiKey && customApiKey.trim()) {
@@ -426,20 +431,7 @@ async function generateGeminiContentSafely(
   const ai = getAIClient(options?.apiKey);
   if (!ai) return null;
 
-  // Prioritize active Gemini 4 Hydrogen & 3.1 Flash-Lite models first, then fallback models
-  const allSupportedModels = [
-    'gemini-4-hydrogen',
-    'gemini-3.1-flash-lite',
-    'gemini-flash-latest',
-  ];
-
-  const normalizedPref =
-    options?.preferredModel === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : options?.preferredModel;
-
-  let models = allSupportedModels;
-  if (normalizedPref && allSupportedModels.includes(normalizedPref)) {
-    models = [normalizedPref, ...allSupportedModels.filter((m) => m !== normalizedPref)];
-  }
+  const models = chatModelOrder(options?.preferredModel);
 
   for (const model of models) {
     try {
@@ -477,7 +469,7 @@ const ALL_SUPPORTED_GEMINI_MODELS = [
 ];
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  'gemini-4-hydrogen': 'Gemini 4 Hydrogen (推薦首選)',
+  'gemini-4-hydrogen': 'Gemini 4 Hydrogen',
   'gemini-3.8-flash': 'Gemini 3.8 Flash',
   'gemini-3-flash-preview': 'Gemini 4 Hydrogen (推薦首選)',
   'gemini-3.1-flash-lite': 'Gemini 3.1 Flash-Lite (極速輕量)',
@@ -485,6 +477,18 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'gemini-3.1-pro-preview': 'Gemini 3.1 Pro (深度推理)',
   'local-expert': '神狗勾 3D 專家工程模式 (離線)',
 };
+
+const CHAT_MODEL_ORDER = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-4-hydrogen'];
+const streamCooldown = new Map<string, number>();
+
+function chatModelOrder(preferred?: string) {
+  if (preferred === 'gemini-flash-latest') preferred = 'gemini-3.8-flash';
+  if (preferred === 'gemini-3-flash-preview') preferred = 'gemini-4-hydrogen';
+  if (preferred && (CHAT_MODEL_ORDER.includes(preferred) || preferred === 'gemini-3.1-pro-preview')) {
+    return [preferred, ...CHAT_MODEL_ORDER.filter(model => model !== preferred)];
+  }
+  return CHAT_MODEL_ORDER;
+}
 
 // -------------------------------------------------------------
 // 會員階級模型權限查核中介層 (RBAC Policy: FREE / GO / PLUS)
@@ -620,22 +624,11 @@ async function* generateGeminiChatStreamSafely(
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
 
-  const normalizedPreferred =
-    preferredModel === 'gemini-3.8-flash' || preferredModel === 'gemini-3-flash-preview' || !preferredModel
-      ? 'gemini-4-hydrogen'
-      : preferredModel;
-
-  // Prioritize selected model then ultrafast failover nodes
-  const baseOrder = ['gemini-4-hydrogen', 'gemini-3.8-flash', 'gemini-flash-latest'];
-  const orderedModels =
-    normalizedPreferred === 'gemini-3.1-pro-preview'
-      ? ['gemini-3.1-pro-preview', ...baseOrder]
-      : [normalizedPreferred, ...baseOrder.filter((m) => m !== normalizedPreferred)];
-
-  for (const candidateModel of orderedModels) {
+  for (const candidateModel of chatModelOrder(preferredModel)) {
     if (abortSignal?.aborted) return;
+    if (candidateModel !== 'gemini-3.1-flash-lite' && (streamCooldown.get(candidateModel) ?? 0) > Date.now()) continue;
     let yieldedFromCandidate = false;
-    const deadline = AbortSignal.timeout(12_000);
+    const deadline = AbortSignal.timeout(candidateModel === 'gemini-3.1-flash-lite' ? 14_000 : 7_000);
     const attemptSignal = abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline;
     try {
       const stream = await ai.models.generateContentStream({
@@ -669,8 +662,11 @@ async function* generateGeminiChatStreamSafely(
         return;
       }
       const status = Number((error as { status?: number } | null)?.status);
+      if (deadline.aborted || status === 404 || status === 429 || status >= 500) {
+        streamCooldown.set(candidateModel, Date.now() + 60_000);
+      }
       console.warn('[Gemini chat] Upstream request failed', {
-        model: orderedModels.indexOf(candidateModel) + 1,
+        model: candidateModel,
         reason: deadline.aborted ? 'timeout' : Number.isInteger(status) ? status : 'transport',
       });
       if (yieldedFromCandidate) {
@@ -692,14 +688,7 @@ async function generateGeminiChatSafely(
   const ai = getAIClient(customApiKey);
   if (!ai) return { reply: '', modelUsed: '', error: '尚未配置有效的 Google Gemini API Key' };
 
-  const normalizedPreferred =
-    preferredModel === 'gemini-3.8-flash' || !preferredModel ? 'gemini-4-hydrogen' : preferredModel;
-
-  const baseOrder = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
-  const orderedModels =
-    normalizedPreferred === 'gemini-3.1-pro-preview'
-      ? ['gemini-3.1-pro-preview', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']
-      : [normalizedPreferred, ...baseOrder.filter((m) => m !== normalizedPreferred)];
+  const orderedModels = chatModelOrder(preferredModel);
 
   const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
@@ -728,17 +717,15 @@ async function generateGeminiChatSafely(
   for (const candidateModel of orderedModels) {
     if (abortSignal?.aborted) return null;
     try {
-      const response = await callWithTimeout(
-        ai.models.generateContent({
-          model: candidateModel,
-          contents: rawContents,
-          config: {
-            ...buildModelGenConfig(candidateModel, { systemInstruction, maxOutputTokens: 700 }),
-            abortSignal,
-          },
-        }),
-        6500
-      );
+      const deadline = AbortSignal.timeout(candidateModel === 'gemini-3.1-flash-lite' ? 12_000 : 6500);
+      const response = await ai.models.generateContent({
+        model: candidateModel,
+        contents: rawContents,
+        config: {
+          ...buildModelGenConfig(candidateModel, { systemInstruction, maxOutputTokens: 700 }),
+          abortSignal: abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline,
+        },
+      });
 
       if (response && response.text && response.text.trim()) {
         return { reply: response.text.trim(), modelUsed: candidateModel };
@@ -751,7 +738,7 @@ async function generateGeminiChatSafely(
     }
   }
 
-  return { reply: '', modelUsed: normalizedPreferred, error: lastErrorMsg || '所有 Gemini 模型請求超時或未回應' };
+  return { reply: '', modelUsed: orderedModels[0], error: lastErrorMsg || '所有 Gemini 模型請求超時或未回應' };
 }
 
 // -------------------------------------------------------------
@@ -1257,11 +1244,11 @@ app.get('/api/ai/status', (_req, res) => {
   
   res.json({
     connected: isConnected,
-    source: hasRuntimeKey ? 'official_cluster' : (hasEnvKey ? 'server_env' : 'ready'),
+    source: hasEnvKey ? 'server_env' : (hasRuntimeKey ? 'official_cluster' : 'ready'),
     googleAccount: 'GodDog-Official-Cluster',
     googlePlatform: 'Google AI Cloud',
-    defaultModel: 'gemini-4-hydrogen',
-    supportedModels: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.1-pro-preview', 'local-expert'],
+    defaultModel: CHAT_MODEL_ORDER[0],
+    supportedModels: SUPPORTED_AI_MODELS.map(model => model.id),
     canDirectAnswer: true,
   });
 });
@@ -1269,17 +1256,17 @@ app.get('/api/ai/status', (_req, res) => {
 app.get('/api/ai/admin-config', requireUser, requireAdmin, (_req, res) => {
   const hasEnv = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
   const hasRuntime = !!(runtimeCustomApiKey && runtimeCustomApiKey.trim());
-  const activeKey = runtimeCustomApiKey || process.env.GEMINI_API_KEY || '';
+  const activeKey = configuredGeminiKey();
   const maskedKey = activeKey ? '已由伺服器環境變數安全載入' : '';
 
   res.json({
     success: true,
     ownerAccount: 'GodDog-Official-Cluster',
     hasActiveKey: !!activeKey,
-    keySource: hasRuntime ? 'official_key' : (hasEnv ? 'server_env' : 'unconfigured'),
+    keySource: hasEnv ? 'server_env' : (hasRuntime ? 'official_key' : 'unconfigured'),
     maskedKey,
     activeModel: 'gemini-4-hydrogen',
-    supportedModels: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.1-pro-preview'],
+    supportedModels: SUPPORTED_AI_MODELS.filter(model => model.category === 'gemini').map(model => model.id),
     totalQueriesServed: totalCustomerQueriesServed,
   });
 });
@@ -1304,7 +1291,7 @@ app.post('/api/ai/set-key', requireUser, requireAdmin, async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
     });
 
-    const testModels = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    const testModels = CHAT_MODEL_ORDER;
     let verifiedModel = '';
     let pingText = '';
     let lastError = '';
@@ -1417,46 +1404,7 @@ app.post('/api/ai/test-owner-connection', requireUser, requireAdmin, async (req,
 // 1.2 AI 可選模型清單 API (供前端自選 Gemini 4 Hydrogen / 3.1-Lite / Flash / 3.1 Pro / 離線專家模式)
 // -------------------------------------------------------------
 app.get('/api/ai/available-models', (_req, res) => {
-  res.json({
-    defaultModel: 'gemini-4-hydrogen',
-    models: [
-      {
-        id: 'gemini-4-hydrogen',
-        name: 'Gemini 4 Hydrogen (推薦首選)',
-        badge: '旗艦推薦',
-        speed: '極快 (~0.8s)',
-        description: 'Google 最新次世代 4 Hydrogen 模型，具備強大材料科學推理與低延遲繁體中文對話能力。',
-      },
-      {
-        id: 'gemini-3.1-flash-lite',
-        name: 'Gemini 3.1 Flash-Lite',
-        badge: '瞬間秒回',
-        speed: '毫秒級 (~0.4s)',
-        description: '極低延遲超輕量模型，快速回答出貨、優惠券、物流與一般耗材諮詢。',
-      },
-      {
-        id: 'gemini-flash-latest',
-        name: 'Gemini Flash (自動高負載分流)',
-        badge: '經典 Flash',
-        speed: '超快 (~1.0s)',
-        description: 'Google Flash 系列模型，具備智慧多模型自動容錯與無縫切換。',
-      },
-      {
-        id: 'gemini-3.1-pro-preview',
-        name: 'Gemini 3.1 Pro',
-        badge: 'PLUS 專屬',
-        speed: '思考型 (~2.0s)',
-        description: '高階工程推理旗艦，擅長高溫箱溫熱傳導分析、碳纖耐磨與微觀物理探討。',
-      },
-      {
-        id: 'local-expert',
-        name: '神狗勾 3D 專家工程模式',
-        badge: '離線雙軌',
-        speed: '即時 (<0.05s)',
-        description: '神狗勾官方內建 3D 列印黃金切片規則引擎，離線秒回無延遲。',
-      },
-    ],
-  });
+  res.json({ defaultModel: CHAT_MODEL_ORDER[0], models: SUPPORTED_AI_MODELS });
 });
 
 // -------------------------------------------------------------
@@ -1485,8 +1433,7 @@ function cleanChatReply(rawText: string): string {
 // 1.4 AI 智慧客服 SSE 串流 API (支援 Server-Sent Events 與 AbortController 斷線防護)
 // -------------------------------------------------------------
 app.post('/api/ai/chat/stream', async (req, res) => {
-  const rawModel = req.body?.model || 'gemini-4-hydrogen';
-  const requestedModel = rawModel === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : rawModel;
+  const requestedModel = req.body?.model || 'gemini-3.1-flash-lite';
   const membershipTier = req.body?.membershipTier || req.body?.tier || 'FREE';
 
   // 1. 會員階級權限攔截 (RBAC)
@@ -1506,6 +1453,11 @@ app.post('/api/ai/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
+  res.write(': connected\n\n');
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(': waiting\n\n');
+  }, 4000);
+  res.once('close', () => clearInterval(heartbeat));
 
   // 綁定 AbortController，注意必須監聽 res.on('close') 且判斷 !res.writableEnded，避免 POST body 讀取完畢時誤觸 req.on('close') 導致串流永遠不呼叫 res.end() 而卡死 2 分鐘！
   const abortController = new AbortController();
@@ -1554,7 +1506,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
       }))
       .filter((m) => m.text.length > 0);
 
-    const effectiveApiKey = (runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+    const effectiveApiKey = configuredGeminiKey();
 
     const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
       normalizedFullHistory,
@@ -1658,7 +1610,7 @@ ${contextNotes}`;
     }
     if (!streamedAnyChunk && !abortController.signal.aborted) {
       const result = await generateGeminiChatSafely(
-        history, systemPrompt, latestUserMessage, requestedModel, effectiveApiKey, abortController.signal,
+        history, systemPrompt, latestUserMessage, undefined, effectiveApiKey, abortController.signal,
       );
       if (result?.reply && !abortController.signal.aborted) {
         resolvedModelId = result.modelUsed;
@@ -1754,10 +1706,9 @@ app.post('/api/ai/chat', async (req, res) => {
       }))
       .filter((m) => m.text.length > 0);
 
-    const effectiveApiKey = (runtimeCustomApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+    const effectiveApiKey = configuredGeminiKey();
 
-    const rawTarget = requestedModel || 'gemini-4-hydrogen';
-    const targetModel = rawTarget === 'gemini-3.8-flash' ? 'gemini-4-hydrogen' : rawTarget;
+    const targetModel = requestedModel === 'local-expert' ? requestedModel : chatModelOrder(requestedModel)[0];
     const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
       normalizedFullHistory,
       targetModel === 'local-expert' ? '' : effectiveApiKey

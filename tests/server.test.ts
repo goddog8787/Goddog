@@ -24,8 +24,8 @@ test('Gemini chat reports the upstream model that returned text after the primar
     models.push(model);
     req.resume();
     if (model === 'gemini-4-hydrogen' || (streaming && streamUnavailable)) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: { code: 404, status: 'NOT_FOUND' } }));
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE' } }));
       return;
     }
     const payload = JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'Gemini smoke test' }] } }] });
@@ -44,9 +44,9 @@ test('Gemini chat reports the upstream model that returned text after the primar
       });
       assert.equal(response.status, 200);
       const events = await response.text();
-      assert.match(events, /"modelUsed":"Gemini 3\.8 Flash"/);
+      assert.match(events, /"modelUsed":"Gemini 3\.1 Flash-Lite/);
       assert.match(events, /Gemini smoke test/);
-      assert.deepEqual(models, ['gemini-4-hydrogen', 'gemini-3.8-flash']);
+      assert.deepEqual(models, ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']);
 
       streamUnavailable = true;
       const fallback = await fetch(base + '/api/ai/chat/stream', {
@@ -56,6 +56,7 @@ test('Gemini chat reports the upstream model that returned text after the primar
       const fallbackEvents = await fallback.text();
       assert.match(fallbackEvents, /"modelUsed":"Gemini 3\.1 Flash-Lite/);
       assert.match(fallbackEvents, /Gemini smoke test/);
+      assert.equal(models.filter(model => model === 'gemini-4-hydrogen').length, 1);
     }, { GEMINI_API_KEY: 'local-test-key', GOOGLE_GEMINI_BASE_URL: `http://127.0.0.1:${addr.port}` });
   } finally {
     gateway.closeAllConnections();
