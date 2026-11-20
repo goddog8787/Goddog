@@ -2,6 +2,7 @@
 export type SupportedChatLang = 'zh-TW' | 'en' | 'ja';
 
 import { getCandidateApiBases } from './backendUrl';
+import { DEFAULT_GEMINI_CHAT_MODEL } from '../types';
 export { getBackendApiBase, getCandidateApiBases, isStaticHostingEnv } from './backendUrl';
 
 export function getLocalizedSystemPrompt(lang: SupportedChatLang = 'zh-TW', contextStr = ''): string {
@@ -80,7 +81,22 @@ async function fetchWithTimeout(
 export function normalizeModelId(model?: string): string {
   if (model === 'gemini-flash-latest') return 'gemini-3.8-flash';
   if (model === 'gemini-3-flash-preview') return 'gemini-4-hydrogen';
-  return model || 'gemini-3.1-flash-lite';
+  return model || DEFAULT_GEMINI_CHAT_MODEL;
+}
+
+const CHAT_NETWORK_TIMEOUT_MS = 22_000;
+
+interface GeminiReplyMetadata {
+  source: 'gemini';
+  modelId: string;
+  modelUsed: string;
+  fallbackFrom?: string;
+}
+
+function isGeminiReply(meta: Partial<GeminiReplyMetadata> | undefined, requestedModel: string): meta is GeminiReplyMetadata {
+  if (meta?.source !== 'gemini' || typeof meta.modelUsed !== 'string' || !meta.modelUsed.trim()) return false;
+  return (meta.modelId === requestedModel && meta.fallbackFrom === undefined) ||
+    (meta.modelId === DEFAULT_GEMINI_CHAT_MODEL && meta.modelId !== requestedModel && meta.fallbackFrom === requestedModel);
 }
 
 /**
@@ -115,7 +131,7 @@ export async function callDirectBrowserGemini(
             lang,
           }),
         },
-        5500,
+        CHAT_NETWORK_TIMEOUT_MS,
         signal
       );
 
@@ -123,7 +139,7 @@ export async function callDirectBrowserGemini(
       if (!res.ok || !contentType.includes('application/json')) continue;
       const data = await res.json();
       const text = data?.reply?.trim();
-      if (text) {
+      if (isGeminiReply(data, normalizedModel) && text) {
         return text
           .replace(/\*\*/g, '')
           .replace(/^#{1,6}\s+/gm, '')
@@ -148,7 +164,7 @@ export async function dispatchGeminiStream(params: {
   storeContext?: any;
   signal?: AbortSignal;
   onChunk?: (streamedSoFar: string) => void;
-  onMeta?: (meta: { modelUsed?: string; modelId?: string; source?: string }) => void;
+  onMeta?: (meta: GeminiReplyMetadata) => void;
   lang?: SupportedChatLang;
 }): Promise<{ reply: string; modelUsed?: string; modelId?: string; forbidden?: boolean; forbiddenMessage?: string } | null> {
   if (params.signal?.aborted) return null;
@@ -174,7 +190,7 @@ export async function dispatchGeminiStream(params: {
             lang: params.lang || 'zh-TW',
           }),
         },
-        15000,
+        CHAT_NETWORK_TIMEOUT_MS,
         params.signal
       );
 
@@ -206,7 +222,8 @@ export async function dispatchGeminiStream(params: {
               try { await reader.cancel(); } catch {}
               return null;
             }
-            const { value, done } = await reader.read();
+            const idleTimer = setTimeout(cancelRead, CHAT_NETWORK_TIMEOUT_MS);
+            const { value, done } = await reader.read().finally(() => clearTimeout(idleTimer));
             pending += decoder.decode(value, { stream: !done });
             const lines = pending.split('\n');
             pending = done ? '' : lines.pop() ?? '';
@@ -222,12 +239,16 @@ export async function dispatchGeminiStream(params: {
               try {
                 const parsed = JSON.parse(dataStr);
                 if (parsed.error) streamFailed = true;
-                if (parsed.meta?.source === 'gemini' && parsed.meta.modelId === normalizedModel) {
+                if (parsed.meta && (!isGeminiReply(parsed.meta, normalizedModel) ||
+                    (confirmedModelId && parsed.meta.modelId !== confirmedModelId))) {
+                  streamFailed = true;
+                }
+                if (!streamFailed && isGeminiReply(parsed.meta, normalizedModel)) {
                   confirmedModelId = parsed.meta.modelId;
-                  resolvedModelUsed = parsed.meta.modelUsed || confirmedModelId;
+                  resolvedModelUsed = parsed.meta.modelUsed;
                   params.onMeta?.(parsed.meta);
                 }
-                if (confirmedModelId && parsed.text) {
+                if (!streamFailed && confirmedModelId && typeof parsed.text === 'string' && parsed.text) {
                   accumulatedText += parsed.text;
                   params.onChunk?.(accumulatedText);
                 }

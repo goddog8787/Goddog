@@ -1,5 +1,5 @@
 import express from 'express';
-import { SUPPORTED_AI_MODELS } from './src/types';
+import { DEFAULT_GEMINI_CHAT_MODEL, SUPPORTED_AI_MODELS } from './src/types';
 import { getSubscriptionTerms } from './src/data/subscriptionTerms.ts';
 import { initializeApp as initializeAdminApp } from 'firebase-admin/app';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
@@ -11,6 +11,7 @@ import dns from 'dns';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import crypto from 'crypto';
+import { setTimeout as wait } from 'node:timers/promises';
 
 try {
   dns.setDefaultResultOrder?.('ipv4first');
@@ -323,12 +324,13 @@ function configuredGeminiKey() {
 }
 
 function getAIClient(customApiKey?: string): GoogleGenAI | null {
-  const apiKey = customApiKey?.trim() || configuredGeminiKey();
+  const configuredKey = configuredGeminiKey();
+  const apiKey = customApiKey?.trim() || configuredKey;
   if (!apiKey) return null;
-  
-  if (customApiKey && customApiKey.trim()) {
+
+  if (apiKey !== configuredKey) {
     return new GoogleGenAI({
-      apiKey: customApiKey.trim(),
+      apiKey,
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build',
@@ -466,7 +468,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   'local-expert': '神狗勾 3D 專家工程模式 (離線)',
 };
 
-const CHAT_MODEL_ORDER = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-4-hydrogen'];
+const CHAT_MODEL_ORDER = [DEFAULT_GEMINI_CHAT_MODEL, 'gemini-3.8-flash', 'gemini-4-hydrogen'];
 function selectedChatModel(input: unknown): string | undefined {
   if (input === undefined || input === '') return CHAT_MODEL_ORDER[0];
   if (input === 'gemini-flash-latest') return 'gemini-3.8-flash';
@@ -517,20 +519,7 @@ function getConversationMemory(history: Array<{ role: 'user' | 'model'; text: st
   return { summary, recentHistory: history.slice(-6) };
 }
 
-async function* generateGeminiChatStreamSafely(
-  history: Array<{ role: 'user' | 'model'; text: string }>,
-  systemInstruction: string,
-  latestUserMessage: string,
-  preferredModel?: string,
-  customApiKey?: string,
-  abortSignal?: AbortSignal,
-  onModelResolved?: (modelId: string) => void
-): AsyncGenerator<string, void, unknown> {
-  const ai = getAIClient(customApiKey);
-  if (!ai) {
-    return;
-  }
-
+function buildGeminiChatContents(history: Array<{ role: 'user' | 'model'; text: string }>, latestUserMessage: string) {
   const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
   for (const item of history) {
@@ -552,96 +541,81 @@ async function* generateGeminiChatStreamSafely(
   } else {
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
+  return rawContents;
+}
 
-  const model = selectedChatModel(preferredModel);
-  if (!model || model === 'local-expert' || abortSignal?.aborted) return;
+const CHAT_RETRY_WAIT_MS = 350;
 
-  const deadline = AbortSignal.timeout(model === 'gemini-4-hydrogen' ? 40_000 : 22_000);
-  const attemptSignal = abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline;
-  let started = false;
-  try {
-    const stream = await ai.models.generateContentStream({
+async function* generateGeminiChat(
+  history: Array<{ role: 'user' | 'model'; text: string }>,
+  systemInstruction: string,
+  latestUserMessage: string,
+  requestedModel: string,
+  options: { stream: boolean; signal?: AbortSignal },
+) {
+  const ai = getAIClient();
+  const originalModel = selectedChatModel(requestedModel);
+  if (!ai || !originalModel || originalModel === 'local-expert') return;
+  const contents = buildGeminiChatContents(history, latestUserMessage);
+  let model = originalModel;
+  const { signal, stream } = options;
+
+  for (let attempt = 0; !signal?.aborted; attempt++) {
+    const deadline = AbortSignal.timeout(model === DEFAULT_GEMINI_CHAT_MODEL ? 16_000 : 22_000);
+    const abortSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    const request = {
       model,
-      contents: rawContents,
+      contents,
       config: {
         ...buildModelGenConfig(model, { systemInstruction, maxOutputTokens: 700 }),
-        abortSignal: attemptSignal,
+        abortSignal,
+        httpOptions: { retryOptions: { attempts: 1 } },
       },
-    });
-    for await (const chunk of stream) {
-      if (abortSignal?.aborted) return;
-      if (!chunk.text) continue;
-      if (!started) {
-        started = true;
-        onModelResolved?.(model);
+    };
+    let sentText = false;
+    try {
+      const responses = stream
+        ? await ai.models.generateContentStream(request)
+        : [await ai.models.generateContent(request)];
+      for await (const chunk of responses) {
+        if (signal?.aborted) return;
+        deadline.throwIfAborted();
+        if (!chunk.text) continue;
+        sentText = true;
+        yield { modelId: model, text: chunk.text };
       }
-      yield chunk.text;
+      if (sentText) deadline.throwIfAborted();
+      return;
+    } catch (error) {
+      if (signal?.aborted) return;
+      const status = Number((error as { status?: number } | null)?.status);
+      console.warn('[Gemini chat] Upstream request failed', {
+        model, attempt: attempt + 1,
+        reason: deadline.aborted ? 'timeout' : Number.isInteger(status) ? status : 'transport',
+      });
+      if (sentText) throw error;
+      if (status !== 503 || attempt >= 2) return;
+      if (attempt === 0) {
+        try {
+          await wait(CHAT_RETRY_WAIT_MS, undefined, { signal });
+        } catch {
+          return;
+        }
+      } else {
+        if (model === DEFAULT_GEMINI_CHAT_MODEL) return;
+        model = DEFAULT_GEMINI_CHAT_MODEL;
+      }
     }
-  } catch (error) {
-    if (abortSignal?.aborted) return;
-    const status = Number((error as { status?: number } | null)?.status);
-    console.warn('[Gemini chat] Upstream request failed', {
-      model, reason: deadline.aborted ? 'timeout' : Number.isInteger(status) ? status : 'transport',
-    });
-    if (started) throw error;
   }
 }
 
-// Multi-turn conversational Gemini generator with selectable model and streamlined scheduling
-async function generateGeminiChatSafely(
-  history: Array<{ role: 'user' | 'model'; text: string }>,
-  systemInstruction: string,
-  latestUserMessage: string,
-  preferredModel?: string,
-  customApiKey?: string,
-  abortSignal?: AbortSignal,
-): Promise<{ reply: string; modelUsed: string; error?: string } | null> {
-  const ai = getAIClient(customApiKey);
-  if (!ai) return { reply: '', modelUsed: '', error: '尚未配置有效的 Google Gemini API Key' };
-
-  const model = selectedChatModel(preferredModel);
-  if (!model || model === 'local-expert' || abortSignal?.aborted) return null;
-
-  const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
-
-  for (const item of history) {
-    if (!item.text || !item.text.trim()) continue;
-    const role = item.role === 'user' ? 'user' : 'model';
-    if (rawContents.length > 0 && rawContents[rawContents.length - 1].role === role) {
-      rawContents[rawContents.length - 1].parts[0].text += `\n${item.text.trim()}`;
-    } else {
-      rawContents.push({ role, parts: [{ text: item.text.trim() }] });
-    }
-  }
-
-  if (rawContents.length > 0 && rawContents[0].role !== 'user') {
-    rawContents.shift();
-  }
-
-  if (rawContents.length > 0 && rawContents[rawContents.length - 1].role === 'user') {
-    rawContents[rawContents.length - 1].parts[0].text += `\n${latestUserMessage.trim()}`;
-  } else {
-    rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
-  }
-
-  try {
-    const deadline = AbortSignal.timeout(model === 'gemini-4-hydrogen' ? 25_000 : 16_000);
-    const response = await ai.models.generateContent({
-      model,
-      contents: rawContents,
-      config: {
-        ...buildModelGenConfig(model, { systemInstruction, maxOutputTokens: 700 }),
-        abortSignal: abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline,
-      },
-    });
-    if (response.text?.trim()) return { reply: response.text.trim(), modelUsed: model };
-  } catch (error) {
-    if (!abortSignal?.aborted) {
-      const status = Number((error as { status?: number } | null)?.status);
-      console.warn('[Gemini chat] Regular request failed', { model, status: Number.isInteger(status) ? status : 'transport' });
-    }
-  }
-  return null;
+function geminiChatMetadata(modelId: string, requestedModel: string) {
+  return {
+    source: 'gemini',
+    modelId,
+    modelUsed: MODEL_DISPLAY_NAMES[modelId] || modelId,
+    ...(modelId !== requestedModel ? { fallbackFrom: requestedModel } : {}),
+  };
 }
 
 // -------------------------------------------------------------
@@ -766,15 +740,13 @@ async function startFirestoreAIBridgeWorker() {
             let accumulated = '';
             let lastFlush = 0;
 
-            const streamGen = generateGeminiChatStreamSafely(
-              history,
-              systemPrompt,
-              userMessage,
-              data.model || 'gemini-4-hydrogen'
-            );
+            const requestedModel = selectedChatModel(data.model) || DEFAULT_GEMINI_CHAT_MODEL;
+            let replyModel = requestedModel;
+            const streamGen = generateGeminiChat(history, systemPrompt, userMessage, requestedModel, { stream: true });
 
             for await (const chunk of streamGen) {
-              accumulated += chunk;
+              replyModel = chunk.modelId;
+              accumulated += chunk.text;
               const now = Date.now();
               if (now - lastFlush > 120) {
                 lastFlush = now;
@@ -790,18 +762,6 @@ async function startFirestoreAIBridgeWorker() {
               }
             }
 
-            if (!accumulated.trim()) {
-              const nonStream = await generateGeminiChatSafely(
-                history,
-                systemPrompt,
-                userMessage,
-                data.model || 'gemini-4-hydrogen'
-              );
-              if (nonStream?.reply) {
-                accumulated = nonStream.reply;
-              }
-            }
-
             if (accumulated.trim()) {
               totalCustomerQueriesServed++;
               await fsSetDoc(
@@ -809,7 +769,7 @@ async function startFirestoreAIBridgeWorker() {
                 {
                   status: 'completed',
                   reply: cleanChatReply(accumulated.trim()),
-                  modelUsed: MODEL_DISPLAY_NAMES[data.model || 'gemini-4-hydrogen'] || 'Gemini 4 Hydrogen',
+                  ...geminiChatMetadata(replyModel, requestedModel),
                   completedAt: Date.now(),
                 },
                 { merge: true }
@@ -1473,39 +1433,18 @@ ${contextNotes}`;
       return res.end();
     }
 
-    const generator = generateGeminiChatStreamSafely(
-      history,
-      systemPrompt,
-      latestUserMessage,
-      requestedModel,
-      effectiveApiKey,
-      abortController.signal,
-      (modelId) => {
-        if (!clientDisconnected && !res.writableEnded) {
-          const displayName = MODEL_DISPLAY_NAMES[modelId] || modelId;
-          res.write(`data: ${JSON.stringify({ meta: { source: 'gemini', modelId, modelUsed: displayName } })}\n\n`);
-        }
-      }
-    );
-
+    const reply = generateGeminiChat(history, systemPrompt, latestUserMessage, requestedModel, {
+      stream: true, signal: abortController.signal,
+    });
     let streamedAnyChunk = false;
-    for await (const chunkText of generator) {
-      if (clientDisconnected || abortController.signal.aborted) {
-        break;
-      }
-      streamedAnyChunk = true;
-      res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
-    }
-    if (!streamedAnyChunk && !abortController.signal.aborted) {
-      const result = await generateGeminiChatSafely(
-        history, systemPrompt, latestUserMessage, requestedModel, effectiveApiKey, abortController.signal,
-      );
-      if (result?.reply && !abortController.signal.aborted) {
-        const modelId = result.modelUsed;
+    for await (const chunk of reply) {
+      if (clientDisconnected || abortController.signal.aborted) break;
+      if (!streamedAnyChunk) {
+        const meta = geminiChatMetadata(chunk.modelId, requestedModel);
+        res.write(`data: ${JSON.stringify({ meta })}\n\n`);
         streamedAnyChunk = true;
-        res.write(`data: ${JSON.stringify({ meta: { source: 'gemini', modelId, modelUsed: MODEL_DISPLAY_NAMES[modelId] || modelId } })}\n\n`);
-        res.write(`data: ${JSON.stringify({ text: result.reply })}\n\n`);
       }
+      res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
     }
     if (streamedAnyChunk) totalCustomerQueriesServed++;
 
@@ -1634,32 +1573,20 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
 3. 神狗勾全系列 1kg 線材（外徑 200mm、寬 65mm，公差 ±0.02mm）全面相容拓竹 Bambu Lab AMS 與主流高速機（TPU 軟膠除外，需外掛直供；PLA-CF/PETG-CF 建議搭配硬化鋼噴嘴）。
 4. 全館滿 NT$999 免運、24H 出貨；優惠碼【PRINTCORE10】享 9 折；空線盤回收每盤回饋 NT$20 紅利。${storeContextNotes}`;
 
-    // 1. Dispatch to Gemini if targetModel is a Gemini model and key is available; fall through to local expert engine if upstream is temporarily busy (503)
     if (targetModel !== 'local-expert' && effectiveApiKey) {
-      try {
-        const geminiReply = await generateGeminiChatSafely(
-          history,
-          systemPrompt,
-          latestUserMessage,
-          targetModel,
-          effectiveApiKey
-        );
-
-        if (geminiReply && geminiReply.reply && geminiReply.reply.trim()) {
-          totalCustomerQueriesServed++;
-          const usedDisplayName = MODEL_DISPLAY_NAMES[geminiReply.modelUsed] || geminiReply.modelUsed;
-          const cleanReplyText = cleanChatReply(geminiReply.reply.trim());
-          return res.json({
-            success: true,
-            reply: cleanReplyText,
-            source: 'gemini',
-            modelId: geminiReply.modelUsed,
-            modelUsed: usedDisplayName,
-            contextualMemoryActive: true,
-          });
-        }
-      } catch (_geminiErr: any) {
-        // Fall through to local 3D engineering expert engine
+      const controller = new AbortController();
+      res.once('close', () => { if (!res.writableEnded) controller.abort(); });
+      const reply = generateGeminiChat(history, systemPrompt, latestUserMessage, targetModel, {
+        stream: false, signal: controller.signal,
+      });
+      for await (const chunk of reply) {
+        totalCustomerQueriesServed++;
+        return res.json({
+          success: true,
+          reply: cleanChatReply(chunk.text.trim()),
+          ...geminiChatMetadata(chunk.modelId, targetModel),
+          contextualMemoryActive: true,
+        });
       }
     }
 

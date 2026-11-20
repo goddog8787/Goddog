@@ -15,18 +15,20 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const serverFile = fileURLToPath(new URL('../server.ts', import.meta.url));
 
-test('Gemini chat only uses the selected model for streaming and regular replies', async () => {
-  const models: string[] = [];
-  let streamUnavailable = false;
-  let modelUnavailable = false;
+test('Gemini chat retries 503 once before allowing the Flash-Lite fallback', async () => {
+  const hydrogen = 'gemini-4-hydrogen';
+  const lite = 'gemini-3.1-flash-lite';
+  const calls: Array<{ model: string; startedAt: number }> = [];
+  let statuses: number[] = [];
   const gateway = createHttpServer((req, res) => {
     const model = req.url?.match(/models\/([^:]+)/)?.[1] ?? '';
     const streaming = req.url?.includes(':streamGenerateContent');
-    models.push(model);
+    calls.push({ model, startedAt: performance.now() });
     req.resume();
-    if (modelUnavailable || (streaming && streamUnavailable)) {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE' } }));
+    const status = statuses.shift() ?? 200;
+    if (status !== 200) {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { code: status, message: 'Simulated upstream error' } }));
       return;
     }
     const payload = JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'Gemini smoke test' }] } }] });
@@ -39,45 +41,60 @@ test('Gemini chat only uses the selected model for streaming and regular replies
   assert.ok(addr && typeof addr !== 'string');
   try {
     await withServer(false, async base => {
-      const response = await fetch(base + '/api/ai/chat/stream', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: 'Test cloud reply', model: 'gemini-4-hydrogen' }),
-      });
-      assert.equal(response.status, 200);
-      const events = await response.text();
-      assert.match(events, /"source":"gemini","modelId":"gemini-4-hydrogen"/);
-      assert.match(events, /"modelUsed":"Gemini 4 Hydrogen"/);
-      assert.match(events, /Gemini smoke test/);
-      assert.deepEqual(models, ['gemini-4-hydrogen']);
-
-      const repeated = await fetch(base + '/api/ai/chat/stream', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: 'Test cloud reply', model: 'gemini-4-hydrogen' }),
-      });
-      assert.match(await repeated.text(), /Gemini smoke test/);
-      assert.deepEqual(models, Array(2).fill('gemini-4-hydrogen'));
-
-      streamUnavailable = true;
-      const fallback = await fetch(base + '/api/ai/chat/stream', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: 'Test non-streaming fallback', model: 'gemini-4-hydrogen' }),
-      });
-      const fallbackEvents = await fallback.text();
-      assert.match(fallbackEvents, /"modelUsed":"Gemini 4 Hydrogen"/);
-      assert.match(fallbackEvents, /Gemini smoke test/);
-      assert.deepEqual(models, Array(4).fill('gemini-4-hydrogen'));
-
-      modelUnavailable = true;
-      for (const path of ['/api/ai/chat/stream', '/api/ai/chat']) {
-        const failed = await fetch(base + path, {
+      async function ask(model?: string, stream = true) {
+        return fetch(base + `/api/ai/chat${stream ? '/stream' : ''}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: `Unavailable ${path}`, model: 'gemini-4-hydrogen' }),
+          body: JSON.stringify({ message: 'Test cloud reply', model }),
         });
-        const body = await failed.text();
-        assert.match(body, /MODEL_UNAVAILABLE/);
-        assert.doesNotMatch(body, /modelUsed|Gemini smoke test/);
       }
-      assert.deepEqual(models, Array(7).fill('gemini-4-hydrogen'));
+      async function checkStream(requested?: string) {
+        const response = await ask(requested);
+        assert.equal(response.status, 200);
+        return await response.text();
+      }
+      const attemptedModels = () => calls.splice(0).map(call => call.model);
+
+      for (let i = 0; i < 2; i++) {
+        const reply = await checkStream();
+        assert.match(reply, /"source":"gemini","modelId":"gemini-3\.1-flash-lite"/);
+        assert.match(reply, /Gemini smoke test/);
+        assert.doesNotMatch(reply, /fallbackFrom/);
+        assert.deepEqual(attemptedModels(), [lite]);
+      }
+
+      statuses = [503, 200];
+      const recovered = await checkStream(hydrogen);
+      assert.match(recovered, /"modelId":"gemini-4-hydrogen"/);
+      assert.doesNotMatch(recovered, /fallbackFrom/);
+      assert.ok(calls[1].startedAt - calls[0].startedAt >= 300, 'A 503 retry waits briefly');
+      assert.deepEqual(attemptedModels(), [hydrogen, hydrogen]);
+
+      statuses = [503, 503, 200];
+      const fallback = await checkStream(hydrogen);
+      assert.match(fallback, /"modelId":"gemini-3\.1-flash-lite".*"fallbackFrom":"gemini-4-hydrogen"/);
+      assert.match(fallback, /Gemini smoke test/);
+      assert.deepEqual(attemptedModels(), [hydrogen, hydrogen, lite]);
+
+      statuses = [503, 503, 200];
+      const response = await ask(hydrogen, false);
+      assert.equal(response.status, 200);
+      const data = await response.json();
+      assert.equal(data.modelId, lite);
+      assert.equal(data.fallbackFrom, hydrogen);
+      assert.equal(data.reply, 'Gemini smoke test');
+      assert.deepEqual(attemptedModels(), [hydrogen, hydrogen, lite]);
+
+      for (const scenario of [
+        { model: hydrogen, failures: [503, 503, 503], expected: [hydrogen, hydrogen, lite] },
+        { model: hydrogen, failures: [429], expected: [hydrogen] },
+        { model: lite, failures: [503, 503], expected: [lite, lite] },
+      ]) {
+        statuses = scenario.failures;
+        const failed = await checkStream(scenario.model);
+        assert.match(failed, /MODEL_UNAVAILABLE/);
+        assert.doesNotMatch(failed, /modelUsed|Gemini smoke test/);
+        assert.deepEqual(attemptedModels(), scenario.expected);
+      }
     }, { GEMINI_API_KEY: 'local-test-key', GOOGLE_GEMINI_BASE_URL: `http://127.0.0.1:${addr.port}` });
   } finally {
     gateway.closeAllConnections();
