@@ -106,13 +106,19 @@ export const LogisticsManager: React.FC<LogisticsManagerProps> = ({
   const handleTestNewebpayConnection = async () => {
     setIsTestingConnection(true);
     try {
-      const response = await fetch(`${getStoreApiBase()}/api/payment/config-status`);
+      const base = getStoreApiBase();
+      let response = await fetch(`${base}/api/payment/config-status`);
+      if (response.status === 404) {
+        response = await fetch(`${base}/api/payment/status`);
+      }
       if (!response.ok) throw new Error();
       const config = await response.json();
+      const sandbox = config.sandbox ?? config.testMode;
+      const mode = typeof sandbox === 'boolean' ? `（${sandbox ? '測試環境' : '正式環境'}）` : '';
       setConnectionTestResult({
         success: config.configured === true,
-        message: config.configured
-          ? `付款伺服器已設定特店參數（${config.sandbox ? '測試環境' : '正式環境'}）。`
+        message: config.configured === true
+          ? `付款伺服器已設定特店參數${mode}。`
           : '請在付款伺服器設定特店代號、Hash Key 與 Hash IV。',
       });
     } catch {
