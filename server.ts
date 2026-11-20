@@ -479,7 +479,14 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
 };
 
 const CHAT_MODEL_ORDER = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-4-hydrogen'];
-const streamCooldown = new Map<string, number>();
+function selectedChatModel(input: unknown): string | undefined {
+  if (input === undefined || input === '') return CHAT_MODEL_ORDER[0];
+  if (input === 'gemini-flash-latest') return 'gemini-3.8-flash';
+  if (input === 'gemini-3-flash-preview') return 'gemini-4-hydrogen';
+  return SUPPORTED_AI_MODELS.find(model => model.id === input)?.id;
+}
+
+const chatUnavailableMessage = '所選模型目前無法回覆。請稍後重試，或手動選擇其他模型。';
 
 function chatModelOrder(preferred?: string) {
   if (preferred === 'gemini-flash-latest') preferred = 'gemini-3.8-flash';
@@ -515,79 +522,13 @@ function checkModelTierAccess(requestedModel: string, tier?: string): { allowed:
 }
 
 // -------------------------------------------------------------
-// 長對話記憶壓縮管線 (Memory Compression Pipeline)
-// 對話超過 5 輪時，舊對話一律強制調用平價模型 (Gemini Flash) 提取 200 字摘要，再注入高階模型
-// -------------------------------------------------------------
-const conversationSummaryCache = new Map<string, { summary: string; timestamp: number }>();
-
-async function compressConversationMemorySafely(
-  history: Array<{ role: 'user' | 'model'; text: string }>,
-  customApiKey?: string
-): Promise<{ summary: string; recentHistory: Array<{ role: 'user' | 'model'; text: string }> }> {
-  // 超過 5 輪對話（> 10 則訊息）才觸發平價 Flash 模型記憶壓縮，確保近期 4 輪完整保留
-  if (history.length <= 10) {
-    return { summary: '', recentHistory: history };
-  }
-
-  const olderTurns = history.slice(0, -6);
-  const recentHistory = history.slice(-6);
-
-  const olderTranscript = olderTurns
-    .map(t => `${t.role === 'user' ? '用戶' : '顧問'}: ${t.text}`)
-    .join('\n');
-
-  const cacheKey = `${olderTurns.length}:${olderTranscript.slice(0, 80)}:${olderTranscript.slice(-120)}`;
-  const cached = conversationSummaryCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < 600000) {
-    return { summary: cached.summary, recentHistory };
-  }
-
-  const ai = getAIClient(customApiKey);
-  if (!ai) {
-    const simpleFallbackSummary = olderTranscript.slice(-200);
-    return { summary: simpleFallbackSummary, recentHistory };
-  }
-
-  try {
-    const summaryPrompt = `請將以下使用者與 3D 列印智能耗材顧問的多輪對話歷史，提煉為 200 字以內的繁體中文關鍵語意摘要。
-嚴禁多餘套話與贅字，專注保留：
-1. 涉及的線材材質 (PLA/PETG/ABS/TPU/CF 等)
-2. 提及的 3D 列印機型號與 AMS 系統
-3. 使用者遇到的故障現象或特定參數需求 (溫度、速度、回抽、層厚)
-4. 已確認的結論與商品偏好
-
-【待提煉歷史紀錄】：
-${olderTranscript}`;
-
-    const summaryResponse = await callWithTimeout(
-      ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: summaryPrompt,
-        config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-          maxOutputTokens: 280,
-          temperature: 0.2,
-        },
-      }),
-      2200
-    );
-
-    const summaryText = summaryResponse?.text?.trim() || '';
-    const cleanSummary = summaryText.slice(0, 200);
-    if (cleanSummary) {
-      if (conversationSummaryCache.size >= 200) {
-        const oldestKey = conversationSummaryCache.keys().next().value;
-        if (oldestKey) conversationSummaryCache.delete(oldestKey);
-      }
-      conversationSummaryCache.set(cacheKey, { summary: cleanSummary, timestamp: Date.now() });
-    }
-    return { summary: cleanSummary, recentHistory };
-  } catch {
-    return { summary: olderTranscript.slice(-200), recentHistory };
-  }
+// Bound long conversations without calling another model to summarize them.
+function getConversationMemory(history: Array<{ role: 'user' | 'model'; text: string }>) {
+  if (history.length <= 10) return { summary: '', recentHistory: history };
+  const summary = history.slice(0, -6).map(turn => `${turn.role}: ${turn.text}`).join('\n').slice(-200);
+  return { summary, recentHistory: history.slice(-6) };
 }
 
-// Multi-turn conversational Gemini STREAMING generator with multi-model automatic failover and AbortSignal support
 async function* generateGeminiChatStreamSafely(
   history: Array<{ role: 'user' | 'model'; text: string }>,
   systemInstruction: string,
@@ -624,55 +565,37 @@ async function* generateGeminiChatStreamSafely(
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
 
-  for (const candidateModel of chatModelOrder(preferredModel)) {
-    if (abortSignal?.aborted) return;
-    if (candidateModel !== 'gemini-3.1-flash-lite' && (streamCooldown.get(candidateModel) ?? 0) > Date.now()) continue;
-    let yieldedFromCandidate = false;
-    const deadline = AbortSignal.timeout(candidateModel === 'gemini-3.1-flash-lite' ? 14_000 : 7_000);
-    const attemptSignal = abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline;
-    try {
-      const stream = await ai.models.generateContentStream({
-        model: candidateModel,
-        contents: rawContents,
-        config: {
-          ...buildModelGenConfig(candidateModel, { systemInstruction, maxOutputTokens: 700 }),
-          abortSignal: attemptSignal,
-        },
-      });
+  const model = selectedChatModel(preferredModel);
+  if (!model || model === 'local-expert' || abortSignal?.aborted) return;
 
-      for await (const chunk of stream) {
-        if (abortSignal?.aborted) {
-          return;
-        }
-        const text = chunk.text;
-        if (text) {
-          if (!yieldedFromCandidate) {
-            yieldedFromCandidate = true;
-            onModelResolved?.(candidateModel);
-          }
-          yield text;
-        }
+  const deadline = AbortSignal.timeout(20_000);
+  const attemptSignal = abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline;
+  let started = false;
+  try {
+    const stream = await ai.models.generateContentStream({
+      model,
+      contents: rawContents,
+      config: {
+        ...buildModelGenConfig(model, { systemInstruction, maxOutputTokens: 700 }),
+        abortSignal: attemptSignal,
+      },
+    });
+    for await (const chunk of stream) {
+      if (abortSignal?.aborted) return;
+      if (!chunk.text) continue;
+      if (!started) {
+        started = true;
+        onModelResolved?.(model);
       }
-
-      if (yieldedFromCandidate) {
-        return;
-      }
-    } catch (error) {
-      if (abortSignal?.aborted) {
-        return;
-      }
-      const status = Number((error as { status?: number } | null)?.status);
-      if (deadline.aborted || status === 404 || status === 429 || status >= 500) {
-        streamCooldown.set(candidateModel, Date.now() + 60_000);
-      }
-      console.warn('[Gemini chat] Upstream request failed', {
-        model: candidateModel,
-        reason: deadline.aborted ? 'timeout' : Number.isInteger(status) ? status : 'transport',
-      });
-      if (yieldedFromCandidate) {
-        return;
-      }
+      yield chunk.text;
     }
+  } catch (error) {
+    if (abortSignal?.aborted) return;
+    const status = Number((error as { status?: number } | null)?.status);
+    console.warn('[Gemini chat] Upstream request failed', {
+      model, reason: deadline.aborted ? 'timeout' : Number.isInteger(status) ? status : 'transport',
+    });
+    if (started) throw error;
   }
 }
 
@@ -688,7 +611,8 @@ async function generateGeminiChatSafely(
   const ai = getAIClient(customApiKey);
   if (!ai) return { reply: '', modelUsed: '', error: '尚未配置有效的 Google Gemini API Key' };
 
-  const orderedModels = chatModelOrder(preferredModel);
+  const model = selectedChatModel(preferredModel);
+  if (!model || model === 'local-expert' || abortSignal?.aborted) return null;
 
   const rawContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
@@ -712,33 +636,21 @@ async function generateGeminiChatSafely(
     rawContents.push({ role: 'user', parts: [{ text: latestUserMessage.trim() }] });
   }
 
-  let lastErrorMsg = '';
-
-  for (const candidateModel of orderedModels) {
-    if (abortSignal?.aborted) return null;
-    try {
-      const deadline = AbortSignal.timeout(candidateModel === 'gemini-3.1-flash-lite' ? 12_000 : 6500);
-      const response = await ai.models.generateContent({
-        model: candidateModel,
-        contents: rawContents,
-        config: {
-          ...buildModelGenConfig(candidateModel, { systemInstruction, maxOutputTokens: 700 }),
-          abortSignal: abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline,
-        },
-      });
-
-      if (response && response.text && response.text.trim()) {
-        return { reply: response.text.trim(), modelUsed: candidateModel };
-      }
-    } catch (err: any) {
-      lastErrorMsg = String(err?.message || '');
-      if (lastErrorMsg.includes('API_KEY_INVALID') || lastErrorMsg.includes('API_KEY_SERVICE_BLOCKED')) {
-        break;
-      }
-    }
+  try {
+    const deadline = AbortSignal.timeout(15_000);
+    const response = await ai.models.generateContent({
+      model,
+      contents: rawContents,
+      config: {
+        ...buildModelGenConfig(model, { systemInstruction, maxOutputTokens: 700 }),
+        abortSignal: abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline,
+      },
+    });
+    if (response.text?.trim()) return { reply: response.text.trim(), modelUsed: model };
+  } catch {
+    // The caller reports that the selected model was unavailable.
   }
-
-  return { reply: '', modelUsed: orderedModels[0], error: lastErrorMsg || '所有 Gemini 模型請求超時或未回應' };
+  return null;
 }
 
 // -------------------------------------------------------------
@@ -1433,7 +1345,8 @@ function cleanChatReply(rawText: string): string {
 // 1.4 AI 智慧客服 SSE 串流 API (支援 Server-Sent Events 與 AbortController 斷線防護)
 // -------------------------------------------------------------
 app.post('/api/ai/chat/stream', async (req, res) => {
-  const requestedModel = req.body?.model || 'gemini-3.1-flash-lite';
+  const requestedModel = selectedChatModel(req.body?.model);
+  if (!requestedModel) return res.status(400).json({ success: false, error: 'UNSUPPORTED_MODEL' });
   const membershipTier = req.body?.membershipTier || req.body?.tier || 'FREE';
 
   // 1. 會員階級權限攔截 (RBAC)
@@ -1508,10 +1421,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
 
     const effectiveApiKey = configuredGeminiKey();
 
-    const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
-      normalizedFullHistory,
-      requestedModel === 'local-expert' ? '' : effectiveApiKey
-    );
+    const { summary: memorySummary, recentHistory: history } = getConversationMemory(normalizedFullHistory);
 
     let contextNotes = '';
     if (storeContext?.viewingProduct) {
@@ -1575,8 +1485,11 @@ ${contextNotes}`;
     }
 
     if (requestedModel === 'local-expert' || !effectiveApiKey) {
-      res.write(`data: ${JSON.stringify({ meta: { modelUsed: requestedModel === 'local-expert' ? '內建回答' : '內建回答 · Gemini 暫時無法連線' } })}\n\n`);
-      res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
+      if (requestedModel === 'local-expert') {
+        res.write(`data: ${JSON.stringify({ meta: { modelUsed: '內建回答' }, text: fallbackExpertReply })}\n\n`);
+      } else {
+        res.write(`data: ${JSON.stringify({ error: 'MODEL_UNAVAILABLE' })}\n\n`);
+      }
       res.write('data: [DONE]\n\n');
       return res.end();
     }
@@ -1610,7 +1523,7 @@ ${contextNotes}`;
     }
     if (!streamedAnyChunk && !abortController.signal.aborted) {
       const result = await generateGeminiChatSafely(
-        history, systemPrompt, latestUserMessage, undefined, effectiveApiKey, abortController.signal,
+        history, systemPrompt, latestUserMessage, requestedModel, effectiveApiKey, abortController.signal,
       );
       if (result?.reply && !abortController.signal.aborted) {
         resolvedModelId = result.modelUsed;
@@ -1628,16 +1541,16 @@ ${contextNotes}`;
     }
 
     if (!streamedAnyChunk && !clientDisconnected && !abortController.signal.aborted) {
-      res.write(`data: ${JSON.stringify({ meta: { modelUsed: '內建回答 · Gemini 暫時無法連線' } })}\n\n`);
-      res.write(`data: ${JSON.stringify({ text: fallbackExpertReply })}\n\n`);
+      res.write(`data: ${JSON.stringify({ error: 'MODEL_UNAVAILABLE' })}\n\n`);
     }
 
     if (!res.writableEnded) {
       res.write('data: [DONE]\n\n');
       res.end();
     }
-  } catch (_streamErr: any) {
-    if (!res.writableEnded) {
+  } catch {
+    if (!res.writableEnded && !res.destroyed) {
+      res.write(`data: ${JSON.stringify({ error: 'MODEL_UNAVAILABLE' })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
     }
@@ -1652,7 +1565,8 @@ ${contextNotes}`;
 // 1.5 AI 智慧客服對話 API (支援即時對話、多輪上下文記憶、商城諮詢與疑難排解)
 // -------------------------------------------------------------
 app.post('/api/ai/chat', async (req, res) => {
-  const requestedModel = req.body?.model || '';
+  const requestedModel = selectedChatModel(req.body?.model);
+  if (!requestedModel) return res.status(400).json({ success: false, error: 'UNSUPPORTED_MODEL' });
   const membershipTier = req.body?.membershipTier || req.body?.tier || 'FREE';
 
   // 1. 會員階級權限攔截 (RBAC Policy: FREE / GO / PLUS)
@@ -1708,11 +1622,8 @@ app.post('/api/ai/chat', async (req, res) => {
 
     const effectiveApiKey = configuredGeminiKey();
 
-    const targetModel = requestedModel === 'local-expert' ? requestedModel : chatModelOrder(requestedModel)[0];
-    const { summary: memorySummary, recentHistory: history } = await compressConversationMemorySafely(
-      normalizedFullHistory,
-      targetModel === 'local-expert' ? '' : effectiveApiKey
-    );
+    const targetModel = requestedModel;
+    const { summary: memorySummary, recentHistory: history } = getConversationMemory(normalizedFullHistory);
 
     // Contextual information from store state
     let storeContextNotes = '';
@@ -1799,6 +1710,10 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
       } catch (_geminiErr: any) {
         // Fall through to local 3D engineering expert engine
       }
+    }
+
+    if (targetModel !== 'local-expert') {
+      return res.status(503).json({ success: false, error: 'MODEL_UNAVAILABLE', message: chatUnavailableMessage });
     }
 
     // Detect material intent for auto-solutions (ONLY when targetModel === 'local-expert' or no API key is provided)
@@ -2053,13 +1968,7 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
   } catch (error: any) {
     const errMsg = String(error?.message || '');
     console.warn('AI chat notice:', errMsg.slice(0, 100));
-    const finalModelUsed = requestedModel ? (MODEL_DISPLAY_NAMES[requestedModel] || requestedModel) : '神狗勾 3D 智能顧問';
-    return res.json({
-      success: true,
-      reply: '您好！我是神狗勾 3D 列印智能顧問。全館滿 NT$999 免運，如有任何 3D 列印材料選用、切片參數或常見故障排查問題，請隨時告訴我！',
-      modelUsed: finalModelUsed,
-      contextualMemoryActive: true,
-    });
+    return res.status(503).json({ success: false, error: 'MODEL_UNAVAILABLE', message: chatUnavailableMessage });
   }
 });
 

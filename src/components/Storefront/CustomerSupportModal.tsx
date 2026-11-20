@@ -648,41 +648,17 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         return;
       }
 
-      // Built-in 3D Printing Expert Knowledge Engine (offline fallback)
+      throw new Error('MODEL_UNAVAILABLE');
+    } catch {
       if (controller.signal.aborted) return;
-
-      const expertResult = generateSmart3DExpertReply(text, storeContextPayload, lang);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? {
-                ...m,
-                text: cleanChatText(expertResult.reply),
-                solution: expertResult.solution,
-                isLoading: false,
-                modelUsed: '內建回答 · Gemini 暫時無法連線',
-              }
-            : m
-        )
-      );
-    } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        return;
-      }
-      const fallbackResult = generateSmart3DExpertReply(text, storeContextPayload, lang);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? {
-                ...m,
-                text: cleanChatText(fallbackResult.reply),
-                solution: fallbackResult.solution,
-                isLoading: false,
-                modelUsed: '內建回答 · Gemini 暫時無法連線',
-              }
-            : m
-        )
-      );
+      const message = lang === 'en'
+        ? `${currentModelObj.name} is temporarily unavailable. Try again or select another model.`
+        : lang === 'ja'
+        ? `${currentModelObj.name} は現在利用できません。再試行するか、別のモデルを選んでください。`
+        : `${currentModelObj.name} 目前無法回覆。請稍後重試，或自行選擇其他模型。`;
+      setMessages(prev => prev.map(m => m.id === aiMsgId
+        ? { ...m, text: message, isLoading: false, modelUsed: lang === 'en' ? 'Connection status' : lang === 'ja' ? '接続状況' : '連線狀態' }
+        : m));
     } finally {
       setIsLoading(false);
       abortControllerRef.current = null;

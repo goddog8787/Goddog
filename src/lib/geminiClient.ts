@@ -194,6 +194,7 @@ export async function dispatchGeminiStream(params: {
         let accumulatedText = '';
         let resolvedModelUsed = '';
         let streamDone = false;
+        let streamFailed = false;
         let pending = '';
         const cancelRead = () => { void reader.cancel().catch(() => {}); };
         params.signal?.addEventListener('abort', cancelRead, { once: true });
@@ -219,6 +220,7 @@ export async function dispatchGeminiStream(params: {
               }
               try {
                 const parsed = JSON.parse(dataStr);
+                if (parsed.error) streamFailed = true;
                 if (parsed.meta?.modelUsed) {
                   resolvedModelUsed = parsed.meta.modelUsed;
                   params.onMeta?.(parsed.meta);
@@ -236,7 +238,7 @@ export async function dispatchGeminiStream(params: {
           await reader.cancel().catch(() => {});
         }
 
-        if (!params.signal?.aborted && accumulatedText.trim()) {
+        if (!streamFailed && !params.signal?.aborted && accumulatedText.trim()) {
           return {
             reply: accumulatedText.trim(),
             modelUsed: resolvedModelUsed || undefined,

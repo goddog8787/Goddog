@@ -15,15 +15,16 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const serverFile = fileURLToPath(new URL('../server.ts', import.meta.url));
 
-test('Gemini chat reports the upstream model that returned text after the primary model fails', async () => {
+test('Gemini chat only uses the selected model for streaming and regular replies', async () => {
   const models: string[] = [];
   let streamUnavailable = false;
+  let modelUnavailable = false;
   const gateway = createHttpServer((req, res) => {
     const model = req.url?.match(/models\/([^:]+)/)?.[1] ?? '';
     const streaming = req.url?.includes(':streamGenerateContent');
     models.push(model);
     req.resume();
-    if (model === 'gemini-4-hydrogen' || (streaming && streamUnavailable)) {
+    if (modelUnavailable || (streaming && streamUnavailable)) {
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE' } }));
       return;
@@ -44,9 +45,9 @@ test('Gemini chat reports the upstream model that returned text after the primar
       });
       assert.equal(response.status, 200);
       const events = await response.text();
-      assert.match(events, /"modelUsed":"Gemini 3\.1 Flash-Lite/);
+      assert.match(events, /"modelUsed":"Gemini 4 Hydrogen"/);
       assert.match(events, /Gemini smoke test/);
-      assert.deepEqual(models, ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']);
+      assert.deepEqual(models, ['gemini-4-hydrogen']);
 
       streamUnavailable = true;
       const fallback = await fetch(base + '/api/ai/chat/stream', {
@@ -54,9 +55,21 @@ test('Gemini chat reports the upstream model that returned text after the primar
         body: JSON.stringify({ message: 'Test non-streaming fallback', model: 'gemini-4-hydrogen' }),
       });
       const fallbackEvents = await fallback.text();
-      assert.match(fallbackEvents, /"modelUsed":"Gemini 3\.1 Flash-Lite/);
+      assert.match(fallbackEvents, /"modelUsed":"Gemini 4 Hydrogen"/);
       assert.match(fallbackEvents, /Gemini smoke test/);
-      assert.equal(models.filter(model => model === 'gemini-4-hydrogen').length, 1);
+      assert.deepEqual(models, Array(3).fill('gemini-4-hydrogen'));
+
+      modelUnavailable = true;
+      for (const path of ['/api/ai/chat/stream', '/api/ai/chat']) {
+        const failed = await fetch(base + path, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: `Unavailable ${path}`, model: 'gemini-4-hydrogen' }),
+        });
+        const body = await failed.text();
+        assert.match(body, /MODEL_UNAVAILABLE/);
+        assert.doesNotMatch(body, /modelUsed|Gemini smoke test/);
+      }
+      assert.deepEqual(models, Array(6).fill('gemini-4-hydrogen'));
     }, { GEMINI_API_KEY: 'local-test-key', GOOGLE_GEMINI_BASE_URL: `http://127.0.0.1:${addr.port}` });
   } finally {
     gateway.closeAllConnections();
