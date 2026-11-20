@@ -3003,24 +3003,8 @@ app.post('/api/payment/checkout', requirePaymentConfig, async (req, res) => {
       : '';
     const orderId = cleanRequestedId || `GD${crypto.randomBytes(10).toString('hex')}`;
 
-    if (req.body.inventoryLines !== undefined || returnFrom === 'checkout' || returnFrom === 'profile') {
-      const lines = parseInventoryLines(req.body.inventoryLines);
-      if (!lines) return res.status(400).json({ success: false, message: '購物車資料無效，請重新選購。' });
-      await rememberCheckout(inventoryDatabase, orderId, Number(amount), lines);
-    }
-
-    // 儲存待付款紀錄
-    pendingPaymentsStore[orderId] = {
-      orderId,
-      amount: Math.round(Number(amount)),
-      email: email || '',
-      desc: desc || '',
-      paymentMethod: paymentMethod || 'credit_card',
-      status: 'pending',
-      createdAt: Date.now(),
-      userId: typeof userId === 'string' ? userId : '',
-      customerName: typeof customerName === 'string' ? customerName : '',
-    };
+    const lines = req.body.inventoryLines === undefined ? undefined : parseInventoryLines(req.body.inventoryLines);
+    if (lines === null) return res.status(400).json({ success: false, message: '購物車資料無效，請重新選購。' });
 
     // 根據前端傳來的 paymentMethod 動態決定藍新金流要開啟的支付方式參數 (100% 依特約商店啟用規格)
     const paymentFlags: Record<string, any> = {};
@@ -3093,10 +3077,19 @@ app.post('/api/payment/checkout', requirePaymentConfig, async (req, res) => {
       backParams.set('from', returnFrom);
     }
 
+    const checkoutAt = Date.now();
+    const tradeLimit = 900;
+    const deferred = paymentFlags.VACC === 1 || paymentFlags.CVS === 1 || paymentFlags.BARCODE === 1;
+    const hour = 60 * 60 * 1000;
+    const nextTaipeiDay = new Date(checkoutAt + (24 + 8) * hour).toISOString().slice(0, 10);
+    const reservationExpires = deferred
+      ? Date.parse(`${nextTaipeiDay}T23:59:59+08:00`) + hour
+      : checkoutAt + tradeLimit * 1000 + 15 * 60 * 1000;
+
     const tradeInfoObj = {
       MerchantID: NEWEBPAY_MERCHANT_ID,
       RespondType: 'JSON',
-      TimeStamp: Math.floor(Date.now() / 1000).toString(),
+      TimeStamp: Math.floor(checkoutAt / 1000).toString(),
       Version: NEWEBPAY_VERSION,
       MerchantOrderNo: orderId,
       Amt: Math.round(Number(amount)).toString(),
@@ -3106,12 +3099,25 @@ app.post('/api/payment/checkout', requirePaymentConfig, async (req, res) => {
       ReturnURL: `${webhookBaseUrl}/api/payment/return`, // 藍新金流授權完成後，由藍新向後端 POST 付款明細驗證 (限 80/443 埠)
       NotifyURL: `${webhookBaseUrl}/api/payment/notify`, // 背景接收付款結果 (Webhook, 限 80/443 埠)
       ClientBackURL: `${clientBackUrl}/?${backParams.toString()}`, // 返回商店按鈕
+      ...(lines && { TradeLimit: tradeLimit, ...(deferred && { ExpireDate: nextTaipeiDay.replaceAll('-', '') }) }),
       ...paymentFlags
     };
 
     const TradeInfo = createNewebpayAesEncrypt(tradeInfoObj, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
     const TradeSha = createNewebpayShaEncrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
+    if (lines) await rememberCheckout(inventoryDatabase, orderId, Number(amount), lines, reservationExpires);
 
+    pendingPaymentsStore[orderId] = {
+      orderId,
+      amount: Number(amount),
+      email: email || '',
+      desc: desc || '',
+      paymentMethod: paymentMethod || 'credit_card',
+      status: 'pending',
+      createdAt: checkoutAt,
+      userId: typeof userId === 'string' ? userId : '',
+      customerName: typeof customerName === 'string' ? customerName : '',
+    };
 
     res.json({
       success: true,

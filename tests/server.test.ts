@@ -69,7 +69,7 @@ async function withServer(configured: boolean, run: (base: string, values: strin
 function sampleCheckout(base: string) {
   return fetch(base + '/api/payment/checkout', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount: 199, orderId: 'GDTEST000123', desc: 'Test item', paymentMethod: 'credit_card' }),
+    body: JSON.stringify({ amount: 199, orderId: 'GDTEST000123', desc: 'Test item', paymentMethod: 'credit_card', returnFrom: 'checkout' }),
   });
 }
 

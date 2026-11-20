@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -58,8 +60,14 @@ jobs:
           RELEASE_SHA: ${{ github.sha }}
           STOREFRONT_API: ${{ vars.VITE_API_BASE_URL || 'https://goddog.onrender.com' }}
         run: |
+          export RELEASE_REVISIONS="$RELEASE_SHA"
+          release_tree=$(git rev-parse "$RELEASE_SHA^{tree}")
+          if branch_tree=$(git rev-parse "$RELEASE_SHA^2^{tree}" 2>/dev/null) && [ "$branch_tree" = "$release_tree" ]; then
+            RELEASE_REVISIONS="$RELEASE_REVISIONS $(git rev-parse "$RELEASE_SHA^2")"
+          fi
           node --input-type=module <<'JS'
           const base = process.env.STOREFRONT_API.replace(/\/+$/, '');
+          const revisions = new Set(process.env.RELEASE_REVISIONS.split(' '));
           const read = (path) => fetch(base + path, { signal: AbortSignal.timeout(12000) }).then(response => {
             if (!response.ok) throw new Error('Backend endpoint is not ready');
             return response.json();
@@ -69,7 +77,7 @@ jobs:
           do {
             try {
               const health = await read('/api/health');
-              if (health.revision === process.env.RELEASE_SHA) {
+              if (revisions.has(health.revision)) {
                 const payment = await read('/api/payment/config-status');
                 const inventory = await read('/api/payment/inventory-status');
                 ready = payment.configured === true && payment.sandbox === false && inventory.ready === true;
@@ -82,14 +90,15 @@ jobs:
           if (!ready) throw new Error('Matching Render release, production payment config, or Firestore inventory is unavailable');
           JS
 
-      - name: Deploy to Firebase Hosting
+      - name: Deploy Firestore rules and Firebase Hosting
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         env:
           SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GODDOG_SHOP }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
           if [ -n "$SERVICE_ACCOUNT_KEY" ]; then
-            echo "$SERVICE_ACCOUNT_KEY" > /tmp/gcp-key.json
-            export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
+            export GOOGLE_APPLICATION_CREDENTIALS="$(mktemp)"
+            trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+            printf '%s' "$SERVICE_ACCOUNT_KEY" > "$GOOGLE_APPLICATION_CREDENTIALS"
           fi
-          npx --yes firebase-tools deploy --only hosting --project goddog-shop --non-interactive
+          npx --yes firebase-tools deploy --only firestore:rules,hosting --project goddog-shop --non-interactive
