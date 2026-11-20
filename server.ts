@@ -2,6 +2,8 @@ import express from 'express';
 import { getSubscriptionTerms } from './src/data/subscriptionTerms.ts';
 import { initializeApp as initializeAdminApp } from 'firebase-admin/app';
 import { getAuth as getAdminAuth } from 'firebase-admin/auth';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
+import { InventoryConflict, parseInventoryLines, rememberCheckout, settleCheckout } from './src/server/checkoutInventory';
 import path from 'path';
 import fs from 'fs';
 import dns from 'dns';
@@ -80,9 +82,11 @@ app.use((_req, res, next) => {
   next();
 });
 
-const tokenVerifier = getAdminAuth(initializeAdminApp({
+const adminApp = initializeAdminApp({
   projectId: process.env.VITE_FIREBASE_PROJECT_ID || 'goddog-shop',
-}, 'shop-api'));
+}, 'shop-api');
+const tokenVerifier = getAdminAuth(adminApp);
+const inventoryDatabase = getAdminFirestore(adminApp, process.env.VITE_FIREBASE_DATABASE_ID || 'ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4');
 
 const requireUser: express.RequestHandler = async (req, res, next) => {
   const token = req.header('Authorization')?.match(/^Bearer (.+)$/i)?.[1];
@@ -2835,7 +2839,11 @@ function readPaymentSecret(name: 'NEWEBPAY_HASH_KEY' | 'NEWEBPAY_HASH_IV') {
 const NEWEBPAY_MERCHANT_ID = (process.env.NEWEBPAY_MERCHANT_ID || '').trim();
 const NEWEBPAY_HASH_KEY = readPaymentSecret('NEWEBPAY_HASH_KEY');
 const NEWEBPAY_HASH_IV = readPaymentSecret('NEWEBPAY_HASH_IV');
-const NEWEBPAY_IS_SANDBOX = !['production', 'prod', 'live'].includes((process.env.NEWEBPAY_ENV || '').trim().toLowerCase());
+const productionRenderOrigin = 'https://goddog.onrender.com';
+const renderPublicUrl = process.env.RENDER_EXTERNAL_URL?.trim();
+const explicitPaymentEnvironment = process.env.NEWEBPAY_ENV?.trim().toLowerCase();
+const paymentEnvironment = explicitPaymentEnvironment || (renderPublicUrl === productionRenderOrigin ? 'production' : 'sandbox');
+const NEWEBPAY_IS_SANDBOX = !['production', 'prod', 'live'].includes(paymentEnvironment);
 const gatewayOrigin = NEWEBPAY_IS_SANDBOX ? 'https://ccore.newebpay.com' : 'https://core.newebpay.com';
 const NEWEBPAY_URL = gatewayOrigin + '/MPG/mpg_gateway';
 const NEWEBPAY_PERIOD_URL = gatewayOrigin + '/MPG/period';
@@ -2845,11 +2853,21 @@ const NEWEBPAY_VERSION = '2.0';
 const NEWEBPAY_PERIOD_VERSION = '1.5';
 
 // Configure public callback origins on split Firebase Hosting / Express deployments.
-const webhookBaseUrl = new URL(process.env.PAYMENT_API_ORIGIN || 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app').origin;
+const webhookBaseUrl = new URL(process.env.PAYMENT_API_ORIGIN || renderPublicUrl || 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app').origin;
 const clientBackUrl = new URL(process.env.STOREFRONT_ORIGIN || 'https://goddog.space').origin;
 
 app.get('/api/payment/config-status', (_req, res) => {
   res.set('Cache-Control', 'no-store').json({ configured: paymentConfigured, sandbox: NEWEBPAY_IS_SANDBOX });
+});
+
+app.get('/api/payment/inventory-status', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    await inventoryDatabase.collection('paymentInventory').limit(1).get();
+    res.json({ ready: true });
+  } catch {
+    res.status(503).json({ ready: false });
+  }
 });
 
 const requirePaymentConfig: express.RequestHandler = (_req, res, next) => {
@@ -2957,7 +2975,7 @@ const verifiedPaidOrdersStore: Record<string, VerifiedPaidOrder> = {};
 // =============================================================
 // 藍新金流：一般訂單結帳 (MPG 幕前一次性交易)
 // =============================================================
-app.post('/api/payment/checkout', requirePaymentConfig, (req, res) => {
+app.post('/api/payment/checkout', requirePaymentConfig, async (req, res) => {
   try {
     const { amount, email, desc, paymentMethod, orderId: requestedOrderId, docId, returnFrom, userId, customerName } = req.body;
     if (!Number.isSafeInteger(Number(amount)) || Number(amount) <= 0) {
@@ -2968,6 +2986,12 @@ app.post('/api/payment/checkout', requirePaymentConfig, (req, res) => {
       ? requestedOrderId.trim()
       : '';
     const orderId = cleanRequestedId || `GD${crypto.randomBytes(10).toString('hex')}`;
+
+    if (req.body.inventoryLines !== undefined || returnFrom === 'checkout' || returnFrom === 'profile') {
+      const lines = parseInventoryLines(req.body.inventoryLines);
+      if (!lines) return res.status(400).json({ success: false, message: '購物車資料無效，請重新選購。' });
+      await rememberCheckout(inventoryDatabase, orderId, Number(amount), lines);
+    }
 
     // 儲存待付款紀錄
     pendingPaymentsStore[orderId] = {
@@ -3085,6 +3109,7 @@ app.post('/api/payment/checkout', requirePaymentConfig, (req, res) => {
       }
     });
   } catch (error) {
+    if (error instanceof InventoryConflict) return res.status(409).json({ success: false, message: error.message });
     console.error('NewebPay Checkout Error:', error);
     res.status(500).json({ success: false, message: 'Failed to initiate checkout' });
   }
@@ -3444,7 +3469,7 @@ app.get('/api/payment/period-history', requireUser, requireAdmin, (req, res) => 
 // 藍新金流：一般交易完成後之瀏覽器導回端點 (ReturnURL)
 // 藍新會以 POST 方式送出 TradeInfo (AES 加密) 與 TradeSha
 // =============================================================
-app.post('/api/payment/return', requirePaymentConfig, (req, res) => {
+app.post('/api/payment/return', requirePaymentConfig, async (req, res) => {
   try {
     const decrypted = verifiedTradePayload(req.body);
     if (!decrypted) return res.redirect(`${clientBackUrl}/?payment_verified=false`);
@@ -3457,6 +3482,9 @@ app.post('/api/payment/return', requirePaymentConfig, (req, res) => {
     const paymentType = result.PaymentType || 'CREDIT';
 
     if (status === 'SUCCESS' && merchantOrderNo) {
+      await settleCheckout(inventoryDatabase, merchantOrderNo, Number(amt), {
+        tradeNo, payTime: payTime || new Date().toISOString(), paymentType: result.PaymentType || 'CREDIT',
+      });
       verifiedPaidOrdersStore[merchantOrderNo] = {
         orderId: merchantOrderNo,
         isVerifiedByNewebPay: true,
@@ -3502,7 +3530,7 @@ app.get('/api/payment/return', (req, res) => {
 });
 
 // 藍新一般交易背景 Webhook (NotifyURL)
-app.post(['/api/payment/notify', '/api/newebpay/notify'], requirePaymentConfig, (req, res) => {
+app.post(['/api/payment/notify', '/api/newebpay/notify'], requirePaymentConfig, async (req, res) => {
   try {
     const decrypted = verifiedTradePayload(req.body);
     if (!decrypted) return res.status(400).send('0|Invalid payment notification');
@@ -3516,6 +3544,9 @@ app.post(['/api/payment/notify', '/api/newebpay/notify'], requirePaymentConfig, 
     console.log('[NewebPay Webhook] 收到藍新背景付款入帳通知:', { status, merchantOrderNo, tradeNo, amt });
 
     if (status === 'SUCCESS' && merchantOrderNo) {
+      await settleCheckout(inventoryDatabase, merchantOrderNo, Number(amt), {
+        tradeNo, payTime: payTime || new Date().toISOString(), paymentType: result.PaymentType || 'CREDIT',
+      });
       verifiedPaidOrdersStore[merchantOrderNo] = {
         orderId: merchantOrderNo,
         isVerifiedByNewebPay: true,
@@ -3611,6 +3642,9 @@ app.get('/api/payment/verify-status', requirePaymentConfig, async (req, res) => 
           rawResult: result
         };
 
+        await settleCheckout(inventoryDatabase, orderId, verifiedRecord.amt, {
+          tradeNo: verifiedRecord.tradeNo, payTime: verifiedRecord.payTime, paymentType: verifiedRecord.paymentType,
+        });
         verifiedPaidOrdersStore[orderId] = verifiedRecord;
 
         return res.json({

@@ -437,6 +437,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         userId: ownerUid,
         customerName: customerName || member?.name || '顧客',
         amount: total,
+        inventoryLines: cartItems.map(item => ({
+          productId: item.product.id,
+          color: item.selectedColor.name,
+          quantity: item.quantity,
+        })),
         email: customerEmail,
         desc: cartItems.map((item) => `${item.product.name} x${item.quantity}`).join(', '),
         paymentMethod: methodToUse,

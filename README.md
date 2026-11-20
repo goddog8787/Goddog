@@ -39,6 +39,8 @@ NODE_ENV=production npm start
 
 目前 GitHub Actions 發布的是 Firebase Hosting 前端。上線時請一併更新 Express 後端及商店實際使用的 Firestore 資料庫規則。先用藍新測試商店走完付款、通知、會員登入後查單及訂閱導回。程式目前以伺服器記憶體保存金流回呼紀錄，服務重新啟動或多實例運作時，需要持久化的交易紀錄才能可靠對帳。
 
-商品目錄寫入限已驗證的管理員。結帳端的庫存調整目前只保留在瀏覽器。正式上線前，應由後端在確認付款後扣減共享庫存。
+一般付款由 Express 記錄購物車，確認藍新付款後在同一筆 Firestore 交易中扣除商品和顏色庫存。通知重送時只會扣一次。付款開始前會檢查庫存。若最後一件同時被多人付款，系統會把不足的商品記入 `paymentInventory` 的 `unavailable`，需要人工處理。
+
+Render 必須能以服務帳戶身分讀寫 `goddog-shop` 使用的 Firestore 資料庫。可在 Render 使用秘密檔案，再把 `GOOGLE_APPLICATION_CREDENTIALS` 指向該檔案。發布前驗證 `/api/payment/config-status` 的正式模式與憑證設定，以及 `/api/payment/inventory-status` 的資料庫連線。藍新回呼網址會優先用 `PAYMENT_API_ORIGIN`，其次用 Render 服務網址。
 
 會員暫停或恢復續扣時，只有在藍新確認變更後才會更新介面。若伺服器因重啟而無法辨認原委託單，會員需向客服確認實際續扣狀態。

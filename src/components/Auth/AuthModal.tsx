@@ -46,14 +46,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const { user, error, profile } = await signInWithGoogle();
+      const { user, error } = await signInWithGoogle();
       if (user) {
         onLoginSuccess({
           id: user.uid,
-          name: profile?.name || user.displayName || (lang === 'en' ? 'Google Maker Member' : lang === 'ja' ? 'Google メイカー会員' : 'Google 創客會員'),
-          email: profile?.email || user.email || 'user@gmail.com',
-          tier: profile?.tier,
-          points: profile?.points,
+          name: user.displayName || (lang === 'en' ? 'Google Maker Member' : lang === 'ja' ? 'Google メイカー会員' : 'Google 創客會員'),
+          email: user.email || '',
+
         });
         setSuccessMessage(
           lang === 'en' 
@@ -95,14 +94,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setErrorMessage(error || (lang === 'en' ? 'Sign in failed' : lang === 'ja' ? 'ログインに失敗しました' : '登入失敗'));
         }
       } else {
-        const { user, error, profile } = await registerWithEmail(email, password, name);
+        const { user, error } = await registerWithEmail(email, password, name);
         if (user) {
           onLoginSuccess({
             id: user.uid,
-            name: profile?.name || name || user.displayName || email.split('@')[0],
-            email: profile?.email || user.email || email,
-            tier: profile?.tier || 'Bronze',
-            points: profile?.points || 50,
+            name: name || user.displayName || email.split('@')[0],
+            email: user.email || email,
           });
           setSuccessMessage(
             lang === 'en' 

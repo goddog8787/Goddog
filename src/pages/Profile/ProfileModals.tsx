@@ -500,6 +500,9 @@ export const OrderModal: React.FC<{
         userId: ownerUid,
         customerName: rawOrder.customerName || member?.name || '顧客',
         amount: amt,
+        inventoryLines: Array.isArray(rawOrder.items) ? rawOrder.items.map((item: any) => ({
+          productId: item.productId, color: item.colorName || item.color, quantity: Number(item.quantity),
+        })) : [],
         email: customerEmail,
         desc,
         paymentMethod: rawOrder.paymentGateway || 'credit_card',

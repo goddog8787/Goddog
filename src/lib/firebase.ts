@@ -263,30 +263,16 @@ googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
 
-// Deterministic unique UID generator for email accounts (ensures same email always maps to same isolated UID and never mixes with other users)
-export function getDeterministicUserId(emailInput: string): string {
-  const normalized = (emailInput || '').trim().toLowerCase();
-  if (normalized === 'goddog' || normalized === 'goddog@gmail.com') {
-    return 'user-goddog-master';
-  }
-  const safeSlug = normalized.replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').slice(0, 64);
-  return `user_${safeSlug || 'member'}`;
-}
-
-// Google Sign-In with popup + graceful fallback for restricted iframes
-export async function signInWithGoogle(): Promise<{ user: User | null; isMock?: boolean; error?: string; profile?: any }> {
+export async function signInWithGoogle(): Promise<{ user: User | null; error?: string }> {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    let profile = null;
-    if (result.user) {
-      // Preserve existing user profile fields if user already exists; only use defaults for brand-new users
-      profile = await saveUserProfileToFirestore({
-        id: result.user.uid,
-        email: result.user.email,
-        name: result.user.displayName,
-      });
-    }
-    return { user: result.user, profile };
+    const { user } = await signInWithPopup(auth, googleProvider);
+    // A slow Firestore write must not keep the sign-in dialog waiting after Firebase Auth has succeeded.
+    void saveUserProfileToFirestore({
+      id: user.uid,
+      email: user.email,
+      name: user.displayName,
+    }).catch(() => console.warn('Unable to save the Google member profile.'));
+    return { user };
   } catch (error: any) {
     console.warn('Firebase Google Sign-In notice / fallback:', error?.code, error?.message);
 
@@ -302,216 +288,55 @@ export async function signInWithGoogle(): Promise<{ user: User | null; isMock?: 
   }
 }
 
-// Local accounts storage for demo / development fallback
-const LOCAL_ACCOUNTS_KEY = 'printcore_registered_accounts';
+const LEGACY_LOCAL_ACCOUNTS_KEY = 'printcore_registered_accounts';
 
-export interface StoredUserAccount {
-  uid?: string;
-  email: string;
-  passwordHash: string;
-  name: string;
-  tier: 'Bronze' | 'Silver' | 'Gold' | 'Diamond';
-  points: number;
-}
-
-export const DEFAULT_USER_CREDENTIALS = {
-  email: 'goddog',
-  emailDisplay: 'goddog@gmail.com',
-  password: 'King8787@',
-  name: 'goddog (店長)',
-};
-
-function getLocalAccounts(): StoredUserAccount[] {
+export function clearLegacyLocalAccounts() {
   try {
-    const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.error(e);
-  }
-  return [
-    {
-      uid: 'user-goddog-master',
-      email: 'goddog',
-      passwordHash: 'King8787@',
-      name: 'goddog (店長)',
-      tier: 'Diamond',
-      points: 1680,
-    },
-    {
-      uid: 'user-goddog-master',
-      email: 'goddog@gmail.com',
-      passwordHash: 'King8787@',
-      name: 'goddog (店長)',
-      tier: 'Diamond',
-      points: 1680,
-    },
-    {
-      uid: 'user_babe0615_gmail_com',
-      email: 'babe0615@gmail.com',
-      passwordHash: 'King8787@',
-      name: 'goddog',
-      tier: 'Gold',
-      points: 880,
-    },
-  ];
+    localStorage.removeItem(LEGACY_LOCAL_ACCOUNTS_KEY);
+  } catch {}
 }
 
-function saveLocalAccount(account: StoredUserAccount) {
-  const current = getLocalAccounts();
-  const existingIdx = current.findIndex((a) => a.email.toLowerCase() === account.email.toLowerCase());
-  const resolvedUid = account.uid || (existingIdx >= 0 ? current[existingIdx].uid : undefined) || getDeterministicUserId(account.email);
-  const record: StoredUserAccount = {
-    ...account,
-    uid: resolvedUid,
-  };
-  if (existingIdx >= 0) {
-    current[existingIdx] = record;
-  } else {
-    current.push(record);
-  }
-  localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(current));
+function resolveLoginEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  return normalized.includes('@') ? normalized : `${normalized}@gmail.com`;
 }
 
-// Email + Password Sign In
-export async function signInWithEmail(email: string, pass: string): Promise<{ user: User | null; error?: string; profile?: any }> {
-  const normalizedInput = email.trim().toLowerCase();
-  const effectiveEmail = normalizedInput.includes('@') ? normalizedInput : `${normalizedInput}@gmail.com`;
-
+export async function signInWithEmail(email: string, password: string): Promise<{ user: User | null; error?: string }> {
   try {
-    const result = await signInWithEmailAndPassword(auth, effectiveEmail, pass);
-    if (result.user) {
-      saveLocalAccount({
-        uid: result.user.uid,
-        email: effectiveEmail,
-        passwordHash: pass,
-        name: result.user.displayName || effectiveEmail.split('@')[0],
-        tier: 'Bronze',
-        points: 50,
-      });
-    }
+    const result = await signInWithEmailAndPassword(auth, resolveLoginEmail(email), password);
     return { user: result.user };
   } catch (error: any) {
-    // Check if account exists in local database or master password
-    const accounts = getLocalAccounts();
-    const matched = accounts.find(
-      (a) =>
-        a.email.toLowerCase() === normalizedInput ||
-        a.email.toLowerCase() === effectiveEmail ||
-        (normalizedInput === 'goddog' && a.email.toLowerCase() === 'goddog@gmail.com')
-    );
-
-    const isMasterPass =
-      pass === 'King8787@' ||
-      pass === 'king8787@' ||
-      pass === 'admin888' ||
-      pass === 'printcore2026';
-
-    if (matched) {
-      if (matched.passwordHash === pass || isMasterPass) {
-        const stableUid = matched.uid || getDeterministicUserId(matched.email);
-        const demoUser: any = {
-          uid: stableUid,
-          displayName: matched.name || effectiveEmail.split('@')[0],
-          email: matched.email.includes('@') ? matched.email : effectiveEmail,
-          photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=faces',
-        };
-        return { user: demoUser };
-      } else {
-        return { user: null, error: '密碼不正確，請重新輸入。' };
-      }
-    }
-
-    if (isMasterPass) {
-      const stableUid = getDeterministicUserId(effectiveEmail);
-      const demoUser: any = {
-        uid: stableUid,
-        displayName: effectiveEmail.split('@')[0],
-        email: effectiveEmail,
-        photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=faces',
-      };
-      saveLocalAccount({
-        uid: stableUid,
-        email: effectiveEmail,
-        passwordHash: pass,
-        name: effectiveEmail.split('@')[0],
-        tier: 'Bronze',
-        points: 50,
-      });
-      return { user: demoUser };
-    }
-
-    return { user: null, error: error?.message || '帳號或密碼不正確，請重新確認後再試。' };
+    const message = error?.code === 'auth/network-request-failed'
+      ? '無法連線至 Firebase，請確認網路後再試。'
+      : '登入失敗。請確認帳號與密碼，或使用原本的 Google 登入方式。';
+    return { user: null, error: message };
   }
 }
 
-// Email + Password Register
 export async function registerWithEmail(
   email: string,
-  pass: string,
-  name: string
-): Promise<{ user: User | null; error?: string; profile?: any }> {
-  const normalizedInput = email.trim().toLowerCase();
-  const effectiveEmail = normalizedInput.includes('@') ? normalizedInput : `${normalizedInput}@gmail.com`;
-
+  password: string,
+  name: string,
+): Promise<{ user: User | null; error?: string }> {
+  const effectiveEmail = resolveLoginEmail(email);
   try {
-    const result = await createUserWithEmailAndPassword(auth, effectiveEmail, pass);
-    let profile = null;
-    if (result.user) {
-      const displayName = name || effectiveEmail.split('@')[0];
-      if (name) {
-        await updateProfile(result.user, { displayName: name }).catch(() => {});
-      }
-      profile = await saveUserProfileToFirestore({
-        id: result.user.uid,
-        email: result.user.email || effectiveEmail,
-        name: displayName,
-        tier: 'Bronze',
-        points: 50,
-      });
-      saveLocalAccount({
-        uid: result.user.uid,
-        email: effectiveEmail,
-        passwordHash: pass,
-        name: displayName,
-        tier: 'Bronze',
-        points: 50,
-      });
-    }
-    return { user: result.user, profile };
+    const { user } = await createUserWithEmailAndPassword(auth, effectiveEmail, password);
+    const displayName = name.trim() || effectiveEmail.split('@')[0];
+    void updateProfile(user, { displayName }).catch(() => {});
+    void saveUserProfileToFirestore({
+      id: user.uid,
+      email: user.email || effectiveEmail,
+      name: displayName,
+    }).catch(() => console.warn('Unable to save the registered member profile.'));
+    return { user };
   } catch (error: any) {
-    // If already registered in Firebase Auth, try signing in with the provided password
     if (error?.code === 'auth/email-already-in-use') {
-      try {
-        const signInRes = await signInWithEmailAndPassword(auth, effectiveEmail, pass);
-        return { user: signInRes.user };
-      } catch {
-        return { user: null, error: '此電子信箱已註冊過會員，請切換至「會員登入」並輸入正確密碼。' };
-      }
+      return { user: null, error: '此電子信箱已註冊，請使用原本的登入方式。' };
     }
-
-    const stableUid = getDeterministicUserId(effectiveEmail);
-    const demoUser: any = {
-      uid: stableUid,
-      displayName: name || effectiveEmail.split('@')[0],
-      email: effectiveEmail,
-      photoURL: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&h=120&fit=crop&crop=faces',
-    };
-    saveLocalAccount({
-      uid: stableUid,
-      email: effectiveEmail,
-      passwordHash: pass,
-      name: name || effectiveEmail.split('@')[0],
-      tier: 'Bronze',
-      points: 50,
-    });
-    return { user: demoUser };
+    return { user: null, error: error?.message || '註冊失敗，請稍後再試。' };
   }
 }
 
-// Sign Out
 export async function logOut(): Promise<void> {
   try {
     await signOut(auth);
@@ -1215,22 +1040,8 @@ export async function deleteCustomerAccountAndData(userId?: string | null): Prom
     throw error;
   }
 
-  // 3. Remove matching entries from local registered accounts & all printcore_*_<uid> keys
+  // Remove this member's local profile and session.
   try {
-    const emailLower = (currentUser?.email || '').trim().toLowerCase();
-    const rawAccounts = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
-    if (rawAccounts) {
-      const parsed = JSON.parse(rawAccounts);
-      if (Array.isArray(parsed)) {
-        const remaining = parsed.filter(
-          (acc: any) =>
-            acc?.uid !== cleanUid &&
-            (!emailLower || String(acc?.email || '').trim().toLowerCase() !== emailLower)
-        );
-        localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(remaining));
-      }
-    }
-
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import App from './App.tsx';
-import { clearLegacyLogisticsCredentials } from './lib/firebase';
+import { clearLegacyLocalAccounts, clearLegacyLogisticsCredentials } from './lib/firebase';
 import './index.css';
 
 interface ErrorBoundaryProps {
@@ -64,6 +64,7 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 }
 
 clearLegacyLogisticsCredentials();
+clearLegacyLocalAccounts();
 const rootElement = document.getElementById('root');
 if (rootElement) {
   createRoot(rootElement).render(

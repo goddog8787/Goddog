@@ -642,12 +642,7 @@ export default function App() {
   });
 
   // Track which customer ID has completed hydration so login/logout transitions never overwrite saved profile/cart
-  const hydratedUserIdRef = React.useRef<string | null>(
-    (() => {
-      const session = getStoredCustomerSession();
-      return session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
-    })()
-  );
+  const hydratedUserIdRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     const cleanId = normalizeCustomerId(member?.id);
@@ -761,14 +756,7 @@ export default function App() {
   const [isCustomerSupportOpen, setIsCustomerSupportOpen] = useState(false);
   const [supportInitialPrompt, setSupportInitialPrompt] = useState('');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    try {
-      const session = getStoredCustomerSession();
-      return Boolean(session && session.id && session.isLoggedIn && !session.id.startsWith('guest_'));
-    } catch {
-      return false;
-    }
-  });
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const isOwnerAdmin = Boolean(isLoggedIn && auth.currentUser?.emailVerified &&
     auth.currentUser.email?.toLowerCase() === 'babe0615@gmail.com');
@@ -1132,23 +1120,6 @@ export default function App() {
             setCartItems([]);
             saveCustomerCart(ownerUid, [], { explicitClear: true }).catch(console.warn);
 
-            if (Array.isArray(newOrder.items) && newOrder.items.length > 0) {
-              setProducts((prevCatalog) => {
-                let nextCatalog = prevCatalog;
-                for (const orderItem of newOrder.items) {
-                  const targetProd = nextCatalog.find((p) => p.id === orderItem.productId);
-                  if (targetProd) {
-                    const updatedProd: FilamentProduct = {
-                      ...targetProd,
-                      stock: Math.max(0, targetProd.stock - orderItem.quantity),
-                    };
-                    nextCatalog = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
-                  }
-                }
-                return nextCatalog;
-              });
-            }
-
             // 會員更新累計點數、消費紀錄、核銷一次性會員券並完整持久化
             if (ownerUid) {
               const usedCouponUpper = (newOrder.couponCode || '').trim().toUpperCase();
@@ -1338,9 +1309,9 @@ export default function App() {
       setComparisonIds(cachedComparison);
 
       const cachedProfile = getStoredCustomerProfileSync(cleanUserId);
-      if (cachedProfile) {
-        setMember(cachedProfile);
-      }
+      setMember(cachedProfile || sanitizeCustomerProfile({
+        ...INITIAL_MEMBER, ...fallbackProfile, id: cleanUserId,
+      }));
 
       // 1. Reconcile Cloud & Local Cart
       // IMPORTANT: loadCustomerCart(cleanUserId) already reconciles Firestore and localUserCart by timestamp.
@@ -1437,23 +1408,6 @@ export default function App() {
     }
   };
 
-  // Restore stored session on mount or load guest state
-  useEffect(() => {
-    const session = getStoredCustomerSession();
-    const cleanId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
-    if (session && cleanId) {
-      setIsLoggedIn(true);
-      syncUserData(cleanId, session);
-    } else {
-      hydratedUserIdRef.current = null;
-      syncingUserIdRef.current = null;
-      setIsLoggedIn(false);
-      setCartItems(getStoredCustomerCartSync(null));
-      setWishlistIds(getStoredCustomerWishlistSync(null));
-      setComparisonIds(getStoredCustomerComparisonSync(null));
-    }
-  }, []);
-
   // Handle customer logout: strictly detach active customer ID BEFORE clearing in-memory UI state so user data is never wiped
   const handleLogout = async () => {
     // 1. Detach hydrated user reference immediately so no effect writes empty state to the user's storage
@@ -1510,14 +1464,14 @@ export default function App() {
           syncUserData(cleanUid, fallbackProfile);
         }
       } else {
-        const session = getStoredCustomerSession();
-        const cleanSessionId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
-        if (!cleanSessionId) {
-          hydratedUserIdRef.current = null;
-          syncingUserIdRef.current = null;
-          setIsLoggedIn(false);
-          setMember(INITIAL_MEMBER);
-        }
+        hydratedUserIdRef.current = null;
+        syncingUserIdRef.current = null;
+        clearStoredCustomerSession();
+        setIsLoggedIn(false);
+        setMember(INITIAL_MEMBER);
+        setCartItems(getStoredCustomerCartSync(null));
+        setWishlistIds(getStoredCustomerWishlistSync(null));
+        setComparisonIds(getStoredCustomerComparisonSync(null));
       }
     });
     return () => unsubscribe();
@@ -1692,19 +1646,6 @@ export default function App() {
     saveCustomerOrderRecord(orderWithOwner, activeUid);
     saveCustomerCart(activeUid, [], { explicitClear: true });
     setCartItems([]);
-    // Deduct stock and persist permanently
-    let nextCatalog = products;
-    for (const orderItem of newOrder.items) {
-      const targetProd = nextCatalog.find((p) => p.id === orderItem.productId);
-      if (targetProd) {
-        const updatedProd: FilamentProduct = {
-          ...targetProd,
-          stock: Math.max(0, targetProd.stock - orderItem.quantity),
-        };
-        nextCatalog = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
-      }
-    }
-    setProducts(nextCatalog);
     // Add loyalty points to member profile, consume single-use coupon & verify Stage 2 Referral Reward
     if (isLoggedIn && activeUid) {
       const usedCouponUpper = (newOrder.couponCode || '').trim().toUpperCase();
