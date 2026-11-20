@@ -8,7 +8,7 @@ interface CartLine {
   quantity: number;
 }
 
-interface CheckoutInventory {
+export interface CheckoutInventory {
   amount: number;
   lines: CartLine[];
   paid?: { tradeNo: string; payTime: string; paymentType: string };
@@ -76,6 +76,11 @@ export async function rememberCheckout(db: Firestore, orderId: string, amount: n
     }
     tx.create(order, { amount, lines, createdAt: Date.now() });
   });
+}
+
+export async function loadCheckout(db: Firestore, orderId: string): Promise<CheckoutInventory | undefined> {
+  if (!/^[a-zA-Z0-9_-]{1,120}$/.test(orderId)) return;
+  return (await db.collection('paymentInventory').doc(orderId).get()).data() as CheckoutInventory | undefined;
 }
 
 export async function settleCheckout(

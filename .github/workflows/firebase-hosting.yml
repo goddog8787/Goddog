@@ -52,6 +52,36 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+      - name: Wait for the matching Render backend
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          STOREFRONT_API: ${{ vars.VITE_API_BASE_URL || 'https://goddog.onrender.com' }}
+        run: |
+          node --input-type=module <<'JS'
+          const base = process.env.STOREFRONT_API.replace(/\/+$/, '');
+          const read = (path) => fetch(base + path, { signal: AbortSignal.timeout(12000) }).then(response => {
+            if (!response.ok) throw new Error('Backend endpoint is not ready');
+            return response.json();
+          });
+          const deadline = Date.now() + 8 * 60 * 1000;
+          let ready = false;
+          do {
+            try {
+              const health = await read('/api/health');
+              if (health.revision === process.env.RELEASE_SHA) {
+                const payment = await read('/api/payment/config-status');
+                const inventory = await read('/api/payment/inventory-status');
+                ready = payment.configured === true && payment.sandbox === false && inventory.ready === true;
+              }
+            } catch {
+              // Render may still be building or starting the release.
+            }
+            if (!ready) await new Promise(resolve => setTimeout(resolve, 10000));
+          } while (!ready && Date.now() < deadline);
+          if (!ready) throw new Error('Matching Render release, production payment config, or Firestore inventory is unavailable');
+          JS
+
       - name: Deploy to Firebase Hosting
         if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         env:

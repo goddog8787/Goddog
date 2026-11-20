@@ -139,6 +139,7 @@ test('a test payment callback updates shared inventory even without a browser re
       { name: 'Black', hex: '#000000', stock: 2 },
     ] });
     await withServer(true, async (base, [key, iv]) => {
+      assert.deepEqual(await fetch(base + '/api/payment/inventory-status').then(r => r.json()), { ready: true });
       const orderId = 'GD' + Date.now();
       const start = await fetch(base + '/api/payment/checkout', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -161,6 +162,12 @@ test('a test payment callback updates shared inventory even without a browser re
         assert.equal(response.status, 200);
         assert.equal(await response.text(), '1|OK');
       }
+      const checked = await fetch(base + '/api/payment/verify-status?orderId=' + orderId);
+      assert.equal(checked.status, 200);
+      const verified = await checked.json();
+      assert.equal(verified.isPaid, true);
+      assert.equal(verified.order.amt, 199);
+      assert.ok(!('rawResult' in verified.order));
       const data = (await product.get()).data();
       assert.equal(data?.stock, 1);
       assert.equal(data?.colors[0].stock, 1);

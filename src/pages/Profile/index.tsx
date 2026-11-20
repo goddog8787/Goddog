@@ -207,15 +207,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       if (error) {
         setGoogleLoginError(error);
       } else if (user) {
-        showToast(lang === 'en' ? 'Welcome back!' : lang === 'ja' ? 'おかえりなさい！' : '登入成功！已領取新人專屬好禮');
-        if (setMember) {
-          setMember((prev: any) => ({
-            ...(prev || {}),
-            id: user.uid,
-            name: user.displayName || user.email?.split('@')[0] || '創客夥伴',
-            email: user.email || '',
-          }));
-        }
+        showToast(lang === 'en' ? 'Welcome back!' : lang === 'ja' ? 'おかえりなさい！' : 'Google 登入成功');
+
       }
     } catch (error) {
       setGoogleLoginError(error instanceof Error ? error.message : 'Google 登入失敗，請稍後重試。');
