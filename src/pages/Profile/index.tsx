@@ -198,12 +198,14 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   );
 
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
+  const [googleLoginError, setGoogleLoginError] = useState<string | null>(null);
   const handleDirectGoogleLogin = async () => {
     setIsGoogleSigningIn(true);
+    setGoogleLoginError(null);
     try {
       const { user, error } = await signInWithGoogle();
       if (error) {
-        if (onLoginClick) onLoginClick();
+        setGoogleLoginError(error);
       } else if (user) {
         showToast(lang === 'en' ? 'Welcome back!' : lang === 'ja' ? 'おかえりなさい！' : '登入成功！已領取新人專屬好禮');
         if (setMember) {
@@ -215,8 +217,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           }));
         }
       }
-    } catch {
-      if (onLoginClick) onLoginClick();
+    } catch (error) {
+      setGoogleLoginError(error instanceof Error ? error.message : 'Google 登入失敗，請稍後重試。');
     } finally {
       setIsGoogleSigningIn(false);
     }
@@ -242,6 +244,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="w-full bg-white dark:bg-slate-900 rounded-[32px] p-6 sm:p-8 shadow-2xl shadow-indigo-500/5 border border-slate-200/80 dark:border-slate-800 text-center relative overflow-hidden">
           <div className="absolute -top-16 -right-16 w-44 h-44 bg-gradient-to-br from-amber-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
           <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-gradient-to-tr from-sky-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+
+          {googleLoginError && (
+            <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200">
+              {googleLoginError}
+            </p>
+          )}
 
           {pendingRefCode && (
             <div className="mb-5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-2">
