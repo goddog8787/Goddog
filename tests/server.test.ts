@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { createServer as createHttpServer } from 'node:http';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,54 @@ import { deleteApp, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 const serverFile = fileURLToPath(new URL('../server.ts', import.meta.url));
+
+test('Gemini chat reports the upstream model that returned text after the primary model fails', async () => {
+  const models: string[] = [];
+  let streamUnavailable = false;
+  const gateway = createHttpServer((req, res) => {
+    const model = req.url?.match(/models\/([^:]+)/)?.[1] ?? '';
+    const streaming = req.url?.includes(':streamGenerateContent');
+    models.push(model);
+    req.resume();
+    if (model === 'gemini-4-hydrogen' || (streaming && streamUnavailable)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { code: 404, status: 'NOT_FOUND' } }));
+      return;
+    }
+    const payload = JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: 'Gemini smoke test' }] } }] });
+    res.writeHead(200, { 'Content-Type': streaming ? 'text/event-stream' : 'application/json' });
+    res.end(streaming ? `data: ${payload}\n\n` : payload);
+  });
+  gateway.listen(0, '127.0.0.1');
+  await once(gateway, 'listening');
+  const addr = gateway.address();
+  assert.ok(addr && typeof addr !== 'string');
+  try {
+    await withServer(false, async base => {
+      const response = await fetch(base + '/api/ai/chat/stream', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Test cloud reply', model: 'gemini-4-hydrogen' }),
+      });
+      assert.equal(response.status, 200);
+      const events = await response.text();
+      assert.match(events, /"modelUsed":"Gemini 3\.8 Flash"/);
+      assert.match(events, /Gemini smoke test/);
+      assert.deepEqual(models, ['gemini-4-hydrogen', 'gemini-3.8-flash']);
+
+      streamUnavailable = true;
+      const fallback = await fetch(base + '/api/ai/chat/stream', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Test non-streaming fallback', model: 'gemini-4-hydrogen' }),
+      });
+      const fallbackEvents = await fallback.text();
+      assert.match(fallbackEvents, /"modelUsed":"Gemini 3\.1 Flash-Lite/);
+      assert.match(fallbackEvents, /Gemini smoke test/);
+    }, { GEMINI_API_KEY: 'local-test-key', GOOGLE_GEMINI_BASE_URL: `http://127.0.0.1:${addr.port}` });
+  } finally {
+    gateway.closeAllConnections();
+    await new Promise<void>(resolve => gateway.close(() => resolve()));
+  }
+});
 
 async function withServer(configured: boolean, run: (base: string, values: string[]) => Promise<void>, deployment: NodeJS.ProcessEnv = {}) {
   const workDir = await mkdtemp(path.join(tmpdir(), 'goddog-test-'));

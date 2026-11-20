@@ -139,8 +139,7 @@ export async function callDirectBrowserGemini(
 }
 
 /**
- * Fast unified SSE dispatcher: streams from backend /api/ai/chat/stream (trying primary base with crisp 4s first-byte timeout),
- * and tries the other configured API endpoints when the first connection is unavailable.
+ * Streams customer support replies from the configured Express backend.
  */
 export async function dispatchGeminiStream(params: {
   message: string;
@@ -176,7 +175,7 @@ export async function dispatchGeminiStream(params: {
             lang: params.lang || 'zh-TW',
           }),
         },
-        4500,
+        15000,
         params.signal
       );
 
@@ -196,40 +195,49 @@ export async function dispatchGeminiStream(params: {
         let accumulatedText = '';
         let resolvedModelUsed = '';
         let streamDone = false;
+        let pending = '';
+        const cancelRead = () => { void reader.cancel().catch(() => {}); };
+        params.signal?.addEventListener('abort', cancelRead, { once: true });
 
-        while (!streamDone) {
-          if (params.signal?.aborted) {
-            try { await reader.cancel(); } catch {}
-            return null;
-          }
-          const { value, done } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data:')) continue;
-            const dataStr = trimmed.slice(5).trim();
-            if (dataStr === '[DONE]') {
-              streamDone = true;
-              break;
+        try {
+          while (!streamDone) {
+            if (params.signal?.aborted) {
+              try { await reader.cancel(); } catch {}
+              return null;
             }
-            try {
-              const parsed = JSON.parse(dataStr);
-              if (parsed.meta?.modelUsed) {
-                resolvedModelUsed = parsed.meta.modelUsed;
-                params.onMeta?.(parsed.meta);
+            const { value, done } = await reader.read();
+            pending += decoder.decode(value, { stream: !done });
+            const lines = pending.split('\n');
+            pending = done ? '' : lines.pop() ?? '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const dataStr = trimmed.slice(5).trim();
+              if (dataStr === '[DONE]') {
+                streamDone = true;
+                break;
               }
-              if (parsed.text) {
-                accumulatedText += parsed.text;
-                params.onChunk?.(accumulatedText);
-              }
-            } catch {}
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.meta?.modelUsed) {
+                  resolvedModelUsed = parsed.meta.modelUsed;
+                  params.onMeta?.(parsed.meta);
+                }
+                if (parsed.text) {
+                  accumulatedText += parsed.text;
+                  params.onChunk?.(accumulatedText);
+                }
+              } catch {}
+            }
+            if (done) break;
           }
+        } finally {
+          params.signal?.removeEventListener('abort', cancelRead);
+          await reader.cancel().catch(() => {});
         }
 
-        if (accumulatedText.trim()) {
+        if (!params.signal?.aborted && accumulatedText.trim()) {
           return {
             reply: accumulatedText.trim(),
             modelUsed: resolvedModelUsed || undefined,
