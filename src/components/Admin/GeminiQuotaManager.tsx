@@ -11,7 +11,7 @@ import {
   Clock,
   Activity,
 } from 'lucide-react';
-import { generateClientGeminiChat, getBackendApiBase } from '../../lib/geminiClient';
+import { authenticatedStoreFetch } from '../../lib/firebase';
 
 interface AIAdminConfig {
   success: boolean;
@@ -43,8 +43,7 @@ export const GeminiQuotaManager: React.FC = () => {
   const fetchConfig = async () => {
     try {
       setLoading(true);
-      const apiBase = getBackendApiBase();
-      const res = await fetch(`${apiBase}/api/ai/admin-config`).catch(() => null);
+      const res = await authenticatedStoreFetch('/api/ai/admin-config').catch(() => null);
       if (res && res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
@@ -56,16 +55,7 @@ export const GeminiQuotaManager: React.FC = () => {
         }
       }
 
-      setConfig({
-        success: true,
-        ownerAccount: 'babe0615@gmail.com',
-        hasActiveKey: true,
-        keySource: 'server_env',
-        maskedKey: '',
-        activeModel: 'gemini-4-hydrogen',
-        supportedModels: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-flash-latest'],
-        totalQueriesServed: 128,
-      });
+      setConfig(null);
     } catch (e) {
       console.warn('Failed to fetch AI admin config:', e);
     } finally {
@@ -81,41 +71,17 @@ export const GeminiQuotaManager: React.FC = () => {
     if (!testPrompt.trim()) return;
     setIsTesting(true);
     setTestResult(null);
-    const start = Date.now();
-
     try {
-      let replied = false;
-      try {
-        const apiBase = getBackendApiBase();
-        const res = await fetch(`${apiBase}/api/ai/test-owner-connection`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: testPrompt, model: testModel }),
-        });
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.success) {
-            setTestResult(data);
-            replied = true;
-          }
-        }
-      } catch {}
-
-      if (!replied) {
-        const reply = await generateClientGeminiChat(testPrompt);
-        const latencyMs = Date.now() - start;
-        if (reply) {
-          setTestResult({
-            success: true,
-            reply,
-            latencyMs,
-            modelUsed: testModel,
-          });
-        } else {
-          throw new Error('未取得有效回覆');
-        }
+      const response = await authenticatedStoreFetch('/api/ai/test-owner-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: testPrompt, model: testModel }),
+      });
+      if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+        throw new Error('無法連線至管理服務');
       }
+      const result = await response.json();
+      setTestResult(result);
     } catch (err: any) {
       setTestResult({
         success: false,

@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { User, Sparkles, MapPin, Share2, CreditCard, Gift, 
+import { User, Sparkles, MapPin, Share2, CreditCard, Gift, Heart,
   Settings, ChevronRight, Package, Clock, ShieldCheck, 
   HelpCircle, Bell, History, Printer, Medal, HeadphonesIcon,
   CheckCircle2
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { auth, logOut, signInWithGoogle } from '../../lib/firebase';
-import { isMockOrder, confirmOrderReceipt, getGenuineUserOrders } from '../../lib/orderVerification';
+import { isMockOrder, getGenuineUserOrders } from '../../lib/orderVerification';
 import { OrderModal, NotificationModal, PrinterModal, AddressModal, ReferralModal, AchievementModal, SettingsModal, HistoryModal, CouponModal, FAQModal, classifyOrderStatusLabel } from './ProfileModals';
 import { getStoredRecentlyViewedSync, loadCustomerUserData, isMemberVipActive } from '../../lib/customerPersistence';
 import { LanguageCode, CurrencyCode } from '../../types';
@@ -22,7 +22,8 @@ export interface ProfilePageProps {
   setMember: (m: any) => void;
   onOpenTracking?: (trackingNumber: string) => void;
   onOpenProductDetail?: (product: any) => void;
-  onAddToCart?: (product: any) => void;
+  onAddToCart?: (product: any) => boolean;
+  onOpenWishlist?: () => void;
   onOpenSupport?: (prompt?: string) => void;
   lang?: LanguageCode;
   onChangeLang?: (lang: LanguageCode) => void;
@@ -43,6 +44,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   onOpenTracking,
   onOpenProductDetail,
   onAddToCart,
+  onOpenWishlist,
   onOpenSupport,
   lang = 'zh-TW',
   onChangeLang,
@@ -55,33 +57,42 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const navigate = useNavigate();
   const [toastMsg, setToastMsg] = useState('');
   const [activeModal, setActiveModal] = useState<string | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [persistedOrders, setPersistedOrders] = useState<any[]>([]);
+  const [persistedOrders, setPersistedOrders] = useState<{ uid: string; orders: any[] } | null>(null);
   const [printerGarageCount, setPrinterGarageCount] = useState<number>(0);
   const pendingRefCode = typeof window !== 'undefined' ? localStorage.getItem('printcore_referral_code') : null;
 
   useEffect(() => {
+    if (!isLoggedIn || !member?.id) return;
+    const uid = member.id;
     let active = true;
     getGenuineUserOrders(safeOrders)
       .then((res) => {
         if (active && Array.isArray(res)) {
-          setPersistedOrders(res);
+          setPersistedOrders({ uid, orders: res });
         }
       })
       .catch(() => {});
     return () => {
       active = false;
     };
-  }, [safeOrders, member?.id, member?.email, activeModal]);
+  }, [safeOrders, member?.id, member?.email, isLoggedIn]);
 
   useEffect(() => {
-    const uid = member?.id || auth.currentUser?.uid;
-    loadCustomerUserData(uid, 'printers')
-      .then((list) => {
-        if (Array.isArray(list)) setPrinterGarageCount(list.length);
-      })
-      .catch(() => {});
-  }, [member?.id, activeModal]);
+    const uid = member?.id;
+    if (!isLoggedIn || !uid) return;
+    let current = true;
+    const loadPrinters = () => {
+      void loadCustomerUserData(uid, 'printers').then(list => {
+        if (current) setPrinterGarageCount(Array.isArray(list) ? list.length : 0);
+      });
+    };
+    loadPrinters();
+    window.addEventListener('printcore:printer-changed', loadPrinters);
+    return () => {
+      current = false;
+      window.removeEventListener('printcore:printer-changed', loadPrinters);
+    };
+  }, [member?.id, isLoggedIn]);
 
   const genuineMemberOrders = React.useMemo(() => {
     const currentUid = (member?.id && !member.id.startsWith('guest')) ? member.id : auth.currentUser?.uid;
@@ -89,7 +100,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     if (!currentUid && !currentEmail) return [];
 
     const map = new Map<string, any>();
-    [...persistedOrders, ...safeOrders].forEach((o: any) => {
+    const storedOrders = persistedOrders?.uid === currentUid ? persistedOrders.orders : [];
+    [...storedOrders, ...safeOrders].forEach((o: any) => {
       if (!o || isMockOrder(o)) return;
       const orderUid = (o as any).userId;
       const orderEmail = (o.customerEmail || '').trim().toLowerCase();
@@ -186,25 +198,20 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   );
 
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
+  const [googleLoginError, setGoogleLoginError] = useState<string | null>(null);
   const handleDirectGoogleLogin = async () => {
     setIsGoogleSigningIn(true);
+    setGoogleLoginError(null);
     try {
       const { user, error } = await signInWithGoogle();
       if (error) {
-        if (onLoginClick) onLoginClick();
+        setGoogleLoginError(error);
       } else if (user) {
-        showToast(lang === 'en' ? 'Welcome back!' : lang === 'ja' ? 'おかえりなさい！' : '登入成功！已領取新人專屬好禮');
-        if (setMember) {
-          setMember((prev: any) => ({
-            ...(prev || {}),
-            id: user.uid,
-            name: user.displayName || user.email?.split('@')[0] || '創客夥伴',
-            email: user.email || '',
-          }));
-        }
+        showToast(lang === 'en' ? 'Welcome back!' : lang === 'ja' ? 'おかえりなさい！' : 'Google 登入成功');
+
       }
-    } catch {
-      if (onLoginClick) onLoginClick();
+    } catch (error) {
+      setGoogleLoginError(error instanceof Error ? error.message : 'Google 登入失敗，請稍後重試。');
     } finally {
       setIsGoogleSigningIn(false);
     }
@@ -230,6 +237,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         <div className="w-full bg-white dark:bg-slate-900 rounded-[32px] p-6 sm:p-8 shadow-2xl shadow-indigo-500/5 border border-slate-200/80 dark:border-slate-800 text-center relative overflow-hidden">
           <div className="absolute -top-16 -right-16 w-44 h-44 bg-gradient-to-br from-amber-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
           <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-gradient-to-tr from-sky-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+
+          {googleLoginError && (
+            <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200">
+              {googleLoginError}
+            </p>
+          )}
 
           {pendingRefCode && (
             <div className="mb-5 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center justify-center gap-2">
@@ -416,9 +429,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         {/* Left Column (5/12 on Desktop): VIP, Wallet & Printer Garage */}
         <div className="lg:col-span-5 space-y-5">
           {/* Subscription Upgrade Banner */}
-          <div 
-            onClick={() => navigate('/subscription')}
-            className={`rounded-3xl p-5 sm:p-6 shadow-lg flex items-center justify-between cursor-pointer hover:scale-[1.01] transition-transform active:scale-98 text-white overflow-hidden relative ${
+          <Link
+            to="/subscription"
+            className={`btn-tactile-primary rounded-3xl p-5 sm:p-6 shadow-lg flex items-center justify-between cursor-pointer text-white overflow-hidden relative ${
               isVipActive
                 ? 'bg-gradient-to-r from-indigo-600 to-indigo-800 shadow-indigo-500/20 border border-indigo-400'
                 : 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-amber-500/20'
@@ -463,7 +476,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               </div>
             </div>
             <ChevronRight className="w-6 h-6 text-white/70 relative z-10 shrink-0" />
-          </div>
+          </Link>
 
           {/* Wallet / Points Card */}
           <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
@@ -471,10 +484,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'G-Coins' : lang === 'ja' ? 'G-コイン' : '狗勾幣 (G-Coin)'}</p>
               <p className="text-2xl font-black text-slate-800 dark:text-white font-mono tabular-nums">{member?.points || 0}</p>
             </div>
-            <div onClick={() => openModal('coupons')} className="text-center flex-1 border-r border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors py-2 rounded-xl">
-              <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Coupons' : lang === 'ja' ? 'クーポン' : '優惠券'}</p>
-              <p className="text-2xl font-black text-slate-800 dark:text-white font-mono tabular-nums">{member?.coupons?.length || 0}<span className="text-xs font-sans text-slate-500 dark:text-slate-400 ml-1">{lang === 'en' ? ' pcs' : lang === 'ja' ? ' 枚' : '張'}</span></p>
-            </div>
+            <button type="button" onClick={() => openModal('coupons')} className="btn-tactile-primary text-center flex-1 border-r border-slate-100 dark:border-slate-800 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors py-2 rounded-xl">
+              <span className="block text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Coupons' : lang === 'ja' ? 'クーポン' : '優惠券'}</span>
+              <span className="block text-2xl font-black text-slate-800 dark:text-white font-mono tabular-nums">{member?.coupons?.length || 0}<span className="text-xs font-sans text-slate-500 dark:text-slate-400 ml-1">{lang === 'en' ? ' pcs' : lang === 'ja' ? ' 枚' : '張'}</span></span>
+            </button>
             <div className="text-center flex-1 py-2">
               <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Credit Rebate' : lang === 'ja' ? 'ポイント還元' : '紅利折抵金'}</p>
               <p className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">NT$ {Math.floor((member?.points || 0) * 0.1)}</p>
@@ -561,6 +574,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
               {[
                 { icon: Sparkles, label: lang === 'en' ? 'My Subscriptions' : lang === 'ja' ? 'サブスク管理' : '我的訂閱管理', desc: lang === 'en' ? 'Billing cycle, points, plan changes' : lang === 'ja' ? '契約期間、ポイント残高、プラン変更' : '查看週期、剩餘點數、變更或取消方案', color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/60', action: () => navigate('/subscription') },
                 { icon: Medal, label: lang === 'en' ? 'Maker Achievements' : lang === 'ja' ? 'メイカーアチーブメント' : '創客成就', desc: lang === 'en' ? 'Unlock badges and secret discounts' : lang === 'ja' ? '限定バッジと特別割引を獲得' : '即時偵測 12 項徽章進度與領取里程碑神券', color: 'text-amber-500 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/60', action: () => openModal('achievements') },
+                ...(onOpenWishlist ? [{ icon: Heart, label: lang === 'en' ? 'Saved Products' : lang === 'ja' ? 'お気に入りの商品' : '我的收藏', desc: lang === 'en' ? 'View and manage saved products' : lang === 'ja' ? '保存した商品を管理' : '查看與管理收藏商品', color: 'text-rose-500 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/60', action: onOpenWishlist }] : []),
                 { icon: MapPin, label: lang === 'en' ? 'Saved Addresses' : lang === 'ja' ? '配送先住所' : '地址資訊', desc: lang === 'en' ? 'Manage shipping and billing addresses' : lang === 'ja' ? '配送先とお届け先住所の管理' : '管理您的常用收件與發票地址', color: 'text-sky-500 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/60', action: () => openModal('address') },
                 { icon: Share2, label: lang === 'en' ? 'Refer & Earn' : lang === 'ja' ? '友達紹介' : '邀請好友賺狗勾幣', desc: lang === 'en' ? 'Unique link • 50 G-Coins each on registration & order' : lang === 'ja' ? '専用リンク・登録＆注文完了で両方に50 G-Coins' : '專屬連結・好友完成註冊＋首單即發放 50 狗勾幣', color: 'text-emerald-500 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/60', action: () => openModal('referral') },
                 { 
@@ -658,14 +672,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         setMember={setMember}
         onOpenTracking={onOpenTracking}
         onOpenSupport={onOpenSupport}
-        onConfirmReceipt={async (orderId) => {
-          if (setOrders) {
-            await confirmOrderReceipt(orderId, orders, setOrders);
-            showToast('🎉 已確認收貨！商品真實評價資格已成功解鎖');
-          }
-        }}
         onGoReview={(productId) => {
-          navigate(`/?product=${productId}`);
+          navigate(`/?product=${encodeURIComponent(productId)}`);
         }}
       />
       <PrinterModal isOpen={activeModal === 'printers'} onClose={() => setActiveModal(null)} member={member} />

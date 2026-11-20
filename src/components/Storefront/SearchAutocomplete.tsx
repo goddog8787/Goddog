@@ -13,7 +13,7 @@ import {
 import { FilamentProduct } from '../../types';
 import { INITIAL_PRODUCTS } from '../../data/mockData';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
-import { evaluateProductDeepSearch, expandAssociativeKeywords } from '../../utils/productSearch';
+import { prepareProductSearch, evaluateProductDeepSearch, expandAssociativeKeywords } from '../../utils/productSearch';
 
 export interface SearchAutocompleteProps {
   searchQuery: string;
@@ -195,12 +195,12 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
     return () => window.removeEventListener('keydown', handleGlobalShortcut);
   }, [id]);
 
-  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const trimmedQuery = isOpen ? searchQuery.trim().toLowerCase() : '';
+  const expandedTokens = useMemo(() => expandAssociativeKeywords(trimmedQuery), [trimmedQuery]);
 
   // Compute Matched Materials (including deep associative keywords)
   const matchedMaterials = useMemo(() => {
     if (!trimmedQuery) return [];
-    const expandedTokens = expandAssociativeKeywords(trimmedQuery);
     return MATERIAL_METAS.filter((mat) => {
       const matchKey = mat.key.toLowerCase().includes(trimmedQuery);
       const matchName = mat.name.toLowerCase().includes(trimmedQuery);
@@ -220,12 +220,11 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       const count = products.filter((p) => p.material === mat.key).length;
       return { ...mat, count };
     });
-  }, [trimmedQuery, products]);
+  }, [trimmedQuery, products, expandedTokens]);
 
   // Compute Matched Brands (including deep associative keywords)
   const matchedBrands = useMemo(() => {
     if (!trimmedQuery) return [];
-    const expandedTokens = expandAssociativeKeywords(trimmedQuery);
     return BRAND_METAS.filter((b) => {
       const matchName = b.name.toLowerCase().includes(trimmedQuery);
       const matchAlias = b.aliases.some(
@@ -246,14 +245,15 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       ).length;
       return { ...b, count };
     });
-  }, [trimmedQuery, products]);
+  }, [trimmedQuery, products, expandedTokens]);
 
   // Compute Matched Products (Top 6) using Deep Features & Associative Keyword Search
   const matchedProducts = useMemo(() => {
     if (!trimmedQuery) return [];
+    const query = prepareProductSearch(trimmedQuery);
     return products
       .map((p) => {
-        const evalRes = evaluateProductDeepSearch(p, trimmedQuery);
+        const evalRes = evaluateProductDeepSearch(p, query);
         if (!evalRes.matched) return null;
         return {
           product: p,

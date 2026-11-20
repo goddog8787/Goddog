@@ -18,7 +18,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
+      return isSignedIn() && request.auth.token.email_verified == true && (
         request.auth.token.email == 'babe0615@gmail.com' ||
         request.auth.token.email == 'goddog@gmail.com'
       );
@@ -50,7 +50,7 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'userId', 'type']) &&
         data.id is string && data.id.size() <= 128 &&
         data.userId is string && data.userId.size() <= 128 &&
-        data.type is string && data.type in ['cart', 'wishlist', 'comparison', 'coupons', 'chat', 'tracking', 'recentlyViewed', 'profile', 'subscription', 'printers', 'addresses', 'settings'];
+        data.type is string && data.type in ['cart', 'wishlist', 'comparison', 'coupons', 'chat', 'tracking', 'recentlyViewed', 'profile', 'subscription', 'printers', 'addresses', 'settings', 'invoice_pref'];
     }
 
     function isValidOrder(data) {
@@ -106,9 +106,9 @@ service cloud.firestore {
 
     // Orders collection
     match /orders/{orderId} {
-      allow get: if isValidId(orderId) && (isAdmin() || !isSignedIn() || existing().userId == request.auth.uid || existing().customerEmail == request.auth.token.email);
+      allow get: if isValidId(orderId) && (isAdmin() || (isSignedIn() && (existing().userId == request.auth.uid || (request.auth.token.email_verified == true && existing().customerEmail == request.auth.token.email))));
       allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow create: if isValidId(orderId) && isValidOrder(incoming()) && (!isSignedIn() || incoming().userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(orderId) && isValidOrder(incoming()) && ((!isSignedIn() && incoming().userId == 'guest') || (isSignedIn() && incoming().userId == request.auth.uid) || isAdmin());
       allow update: if isValidId(orderId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid)) && isValidOrder(incoming());
       allow delete: if isValidId(orderId) && isAdmin();
     }
@@ -116,7 +116,7 @@ service cloud.firestore {
     // Products collection (public read, admin dashboard write with valid product ID)
     match /products/{productId} {
       allow read: if true;
-      allow write: if isValidId(productId);
+      allow write: if isValidId(productId) && isAdmin();
     }
 
     // Store announcements collection (public read, admin write)
@@ -150,8 +150,11 @@ service cloud.firestore {
 
     // Store settings & monetization rules
     match /settings/{settingId} {
-      allow read: if isValidId(settingId);
-      allow write: if isValidId(settingId);
+      allow read: if isValidId(settingId) && (settingId != 'logistics_config' ||
+        (isAdmin() && !resource.data.keys().hasAny(['newebpayLogisticsHashKey', 'newebpayLogisticsHashIV'])));
+      allow create, update: if isValidId(settingId) && isAdmin() && (settingId != 'logistics_config' ||
+        !incoming().keys().hasAny(['newebpayLogisticsHashKey', 'newebpayLogisticsHashIV']));
+      allow delete: if isValidId(settingId) && isAdmin();
     }
 
     // System settings & AI configurations
@@ -160,9 +163,9 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Live AI Inference Bridge for static hosting (goddog.space <-> server.ts)
+    // AI requests are sent to the Express API.
     match /ai_bridge/{reqId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
 
     // Test connection probe collection

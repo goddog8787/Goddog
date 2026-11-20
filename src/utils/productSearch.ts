@@ -1,4 +1,4 @@
-import { FilamentProduct } from '../types';
+import type { FilamentProduct } from '../types';
 
 /**
  * 深度聯想詞索引字典 (Deep Associative Keyword Index)
@@ -120,6 +120,12 @@ export function expandAssociativeKeywords(token: string): string[] {
   return Array.from(expanded);
 }
 
+export function prepareProductSearch(rawQuery: string) {
+  const query = (rawQuery || '').trim().toLowerCase();
+  if (!query) return [];
+  return query.split(/\s+/).map(token => ({ token, associativeTerms: expandAssociativeKeywords(token) }));
+}
+
 export interface ProductSearchMatchResult {
   matched: boolean;
   score: number;
@@ -137,10 +143,10 @@ export interface ProductSearchMatchResult {
  */
 export function evaluateProductDeepSearch(
   product: FilamentProduct,
-  rawQuery: string
+  query: string | ReturnType<typeof prepareProductSearch>
 ): ProductSearchMatchResult {
-  const query = (rawQuery || '').trim().toLowerCase();
-  if (!query) {
+  const tokens = typeof query === 'string' ? prepareProductSearch(query) : query;
+  if (tokens.length === 0) {
     return {
       matched: true,
       score: 100,
@@ -149,7 +155,6 @@ export function evaluateProductDeepSearch(
     };
   }
 
-  const tokens = query.split(/\s+/).filter(Boolean);
   const nameLower = (product.name || '').toLowerCase();
   const brandLower = (product.brand || '').toLowerCase();
   const materialLower = (product.material || '').toLowerCase();
@@ -162,13 +167,14 @@ export function evaluateProductDeepSearch(
   const bedLower = (product.bedTemp || '').toLowerCase();
   const packagingLower = (product.packagingNote || '').toLowerCase();
   const featuresList = Array.isArray(product.features) ? product.features : [];
+  const features = featuresList.filter(Boolean).map(text => ({ text, lower: text.toLowerCase() }));
   const colorsList = Array.isArray(product.colors) ? product.colors : [];
 
   let totalScore = 0;
   const matchedFeaturesSet = new Set<string>();
   const matchedAssocSet = new Set<string>();
 
-  for (const token of tokens) {
+  for (const { token, associativeTerms } of tokens) {
     let tokenScore = 0;
 
     // 1. Direct primary field matches
@@ -179,10 +185,10 @@ export function evaluateProductDeepSearch(
     if (skuLower.includes(token)) tokenScore += 35;
 
     // 2. Direct match in product features (商品特色特點)
-    for (const feat of featuresList) {
-      if (feat && feat.toLowerCase().includes(token)) {
+    for (const feat of features) {
+      if (feat.lower.includes(token)) {
         tokenScore += 42;
-        matchedFeaturesSet.add(feat);
+        matchedFeaturesSet.add(feat.text);
       }
     }
 
@@ -197,15 +203,14 @@ export function evaluateProductDeepSearch(
     }
 
     // 4. Deep associative keyword expansion (深度聯想詞索引)
-    const associativeTerms = expandAssociativeKeywords(token);
     for (const assoc of associativeTerms) {
       if (assoc === token) continue;
 
       // Check product features first for associative hits
-      for (const feat of featuresList) {
-        if (feat && feat.toLowerCase().includes(assoc)) {
+      for (const feat of features) {
+        if (feat.lower.includes(assoc)) {
           tokenScore += 28;
-          matchedFeaturesSet.add(feat);
+          matchedFeaturesSet.add(feat.text);
           matchedAssocSet.add(assoc);
         }
       }

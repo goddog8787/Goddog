@@ -1,8 +1,12 @@
 import express from 'express';
+import { getSubscriptionTerms } from './src/data/subscriptionTerms.ts';
+import { initializeApp as initializeAdminApp } from 'firebase-admin/app';
+import { getAuth as getAdminAuth } from 'firebase-admin/auth';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
+import { InventoryConflict, loadCheckout, parseInventoryLines, rememberCheckout, settleCheckout } from './src/server/checkoutInventory';
 import path from 'path';
 import fs from 'fs';
 import dns from 'dns';
-import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import crypto from 'crypto';
@@ -10,18 +14,6 @@ import crypto from 'crypto';
 try {
   dns.setDefaultResultOrder?.('ipv4first');
 } catch {}
-
-const getFilename = () => {
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta.url) {
-      return fileURLToPath(import.meta.url);
-    }
-  } catch {}
-  return '';
-};
-
-const __filename = getFilename();
-const __dirname = __filename ? path.dirname(__filename) : process.cwd();
 
 dotenv.config();
 
@@ -76,6 +68,37 @@ const parsedPort = Number(cliPort || resolvedEnvPort);
 const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
 const HOST = resolveCliArg('--host') || process.env.HOST || '0.0.0.0';
 
+// Serve Firebase Auth's popup and iframe on the same origin as the Render storefront.
+const firebaseAuthOrigin = 'https://goddog-shop.firebaseapp.com';
+app.all('/__/auth/*', express.raw({ type: () => true, limit: '64kb' }), async (req, res) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
+    return res.set('Allow', 'GET, HEAD, POST').sendStatus(405);
+  }
+  try {
+    const upstream = new URL(firebaseAuthOrigin + req.originalUrl);
+    if (!upstream.pathname.startsWith('/__/auth/')) return res.sendStatus(404);
+    const contentType = req.get('Content-Type');
+    const response = await fetch(upstream, {
+      method: req.method,
+      headers: contentType ? { 'Content-Type': contentType } : undefined,
+      body: req.method === 'POST' && Buffer.isBuffer(req.body) ? req.body : undefined,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10_000),
+    });
+    const location = response.headers.get('location');
+    if (location) {
+      const redirect = new URL(location, upstream);
+      res.set('Location', redirect.origin === firebaseAuthOrigin ? redirect.pathname + redirect.search + redirect.hash : redirect.href);
+    }
+    res.set('Cache-Control', 'no-store');
+    const responseType = response.headers.get('content-type');
+    if (responseType) res.set('Content-Type', responseType);
+    return res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
+  } catch {
+    return res.status(502).send('Firebase 登入服務暫時無法連線。');
+  }
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -90,9 +113,38 @@ app.use((_req, res, next) => {
   next();
 });
 
+const adminApp = initializeAdminApp({
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID || 'goddog-shop',
+}, 'shop-api');
+const tokenVerifier = getAdminAuth(adminApp);
+const inventoryDatabase = getAdminFirestore(adminApp, process.env.VITE_FIREBASE_DATABASE_ID || 'ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4');
+
+const requireUser: express.RequestHandler = async (req, res, next) => {
+  const token = req.header('Authorization')?.match(/^Bearer (.+)$/i)?.[1];
+  if (token) {
+    try {
+      res.locals.user = await tokenVerifier.verifyIdToken(token);
+      next();
+      return;
+    } catch {
+      // Invalid, expired or issued for a different Firebase project.
+    }
+  }
+  res.status(401).json({ success: false, message: '請重新登入。' });
+};
+
+const requireAdmin: express.RequestHandler = (_req, res, next) => {
+  const user = res.locals.user;
+  if (user?.email_verified && ['babe0615@gmail.com', 'goddog@gmail.com'].includes(user.email)) {
+    next();
+    return;
+  }
+  res.sendStatus(403);
+};
+
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), revision: process.env.RENDER_GIT_COMMIT || undefined });
 });
 
 // Secure Server-Side Firebase Config endpoint (Key Isolation)
@@ -918,7 +970,7 @@ app.get('/api/catalog/sync', (_req, res) => {
   }
 });
 
-app.post('/api/catalog/sync', (req, res) => {
+app.post('/api/catalog/sync', requireUser, requireAdmin, (req, res) => {
   try {
     const dir = path.dirname(CATALOG_DELTA_FILE);
     if (!fs.existsSync(dir)) {
@@ -1208,7 +1260,7 @@ app.get('/api/ai/status', (_req, res) => {
   });
 });
 
-app.get('/api/ai/admin-config', (_req, res) => {
+app.get('/api/ai/admin-config', requireUser, requireAdmin, (_req, res) => {
   const hasEnv = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
   const hasRuntime = !!(runtimeCustomApiKey && runtimeCustomApiKey.trim());
   const activeKey = runtimeCustomApiKey || process.env.GEMINI_API_KEY || '';
@@ -1226,7 +1278,7 @@ app.get('/api/ai/admin-config', (_req, res) => {
   });
 });
 
-app.post('/api/ai/set-key', async (req, res) => {
+app.post('/api/ai/set-key', requireUser, requireAdmin, async (req, res) => {
   try {
     const { apiKey } = req.body || {};
     if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
@@ -1303,7 +1355,7 @@ app.post('/api/ai/set-key', async (req, res) => {
   }
 });
 
-app.post('/api/ai/test-owner-connection', async (req, res) => {
+app.post('/api/ai/test-owner-connection', requireUser, requireAdmin, async (req, res) => {
   const startTime = Date.now();
   const testAI = getAIClient();
   if (!testAI) {
@@ -2804,151 +2856,64 @@ Respond ONLY with valid JSON.`,
 // -------------------------------------------------------------
 // 8.5. 藍新金流 (NewebPay) 真實串接 API（嚴格由伺服器環境變數管理金鑰）
 // -------------------------------------------------------------
+function readPaymentSecret(name: 'NEWEBPAY_HASH_KEY' | 'NEWEBPAY_HASH_IV') {
+  const mountedPath = process.env[`${name}_FILE`]?.trim();
+  if (!mountedPath) return (process.env[name] || '').trim();
+  try {
+    return fs.readFileSync(mountedPath, 'utf8').trim();
+  } catch {
+    console.error(`[NewebPay] Unable to read the mounted ${name} secret.`);
+    return '';
+  }
+}
+
 const NEWEBPAY_MERCHANT_ID = (process.env.NEWEBPAY_MERCHANT_ID || '').trim();
-const NEWEBPAY_HASH_KEY = (process.env.NEWEBPAY_HASH_KEY || '').trim();
-const NEWEBPAY_HASH_IV = (process.env.NEWEBPAY_HASH_IV || '').trim();
-const NEWEBPAY_IS_SANDBOX = process.env.NEWEBPAY_ENV === 'sandbox';
-const NEWEBPAY_URL = NEWEBPAY_IS_SANDBOX
-  ? 'https://ccore.newebpay.com/MPG/mpg_gateway'
-  : 'https://core.newebpay.com/MPG/mpg_gateway';
-const NEWEBPAY_PERIOD_URL = NEWEBPAY_IS_SANDBOX
-  ? 'https://ccore.newebpay.com/MPG/period'
-  : 'https://core.newebpay.com/MPG/period';
+const NEWEBPAY_HASH_KEY = readPaymentSecret('NEWEBPAY_HASH_KEY');
+const NEWEBPAY_HASH_IV = readPaymentSecret('NEWEBPAY_HASH_IV');
+const productionRenderOrigin = 'https://goddog.onrender.com';
+const renderPublicUrl = process.env.RENDER_EXTERNAL_URL?.trim();
+const explicitPaymentEnvironment = process.env.NEWEBPAY_ENV?.trim().toLowerCase();
+const paymentEnvironment = explicitPaymentEnvironment || (renderPublicUrl === productionRenderOrigin ? 'production' : 'sandbox');
+const NEWEBPAY_IS_SANDBOX = !['production', 'prod', 'live'].includes(paymentEnvironment);
+const gatewayOrigin = NEWEBPAY_IS_SANDBOX ? 'https://ccore.newebpay.com' : 'https://core.newebpay.com';
+const NEWEBPAY_URL = gatewayOrigin + '/MPG/mpg_gateway';
+const NEWEBPAY_PERIOD_URL = gatewayOrigin + '/MPG/period';
+const paymentConfigured = Boolean(NEWEBPAY_MERCHANT_ID) &&
+  Buffer.byteLength(NEWEBPAY_HASH_KEY) === 32 && Buffer.byteLength(NEWEBPAY_HASH_IV) === 16;
 const NEWEBPAY_VERSION = '2.0';
 const NEWEBPAY_PERIOD_VERSION = '1.5';
 
-function isNewebPayConfigured(): boolean {
-  return (
-    NEWEBPAY_MERCHANT_ID.length > 0 &&
-    NEWEBPAY_HASH_KEY.length === 32 &&
-    NEWEBPAY_HASH_IV.length === 16
-  );
-}
+// Configure public callback origins on split Firebase Hosting / Express deployments.
+const webhookBaseUrl = new URL(process.env.PAYMENT_API_ORIGIN || renderPublicUrl || 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app').origin;
+const clientBackUrl = new URL(process.env.STOREFRONT_ORIGIN || 'https://goddog.space').origin;
 
-function getNewebPayMissingConfigMessage(): string {
-  return '伺服器尚未完整設定藍新金流環境變數（NEWEBPAY_MERCHANT_ID、32 碼 NEWEBPAY_HASH_KEY、16 碼 NEWEBPAY_HASH_IV），請於後端環境變數 / Secrets 完成設定後再重試。';
-}
-
-function resolveSafeGatewayCallbackBase(req: express.Request, originUrl?: string): {
-  webhookBaseUrl: string;
-  clientBackUrl: string;
-} {
-  const cloudRunProdUrl = 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app';
-  const host = String(req.get('host') || '').trim();
-  const isLocalOrCustomPort = !host || host.includes('localhost') || host.includes('127.0.0.1') || /:\d+$/.test(host);
-  const webhookBaseUrl = isLocalOrCustomPort ? cloudRunProdUrl : `https://${host}`;
-
-  let clientBackUrl = 'https://goddog.space';
-  if (originUrl && typeof originUrl === 'string' && originUrl.startsWith('http')) {
-    const cleanedOrigin = originUrl.trim().replace(/\/+$/, '');
-    if (!cleanedOrigin.includes('localhost') && !cleanedOrigin.includes('127.0.0.1') && !/:\d+$/.test(cleanedOrigin)) {
-      clientBackUrl = cleanedOrigin;
-    }
-  } else if (!isLocalOrCustomPort) {
-    clientBackUrl = `https://${host}`;
-  }
-
-  return { webhookBaseUrl, clientBackUrl };
-}
-
-// Read-only non-sensitive payment gateway status for Admin Console
-app.get('/api/payment/status', (_req, res) => {
-  const maskedMerchant = NEWEBPAY_MERCHANT_ID
-    ? `${NEWEBPAY_MERCHANT_ID.slice(0, 4)}****${NEWEBPAY_MERCHANT_ID.slice(-2)}`
-    : '';
-  return res.json({
-    success: true,
-    configured: isNewebPayConfigured(),
-    hasMerchantId: NEWEBPAY_MERCHANT_ID.length > 0,
-    hasHashKey: NEWEBPAY_HASH_KEY.length === 32,
-    hasHashIV: NEWEBPAY_HASH_IV.length === 16,
-    merchantIdMasked: maskedMerchant,
-    testMode: NEWEBPAY_IS_SANDBOX,
-  });
+app.get('/api/payment/config-status', (_req, res) => {
+  res.set('Cache-Control', 'no-store').json({ configured: paymentConfigured, sandbox: NEWEBPAY_IS_SANDBOX });
 });
 
-// Verify server-side NewebPay environment variables against NewebPay MPG Gateway to detect MPG03009
-app.post('/api/payment/verify-keys', async (_req, res) => {
+app.get('/api/payment/inventory-status', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
-    if (!isNewebPayConfigured()) {
-      return res.json({
-        success: false,
-        message: getNewebPayMissingConfigMessage(),
-      });
-    }
-
-    const mId = NEWEBPAY_MERCHANT_ID;
-    const hKey = NEWEBPAY_HASH_KEY;
-    const hIv = NEWEBPAY_HASH_IV;
-    const isSandbox = NEWEBPAY_IS_SANDBOX;
-
-    const gatewayUrl = isSandbox
-      ? 'https://ccore.newebpay.com/MPG/mpg_gateway'
-      : 'https://core.newebpay.com/MPG/mpg_gateway';
-
-    const orderId = `GD${Date.now()}`;
-    const tradeInfoObj = {
-      MerchantID: mId,
-      RespondType: 'JSON',
-      TimeStamp: Math.floor(Date.now() / 1000).toString(),
-      Version: NEWEBPAY_VERSION,
-      MerchantOrderNo: orderId,
-      Amt: '100',
-      ItemDesc: '神狗勾3D列印耗材',
-      Email: 'babe0615@gmail.com',
-      LoginType: '0',
-      ReturnURL: 'https://goddog.space/?payment_success=true',
-      NotifyURL: 'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app/api/payment/notify',
-      ClientBackURL: 'https://goddog.space/',
-      CREDIT: '1',
-    };
-
-    const tradeInfo = createNewebpayAesEncrypt(tradeInfoObj, hKey, hIv);
-    const tradeSha = createNewebpayShaEncrypt(tradeInfo, hKey, hIv);
-
-    const form = new URLSearchParams({
-      MerchantID: mId,
-      TradeInfo: tradeInfo,
-      TradeSha: tradeSha,
-      Version: NEWEBPAY_VERSION,
+    // Test read and write permission together. The same transaction deletes its probe.
+    const probe = inventoryDatabase.collection('paymentInventoryHealth').doc('readiness');
+    await inventoryDatabase.runTransaction(async transaction => {
+      await transaction.get(probe);
+      transaction.set(probe, { checkedAt: Date.now() });
+      transaction.delete(probe);
     });
-
-    const resp = await fetch(gatewayUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(),
-    });
-    const html = await resp.text();
-
-    if (html.includes('MPG03009')) {
-      return res.json({
-        success: false,
-        code: 'MPG03009',
-        gatewayUrl,
-        message: `藍新伺服器回傳 MPG03009 (交易資料 SHA 256 檢查不符合)！這代表目前使用的 HashKey 或 HashIV 與藍新後台商店「${mId}」設定的 API 串接金鑰不一致。`,
-      });
-    }
-
-    if (html.includes('MPG03008') || html.includes('查無此特店') || html.includes('MPG01009')) {
-      return res.json({
-        success: false,
-        gatewayUrl,
-        message: `藍新伺服器回傳商店狀態異常（請確認特店代號 ${mId} 是否為${isSandbox ? '測試環境' : '正式環境'}商店）。`,
-      });
-    }
-
-    return res.json({
-      success: true,
-      gatewayUrl,
-      message: `驗證成功！藍新特店 (${mId}) 之 HashKey 與 HashIV 已通過藍新 MPG 金流閘道 SHA-256 數位簽章核驗！`,
-    });
-  } catch (err: any) {
-    return res.status(500).json({
-      success: false,
-      message: `連線檢查失敗：${err?.message || '未知錯誤'}`,
-    });
+    res.json({ ready: true });
+  } catch {
+    res.status(503).json({ ready: false });
   }
 });
+
+const requirePaymentConfig: express.RequestHandler = (_req, res, next) => {
+  if (!paymentConfigured) {
+    res.status(503).json({ success: false, message: '付款服務尚未設定完成。' });
+    return;
+  }
+  next();
+};
 
 // 藍新 AES-256-CBC 加密
 function createNewebpayAesEncrypt(tradeInfoParams: Record<string, any>, hashKey: string, hashIV: string): string {
@@ -2989,12 +2954,38 @@ function createNewebpayShaEncrypt(aesEncrypt: string, hashKey: string, hashIV: s
   return sha.update(plainText).digest('hex').toUpperCase();
 }
 
+function verifiedTradePayload(body: Record<string, unknown>) {
+  const { TradeInfo, TradeSha } = body;
+  if (typeof TradeInfo !== 'string' || typeof TradeSha !== 'string' || !TradeInfo) return null;
+  if (createNewebpayShaEncrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV) !== TradeSha) return null;
+  const payment = createNewebpayAesDecrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
+  const result = payment?.Result;
+  if (!result || result.MerchantID !== NEWEBPAY_MERCHANT_ID || !result.MerchantOrderNo) return null;
+  if (payment.Status === 'SUCCESS') {
+    const amount = Number(result.Amt);
+    const pending = pendingPaymentsStore[result.MerchantOrderNo];
+    if (!result.TradeNo || !Number.isSafeInteger(amount) || amount <= 0 || (pending && amount !== pending.amount)) return null;
+  }
+  return payment;
+}
+
 // 記憶體中的定期定額委託記錄與自動扣款審計日誌
-const recurringSubscriptionsStore: Record<string, any> = {};
-const recurringBillingHistoryStore: any[] = [];
+const paymentSubscriptions = inventoryDatabase.collection('paymentSubscriptions');
+const paymentSubscriptionHistory = inventoryDatabase.collection('paymentSubscriptionHistory');
+
+async function lookupSubscription(uid: string, orderId: unknown, periodNo: unknown) {
+  if (typeof orderId === 'string' && /^PERIOD_[a-zA-Z0-9_]{6,100}$/.test(orderId)) {
+    const snapshot = await paymentSubscriptions.doc(orderId).get();
+    return snapshot.data()?.userId === uid ? snapshot : undefined;
+  }
+  if (typeof periodNo !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(periodNo)) return;
+  const matches = await paymentSubscriptions.where('userId', '==', uid).get();
+  return matches.docs.find(doc => doc.data().periodNo === periodNo);
+}
 
 // 伺服器端藍新金流款項驗證儲存庫（僅記錄經由藍新真實入帳之訂單）
 interface PendingPaymentRecord {
+  vipPlanId?: string;
   orderId: string;
   amount: number;
   email: string;
@@ -3031,41 +3022,20 @@ const verifiedPaidOrdersStore: Record<string, VerifiedPaidOrder> = {};
 // =============================================================
 // 藍新金流：一般訂單結帳 (MPG 幕前一次性交易)
 // =============================================================
-app.post('/api/payment/checkout', (req, res) => {
+app.post('/api/payment/checkout', requirePaymentConfig, async (req, res) => {
   try {
-    const { amount, email, desc, paymentMethod, originUrl, orderId: requestedOrderId, docId, returnFrom, userId, customerName } = req.body;
-
-    if (!isNewebPayConfigured()) {
-      return res.status(503).json({ success: false, message: getNewebPayMissingConfigMessage() });
-    }
-
-    if (!amount || amount <= 0) {
+    const { amount, email, desc, paymentMethod, orderId: requestedOrderId, docId, returnFrom, userId, customerName } = req.body;
+    if (!Number.isSafeInteger(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid amount' });
     }
-
-    const activeMerchantId = NEWEBPAY_MERCHANT_ID;
-    const activeHashKey = NEWEBPAY_HASH_KEY;
-    const activeHashIV = NEWEBPAY_HASH_IV;
-    const activeSandbox = NEWEBPAY_IS_SANDBOX;
 
     const cleanRequestedId = typeof requestedOrderId === 'string' && /^GD[A-Za-z0-9_]{6,22}$/.test(requestedOrderId.trim())
       ? requestedOrderId.trim()
       : '';
-    const orderId = cleanRequestedId || `GD${Date.now()}`;
-    const { webhookBaseUrl, clientBackUrl } = resolveSafeGatewayCallbackBase(req, originUrl);
+    const orderId = cleanRequestedId || `GD${crypto.randomBytes(10).toString('hex')}`;
 
-    // 儲存待付款紀錄
-    pendingPaymentsStore[orderId] = {
-      orderId,
-      amount: Math.round(Number(amount)),
-      email: email || '',
-      desc: desc || '',
-      paymentMethod: paymentMethod || 'credit_card',
-      status: 'pending',
-      createdAt: Date.now(),
-      userId: typeof userId === 'string' ? userId : '',
-      customerName: typeof customerName === 'string' ? customerName : '',
-    };
+    const lines = req.body.inventoryLines === undefined ? undefined : parseInventoryLines(req.body.inventoryLines);
+    if (lines === null) return res.status(400).json({ success: false, message: '購物車資料無效，請重新選購。' });
 
     // 根據前端傳來的 paymentMethod 動態決定藍新金流要開啟的支付方式參數 (100% 依特約商店啟用規格)
     const paymentFlags: Record<string, any> = {};
@@ -3138,48 +3108,70 @@ app.post('/api/payment/checkout', (req, res) => {
       backParams.set('from', returnFrom);
     }
 
+    const checkoutAt = Date.now();
+    const tradeLimit = 900;
+    const deferred = paymentFlags.VACC === 1 || paymentFlags.CVS === 1 || paymentFlags.BARCODE === 1;
+    const hour = 60 * 60 * 1000;
+    const nextTaipeiDay = new Date(checkoutAt + (24 + 8) * hour).toISOString().slice(0, 10);
+    const reservationExpires = deferred
+      ? Date.parse(`${nextTaipeiDay}T23:59:59+08:00`) + hour
+      : checkoutAt + tradeLimit * 1000 + 15 * 60 * 1000;
+
     const tradeInfoObj = {
-      MerchantID: activeMerchantId,
+      MerchantID: NEWEBPAY_MERCHANT_ID,
       RespondType: 'JSON',
-      TimeStamp: Math.floor(Date.now() / 1000).toString(),
+      TimeStamp: Math.floor(checkoutAt / 1000).toString(),
       Version: NEWEBPAY_VERSION,
       MerchantOrderNo: orderId,
       Amt: Math.round(Number(amount)).toString(),
       ItemDesc: (desc || '神狗勾 3D 列印耗材商城訂單').slice(0, 50),
-      Email: email || 'babe0615@gmail.com',
+      Email: email || '',
       LoginType: '0',
       ReturnURL: `${webhookBaseUrl}/api/payment/return`, // 藍新金流授權完成後，由藍新向後端 POST 付款明細驗證 (限 80/443 埠)
       NotifyURL: `${webhookBaseUrl}/api/payment/notify`, // 背景接收付款結果 (Webhook, 限 80/443 埠)
       ClientBackURL: `${clientBackUrl}/?${backParams.toString()}`, // 返回商店按鈕
+      ...(lines && { TradeLimit: tradeLimit, ...(deferred && { ExpireDate: nextTaipeiDay.replaceAll('-', '') }) }),
       ...paymentFlags
     };
 
-    const TradeInfo = createNewebpayAesEncrypt(tradeInfoObj, activeHashKey, activeHashIV);
-    const TradeSha = createNewebpayShaEncrypt(TradeInfo, activeHashKey, activeHashIV);
+    const TradeInfo = createNewebpayAesEncrypt(tradeInfoObj, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
+    const TradeSha = createNewebpayShaEncrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
+    if (lines) await rememberCheckout(inventoryDatabase, orderId, Number(amount), lines, reservationExpires);
 
-    const gatewayUrl = activeSandbox ? 'https://ccore.newebpay.com/MPG/mpg_gateway' : NEWEBPAY_URL;
+    pendingPaymentsStore[orderId] = {
+      orderId,
+      amount: Number(amount),
+      email: email || '',
+      desc: desc || '',
+      paymentMethod: paymentMethod || 'credit_card',
+      status: 'pending',
+      createdAt: checkoutAt,
+      userId: typeof userId === 'string' ? userId : '',
+      customerName: typeof customerName === 'string' ? customerName : '',
+    };
 
     res.json({
       success: true,
-      url: gatewayUrl,
+      url: NEWEBPAY_URL,
       orderId,
       formParams: {
-        MerchantID: activeMerchantId,
+        MerchantID: NEWEBPAY_MERCHANT_ID,
         TradeInfo,
         TradeSha,
         Version: NEWEBPAY_VERSION
       }
     });
   } catch (error) {
+    if (error instanceof InventoryConflict) return res.status(409).json({ success: false, message: error.message });
     console.error('NewebPay Checkout Error:', error);
     res.status(500).json({ success: false, message: 'Failed to initiate checkout' });
   }
 });
 
-app.get('/api/payment/session-handoff', (req, res) => {
+app.get('/api/payment/session-handoff', requireUser, (req, res) => {
   const orderId = String(req.query.orderId || '').trim();
   const pending = orderId ? pendingPaymentsStore[orderId] : undefined;
-  if (!pending || !pending.userId || pending.userId === 'guest' || pending.userId.startsWith('guest')) {
+  if (!pending || pending.userId !== res.locals.user.uid) {
     return res.json({ success: false });
   }
   return res.json({
@@ -3195,39 +3187,20 @@ app.get('/api/payment/session-handoff', (req, res) => {
 // 藍新金流：信用卡定期定額自動扣款委託 (MPG Period Recurring API)
 // 支援每次付款週期到期時，由藍新金流自動向發卡銀行發動週期扣款！
 // =============================================================
-app.post('/api/payment/period-checkout', (req, res) => {
+app.post('/api/payment/period-checkout', requirePaymentConfig, requireUser, async (req, res) => {
   try {
-    if (!isNewebPayConfigured()) {
-      return res.status(503).json({ success: false, message: getNewebPayMissingConfigMessage() });
-    }
-
-    const { planId, planName, price, days, email, frequencyLabel, userId } = req.body;
-    const useSandbox = NEWEBPAY_IS_SANDBOX;
-
-    // 強化金額解析與方案預設金額補全，避免前端事件物件或未帶金額導致報錯
-    let finalPrice = Number(price);
-    if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
-      if (planId === 'vip-monthly') finalPrice = 199;
-      else if (planId === 'vip-quarterly') finalPrice = 549;
-      else if (planId === 'vip-yearly') finalPrice = 1990;
-      else if (planId === 'box-maker') finalPrice = 899;
-    }
-
-    if (!finalPrice || isNaN(finalPrice) || finalPrice <= 0) {
-      return res.status(400).json({ success: false, message: '無效的方案扣款金額' });
-    }
-
-    const orderId = `PERIOD_${Date.now()}`;
-    const host = req.get('host');
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const baseUrl = `${protocol}://${host}`;
+    const { planId, planName, email, frequencyLabel } = req.body;
+    const userId = res.locals.user.uid;
+    const plan = getSubscriptionTerms(planId);
+    if (!plan) return res.status(400).json({ success: false, message: '無效的訂閱方案' });
+    const { price: finalPrice, durationDays: duration } = plan;
+    const orderId = `PERIOD_${crypto.randomBytes(10).toString('hex')}`;
 
     // 依據方案天數判斷定期定額週期類別 (PeriodType) 與扣款時間點 (PeriodPoint)
     // PeriodType: 'M' (每月), 'D' (固定天期), 'Y' (每年)
     let periodType = 'M';
     let periodPoint = String(new Date().getDate()).padStart(2, '0'); // 每月同日扣款 (01~31)
     
-    const duration = Number(days) || (planId === 'vip-yearly' ? 365 : planId === 'vip-quarterly' ? 90 : 30);
     if (duration >= 360) {
       periodType = 'Y';
       // 每年格式 MMDD
@@ -3255,20 +3228,19 @@ app.post('/api/payment/period-checkout', (req, res) => {
       PeriodPoint: periodPoint,
       PeriodStartType: '1', // 極關鍵：1 代表立即授權扣款第一期並建立定期委託；次期起每到週期時間由藍新系統自動向銀行扣款！
       PeriodTimes: '99',    // 授權總期數：99 期，持續自動續約
-      ReturnURL: `${baseUrl}/api/payment/period-return`, // 消費者授權完成後，藍新導回商店的網址 (以 POST 傳送結果)
-      NotifyURL: `${baseUrl}/api/payment/period-notify`, // 藍新每期自動扣款時，背景 Webhook 發送扣款結果至伺服器
-      BackURL: `${baseUrl}/subscription`,              // 取消付款返回商店網址
-      PayerEmail: email || 'maker@example.com',
+      ReturnURL: `${webhookBaseUrl}/api/payment/period-return`, // 消費者授權完成後，藍新導回商店的網址 (以 POST 傳送結果)
+      NotifyURL: `${webhookBaseUrl}/api/payment/period-notify`, // 藍新每期自動扣款時，背景 Webhook 發送扣款結果至伺服器
+      BackURL: `${clientBackUrl}/subscription`,              // 取消付款返回商店網址
+      PayerEmail: email || res.locals.user.email || '',
       EmailModify: 0,
       PaymentInfo: 'Y',
       OrderInfo: 'Y',
     };
 
     const PostData = createNewebpayAesEncrypt(postDataObj, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-    const targetUrl = useSandbox ? 'https://ccore.newebpay.com/MPG/period' : NEWEBPAY_PERIOD_URL;
 
     // 暫存此委託單基本資訊
-    recurringSubscriptionsStore[orderId] = {
+    await paymentSubscriptions.doc(orderId).create({
       orderId,
       userId: userId || '',
       planId,
@@ -3281,11 +3253,11 @@ app.post('/api/payment/period-checkout', (req, res) => {
       email: email || 'maker@example.com',
       status: 'pending_authorization',
       createdAt: new Date().toISOString()
-    };
+    });
 
     res.json({
       success: true,
-      url: targetUrl,
+      url: NEWEBPAY_PERIOD_URL,
       orderId,
       formParams: {
         MerchantID_: NEWEBPAY_MERCHANT_ID,
@@ -3310,133 +3282,81 @@ app.post('/api/payment/period-checkout', (req, res) => {
 // 藍新金流：定期定額完成後之瀏覽器導回端點 (ReturnURL)
 // 藍新會以 POST 方式送出 Period (加密字串)，解密後含有委託號與首期扣款明細
 // =============================================================
-app.post('/api/payment/period-return', (req, res) => {
+app.post('/api/payment/period-return', requirePaymentConfig, async (req, res) => {
   try {
     const periodDataHex = req.body.Period || req.body.period;
-    let decrypted: Record<string, any> | null = null;
-
-    if (periodDataHex) {
-      decrypted = createNewebpayAesDecrypt(periodDataHex, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-    }
-
-    console.log('[NewebPay Period Return] 收到藍新定期定額回傳:', decrypted || req.body);
-
-    const result = decrypted?.Result || decrypted || {};
-    const status = decrypted?.Status || req.body.Status;
+    const decrypted = typeof periodDataHex === 'string'
+      ? createNewebpayAesDecrypt(periodDataHex, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV)
+      : null;
+    if (!decrypted || !decrypted.Result) return res.redirect(303, `${clientBackUrl}/subscription?period_error=true`);
+    const result = decrypted.Result;
+    const status = decrypted.Status;
     const isSuccess = (status === 'SUCCESS' || status === '00' || status === '1');
 
-    const merchantOrderNo = result.MerchantOrderNo || result.MerOrderNo || req.body.MerchantOrderNo;
+    const merchantOrderNo = result.MerchantOrderNo || result.MerOrderNo;
     const periodNo = result.PeriodNo;
     const authCode = result.AuthCode;
     const card4No = result.Card4No || '';
     const periodAmt = result.PeriodAmt || result.Amount || 0;
     const nextAuthDate = result.NextAuthDate || '';
 
-    // 嚴格非模擬校驗：未通過藍新授權或缺少真實委託號碼與授權碼者，一律判定授權未通過
-    if (!isSuccess || !periodNo || !authCode) {
-      console.warn('[NewebPay Period Return] 藍新金流定期定額扣款驗證未通過:', { status, periodNo, authCode });
-      return res.redirect(303, '/subscription?period_error=true&msg=' + encodeURIComponent(decrypted?.Message || req.body.Message || '藍新金流定期定額授權未完成'));
+    if (!isSuccess || typeof merchantOrderNo !== 'string' || !/^PERIOD_[a-zA-Z0-9_]{6,100}$/.test(merchantOrderNo) ||
+        typeof periodNo !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(periodNo) || !authCode) {
+      return res.redirect(303, clientBackUrl + '/subscription?period_error=true');
     }
+    const agreement = paymentSubscriptions.doc(merchantOrderNo);
+    const confirmed = await inventoryDatabase.runTransaction(async tx => {
+      const pending = (await tx.get(agreement)).data();
+      if (!pending || pending.price !== Number(periodAmt)) return false;
+      if (pending.periodNo) return pending.periodNo === periodNo;
+      tx.update(agreement, { status: 'active', periodNo, authCode, card4No, nextAuthDate });
+      tx.set(paymentSubscriptionHistory.doc(merchantOrderNo), {
+        id: merchantOrderNo, orderId: merchantOrderNo, periodNo, amount: Number(periodAmt),
+        date: new Date().toISOString(), type: 'initial', status: 'success',
+      });
+      return true;
+    });
+    if (!confirmed) return res.redirect(303, clientBackUrl + '/subscription?period_error=true');
 
-    // 更新伺服器紀錄
-    if (merchantOrderNo && recurringSubscriptionsStore[merchantOrderNo]) {
-      recurringSubscriptionsStore[merchantOrderNo].status = 'active';
-      recurringSubscriptionsStore[merchantOrderNo].periodNo = periodNo;
-      recurringSubscriptionsStore[merchantOrderNo].authCode = authCode;
-      recurringSubscriptionsStore[merchantOrderNo].card4No = card4No;
-      recurringSubscriptionsStore[merchantOrderNo].nextAuthDate = nextAuthDate;
-    }
-
-    // 紀錄第一期真實扣款履歷
-    const initialCycleRecord = {
-      id: `cycle-${Date.now()}`,
-      orderId: merchantOrderNo,
-      periodNo,
-      date: new Date().toISOString().slice(0, 10),
-      amount: Number(periodAmt) || 0,
-      authCode,
-      card4No,
-      invoiceNumber: `TW-${new Date().getFullYear()}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${periodNo.slice(-8)}`,
-      type: 'initial',
-      status: 'success',
-      note: '第一期定期定額委託成立扣款'
-    };
-    recurringBillingHistoryStore.unshift(initialCycleRecord);
-
-    // 轉導回前端訂閱頁面，攜帶解密驗證後的真實授權與定期單號參數
-    const subInfo = merchantOrderNo ? recurringSubscriptionsStore[merchantOrderNo] : null;
-    const redirectUrl = `/subscription?period_success=true&orderId=${encodeURIComponent(merchantOrderNo || '')}&periodNo=${encodeURIComponent(periodNo)}&authCode=${encodeURIComponent(authCode)}&card4=${encodeURIComponent(card4No)}&nextAuthDate=${encodeURIComponent(nextAuthDate)}&periodAmt=${encodeURIComponent(periodAmt)}&status=${encodeURIComponent(status)}${subInfo?.userId ? `&userId=${encodeURIComponent(subInfo.userId)}` : ''}`;
-
-    // 回傳支援 iframe 與直接視窗的跳轉頁面
-    const bridgeHtml = `
-      <!DOCTYPE html>
-      <html lang="zh-TW">
-      <head>
-        <meta charset="UTF-8">
-        <title>藍新金流授權成功</title>
-        <script>
-          // 如果是在 popup 或子視窗中開啟，傳遞 postMessage 給主視窗
-          if (window.opener && !window.opener.closed) {
-            try {
-              window.opener.postMessage({
-                type: 'NEWEBPAY_PERIOD_SUCCESS',
-                data: {
-                  orderId: "${merchantOrderNo || ''}",
-                  periodNo: "${periodNo}",
-                  authCode: "${authCode}",
-                  card4No: "${card4No}",
-                  nextAuthDate: "${nextAuthDate}",
-                  periodAmt: "${periodAmt}"
-                }
-              }, '*');
-            } catch (e) {
-              console.warn(e);
-            }
-          }
-          // 同步導向訂閱頁面
-          window.location.href = "${redirectUrl}";
-        </script>
-      </head>
-      <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #f8fafc;">
-        <h2>🎉 藍新金流定期定額信用卡授權成功！</h2>
-        <p>委託單號：<strong>${periodNo}</strong></p>
-        <p>正為您導回神狗勾會員中心...</p>
-        <p><a href="${redirectUrl}" style="color: #4f46e5; text-decoration: underline;">若無自動跳轉請點擊此處</a></p>
-      </body>
-      </html>
-    `;
-    return res.status(200).send(bridgeHtml);
+    const redirectUrl = new URL('/subscription', clientBackUrl);
+    redirectUrl.searchParams.set('period_success', 'true');
+    redirectUrl.searchParams.set('orderId', merchantOrderNo);
+    const bridgeHtml = `<!doctype html><html lang="zh-TW"><meta charset="utf-8">
+      <title>返回訂閱管理</title><script>
+        if (window.opener) window.opener.postMessage(
+          { type: 'NEWEBPAY_PERIOD_SUCCESS', data: { orderId: ${JSON.stringify(merchantOrderNo)} } },
+          ${JSON.stringify(clientBackUrl)}
+        );
+        window.location.replace(${JSON.stringify(redirectUrl.href)});
+      </script><a href="${redirectUrl.href}">返回訂閱管理</a></html>`;
+    return res.set('Cache-Control', 'no-store').send(bridgeHtml);
   } catch (err) {
     console.error('[NewebPay Period Return] 處理導回異常:', err);
-    return res.redirect(303, '/subscription?period_error=true');
+    return res.redirect(303, clientBackUrl + '/subscription?period_error=true');
   }
 });
 
 // 也支援 GET 方式存取 /api/payment/period-return
 app.get('/api/payment/period-return', (req, res) => {
   const queryStr = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  return res.redirect(303, `/subscription${queryStr}`);
+  return res.redirect(303, `${clientBackUrl}/subscription${queryStr}`);
 });
 
 // =============================================================
 // 藍新金流：定期定額「每期自動扣款」背景 Webhook 通知網址 (NotifyURL)
 // 當每次週期到期（例如每個月16日），藍新系統自動向銀行扣款，並將每期結果通知此處
 // =============================================================
-app.post('/api/payment/period-notify', (req, res) => {
+app.post('/api/payment/period-notify', requirePaymentConfig, async (req, res) => {
   try {
     const periodDataHex = req.body.Period || req.body.period;
-    let decrypted: Record<string, any> | null = null;
-    
-    if (periodDataHex) {
-      decrypted = createNewebpayAesDecrypt(periodDataHex, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-    }
-
-    console.log('[NewebPay Recurring Webhook] 收到藍新每期自動扣款通知:', decrypted || req.body);
-
-    const result = decrypted?.Result || decrypted || {};
-    const status = decrypted?.Status || req.body.Status;
+    const decrypted = typeof periodDataHex === 'string'
+      ? createNewebpayAesDecrypt(periodDataHex, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV)
+      : null;
+    if (!decrypted || !decrypted.Result) return res.status(400).send('0|Invalid period notification');
+    const result = decrypted.Result;
+    const status = decrypted.Status;
     const isSuccess = (status === 'SUCCESS' || status === '00' || status === '1');
-    const periodNo = result.PeriodNo || req.body.PeriodNo;
+    const periodNo = result.PeriodNo;
     const authCode = result.AuthCode;
     const periodAmt = result.PeriodAmt || result.Amount;
     const card4No = result.Card4No || '';
@@ -3460,7 +3380,11 @@ app.post('/api/payment/period-notify', (req, res) => {
       status: 'success',
       note: '藍新金流週期自動扣款成功'
     };
-    recurringBillingHistoryStore.unshift(recurringCycleRecord);
+    const cycleReference = String(result.TradeNo || result.AlreadyTimes || result.AuthTime || '');
+    if (cycleReference) {
+      const key = crypto.createHash('sha256').update(JSON.stringify([periodNo, cycleReference])).digest('hex');
+      await paymentSubscriptionHistory.doc(key).set({ ...recurringCycleRecord, id: key });
+    }
 
     // 藍新金流規範：接收扣款通知成功後，必須回應 1|OK
     res.status(200).send('1|OK');
@@ -3473,17 +3397,85 @@ app.post('/api/payment/period-notify', (req, res) => {
 // =============================================================
 // 藍新金流：定期定額入帳校驗端點 (period-verify)
 // =============================================================
-app.get('/api/payment/period-verify', (req, res) => {
+const changingRenewal = new Set<string>();
+
+app.post('/api/payment/period-renewal', requireUser, requirePaymentConfig, async (req, res) => {
+  const { periodNo, autoRenew } = req.body;
+  if (typeof periodNo !== 'string' || typeof autoRenew !== 'boolean') {
+    return res.status(400).json({ success: false, message: '無效的訂閱續扣設定。' });
+  }
+  const uid = res.locals.user.uid;
+  if (changingRenewal.has(uid)) {
+    return res.status(409).json({ success: false, message: '續扣設定正在更新，請稍候。' });
+  }
+  changingRenewal.add(uid);
+  try {
+    const agreementDoc = await lookupSubscription(uid, undefined, periodNo);
+    const agreement = agreementDoc?.data();
+    if (!agreementDoc || !agreement?.authCode) {
+      return res.status(404).json({ success: false, message: '目前無法查核這筆委託，請聯絡客服確認下期扣款狀態。' });
+    }
+    if (autoRenew) {
+      const others = await paymentSubscriptions.where('userId', '==', uid).get();
+      if (others.docs.some(doc => doc.id !== agreementDoc.id && doc.data().status === 'active')) {
+        return res.status(409).json({ success: false, message: '此帳號已有另一筆自動續扣委託。請先暫停該委託。' });
+      }
+    }
+    const alterType = autoRenew ? 'restart' : 'suspend';
+    const postData = createNewebpayAesEncrypt({
+      RespondType: 'JSON',
+      Version: '1.0',
+      TimeStamp: String(Math.floor(Date.now() / 1000)),
+      MerOrderNo: agreement.orderId,
+      PeriodNo: periodNo,
+      AlterType: alterType,
+    }, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
+    const response = await fetch(NEWEBPAY_PERIOD_URL + '/AlterStatus', {
+      method: 'POST',
+      body: new URLSearchParams({ MerchantID_: NEWEBPAY_MERCHANT_ID, PostData_: postData }),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error('Provider response not OK');
+    const envelope = await response.text();
+    let cipher = envelope.trim();
+    if (cipher.startsWith('{') || cipher.startsWith('"')) {
+      const parsed = JSON.parse(cipher);
+      cipher = typeof parsed === 'string' ? parsed : parsed?.period ?? parsed?.Period;
+    }
+    const data = typeof cipher === 'string' && /^[a-f0-9]+$/i.test(cipher)
+      ? createNewebpayAesDecrypt(cipher, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV)
+      : null;
+    if (data?.Status !== 'SUCCESS' || data?.Result?.PeriodNo !== periodNo ||
+        data.Result.MerOrderNo !== agreement.orderId || data.Result.AlterType !== alterType) {
+      throw new Error('Provider did not confirm the requested change');
+    }
+
+    agreement.status = autoRenew ? 'active' : 'paused';
+    const nextDate = String(data.Result.NewNextTime || '').match(/^(\d{4})(\d{2})(\d{2})$/);
+    agreement.nextAuthDate = autoRenew && nextDate ? nextDate.slice(1).join('-') : '';
+    await agreementDoc.ref.update({ status: agreement.status, nextAuthDate: agreement.nextAuthDate });
+    res.set('Cache-Control', 'no-store').json({ success: true, autoRenew, nextAuthDate: agreement.nextAuthDate });
+  } catch {
+    res.status(502).json({ success: false, message: '尚未收到藍新確認。請稍後重試，或聯絡客服查詢委託狀態。' });
+  } finally {
+    changingRenewal.delete(uid);
+  }
+});
+
+app.get('/api/payment/period-verify', requireUser, async (req, res) => {
   const { orderId, periodNo } = req.query as { orderId?: string; periodNo?: string };
   if (!orderId && !periodNo) {
     return res.status(400).json({ verified: false, message: '缺少委託或訂單單號' });
   }
 
-  const sub = Object.values(recurringSubscriptionsStore).find(
-    (s: any) => (orderId && s.orderId === orderId) || (periodNo && s.periodNo === periodNo)
-  );
+  let sub;
+  try {
+    sub = (await lookupSubscription(res.locals.user.uid, orderId, periodNo))?.data();
+  } catch {
+    return res.status(503).json({ verified: false, message: '暫時無法讀取委託紀錄。' });
+  }
 
-  if (sub && sub.status === 'active' && sub.periodNo && sub.authCode) {
+  if (sub && sub.userId === res.locals.user.uid && sub.status === 'active' && sub.periodNo && sub.authCode) {
     return res.json({
       verified: true,
       orderId: sub.orderId,
@@ -3493,6 +3485,9 @@ app.get('/api/payment/period-verify', (req, res) => {
       nextAuthDate: sub.nextAuthDate,
       periodAmt: sub.price,
       planName: sub.planName,
+      days: sub.days,
+      userId: sub.userId,
+      frequencyLabel: sub.frequencyLabel,
       status: sub.status
     });
   }
@@ -3503,48 +3498,46 @@ app.get('/api/payment/period-verify', (req, res) => {
 // =============================================================
 // 藍新金流：取得定期定額委託記錄與週期自動扣款歷史
 // =============================================================
-app.get('/api/payment/period-history', (req, res) => {
-  res.json({
-    success: true,
-    history: recurringBillingHistoryStore,
-    subscriptions: recurringSubscriptionsStore
-  });
+app.get('/api/payment/period-history', requireUser, requireAdmin, async (_req, res) => {
+  try {
+    const [history, subscriptions] = await Promise.all([
+      paymentSubscriptionHistory.orderBy('date', 'desc').limit(100).get(),
+      paymentSubscriptions.orderBy('createdAt', 'desc').limit(100).get(),
+    ]);
+    res.json({
+      success: true,
+      history: history.docs.map(doc => doc.data()),
+      subscriptions: Object.fromEntries(subscriptions.docs.map(doc => [doc.id, doc.data()])),
+    });
+  } catch {
+    res.status(503).json({ success: false });
+  }
 });
 
 // =============================================================
 // 藍新金流：一般交易完成後之瀏覽器導回端點 (ReturnURL)
 // 藍新會以 POST 方式送出 TradeInfo (AES 加密) 與 TradeSha
 // =============================================================
-app.post('/api/payment/return', (req, res) => {
+app.post('/api/payment/return', requirePaymentConfig, async (req, res) => {
   try {
-    const { Status, MerchantID, TradeInfo, TradeSha } = req.body;
-    let decrypted: any = null;
-    if (TradeInfo) {
-      // 驗證 TradeSha
-      if (TradeSha) {
-        const computedSha = createNewebpayShaEncrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-        if (computedSha !== TradeSha) {
-          console.error('[NewebPay Return] 簽章驗證不符，可能為偽造請求');
-          return res.redirect('/?payment_verified=false&reason=signature_mismatch');
-        }
-      }
-      decrypted = createNewebpayAesDecrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-    }
-
-    console.log('[NewebPay Return] 收到藍新導回:', decrypted || req.body);
-    const result = decrypted?.Result || decrypted || {};
-    const status = decrypted?.Status || Status || req.body.Status;
-    const merchantOrderNo = result.MerchantOrderNo || req.body.MerchantOrderNo;
-    const tradeNo = result.TradeNo || req.body.TradeNo;
-    const amt = result.Amt || req.body.Amt;
+    const decrypted = verifiedTradePayload(req.body);
+    if (!decrypted) return res.redirect(`${clientBackUrl}/?payment_verified=false`);
+    const result = decrypted.Result;
+    const status = decrypted.Status;
+    const merchantOrderNo = result.MerchantOrderNo;
+    const tradeNo = result.TradeNo;
+    const amt = result.Amt;
     const payTime = result.PayTime || new Date().toISOString();
     const paymentType = result.PaymentType || 'CREDIT';
 
     if (status === 'SUCCESS' && merchantOrderNo) {
+      await settleCheckout(inventoryDatabase, merchantOrderNo, Number(amt), {
+        tradeNo, payTime: payTime || new Date().toISOString(), paymentType: result.PaymentType || 'CREDIT',
+      });
       verifiedPaidOrdersStore[merchantOrderNo] = {
         orderId: merchantOrderNo,
         isVerifiedByNewebPay: true,
-        tradeNo: tradeNo || `NB${Date.now()}`,
+        tradeNo,
         status: 'paid',
         amt: Number(amt) || pendingPaymentsStore[merchantOrderNo]?.amount || 0,
         payTime: payTime,
@@ -3561,15 +3554,18 @@ app.post('/api/payment/return', (req, res) => {
       }
 
       // 導回前端並帶有正式藍新金流授權資訊
-      const returnUrl = `/?payment_verified=true&orderId=${encodeURIComponent(merchantOrderNo)}&tradeNo=${encodeURIComponent(tradeNo || '')}&amt=${encodeURIComponent(amt || '')}`;
+      if (pendingPaymentsStore[merchantOrderNo]?.vipPlanId) {
+        return res.redirect(303, `${clientBackUrl}/?vip_success=true&orderId=${encodeURIComponent(merchantOrderNo)}`);
+      }
+      const returnUrl = `${clientBackUrl}/?payment_verified=true&orderId=${encodeURIComponent(merchantOrderNo)}&tradeNo=${encodeURIComponent(tradeNo || '')}&amt=${encodeURIComponent(amt || '')}`;
       return res.redirect(returnUrl);
     } else {
       const message = decrypted?.Message || req.body.Message || '款項授權未通過或交易取消';
-      return res.redirect(`/?payment_verified=false&orderId=${encodeURIComponent(merchantOrderNo || '')}&reason=${encodeURIComponent(message)}`);
+      return res.redirect(`${clientBackUrl}/?payment_verified=false&orderId=${encodeURIComponent(merchantOrderNo || '')}&reason=${encodeURIComponent(message)}`);
     }
   } catch (error) {
     console.error('NewebPay Return Error:', error);
-    return res.redirect('/?payment_verified=false&reason=server_error');
+    return res.redirect(`${clientBackUrl}/?payment_verified=false&reason=server_error`);
   }
 });
 
@@ -3577,27 +3573,19 @@ app.post('/api/payment/return', (req, res) => {
 app.get('/api/payment/return', (req, res) => {
   const orderId = req.query.orderId as string;
   if (orderId && verifiedPaidOrdersStore[orderId]?.isVerifiedByNewebPay) {
-    return res.redirect(`/?payment_verified=true&orderId=${encodeURIComponent(orderId)}`);
+    return res.redirect(`${clientBackUrl}/?payment_verified=true&orderId=${encodeURIComponent(orderId)}`);
   }
-  return res.redirect(`/?payment_verified=false&orderId=${encodeURIComponent(orderId || '')}`);
+  return res.redirect(`${clientBackUrl}/?payment_verified=false&orderId=${encodeURIComponent(orderId || '')}`);
 });
 
 // 藍新一般交易背景 Webhook (NotifyURL)
-app.post(['/api/payment/notify', '/api/newebpay/notify'], (req, res) => {
+app.post(['/api/payment/notify', '/api/newebpay/notify'], requirePaymentConfig, async (req, res) => {
   try {
-    const { Status, MerchantID, TradeInfo, TradeSha } = req.body;
-    if (TradeInfo && TradeSha) {
-      const computedSha = createNewebpayShaEncrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV);
-      if (computedSha !== TradeSha) {
-        console.error('[NewebPay Webhook] 簽章不符，拒絕此通知');
-        return res.status(400).send('0|ShaError');
-      }
-    }
-
-    const decrypted = TradeInfo ? createNewebpayAesDecrypt(TradeInfo, NEWEBPAY_HASH_KEY, NEWEBPAY_HASH_IV) : null;
-    const status = decrypted?.Status || Status;
-    const result = decrypted?.Result || {};
-    const merchantOrderNo = result.MerchantOrderNo || req.body.MerchantOrderNo;
+    const decrypted = verifiedTradePayload(req.body);
+    if (!decrypted) return res.status(400).send('0|Invalid payment notification');
+    const result = decrypted.Result;
+    const status = decrypted.Status;
+    const merchantOrderNo = result.MerchantOrderNo;
     const tradeNo = result.TradeNo;
     const amt = result.Amt;
     const payTime = result.PayTime;
@@ -3605,10 +3593,13 @@ app.post(['/api/payment/notify', '/api/newebpay/notify'], (req, res) => {
     console.log('[NewebPay Webhook] 收到藍新背景付款入帳通知:', { status, merchantOrderNo, tradeNo, amt });
 
     if (status === 'SUCCESS' && merchantOrderNo) {
+      await settleCheckout(inventoryDatabase, merchantOrderNo, Number(amt), {
+        tradeNo, payTime: payTime || new Date().toISOString(), paymentType: result.PaymentType || 'CREDIT',
+      });
       verifiedPaidOrdersStore[merchantOrderNo] = {
         orderId: merchantOrderNo,
         isVerifiedByNewebPay: true,
-        tradeNo: tradeNo || `NB${Date.now()}`,
+        tradeNo,
         status: 'paid',
         amt: Number(amt) || pendingPaymentsStore[merchantOrderNo]?.amount || 0,
         payTime: payTime || new Date().toISOString(),
@@ -3636,7 +3627,7 @@ app.post(['/api/payment/notify', '/api/newebpay/notify'], (req, res) => {
 // 藍新金流：主動向藍新 API 即時檢驗款項入帳狀態 (QueryTradeInfo)
 // 確保非模擬：只有藍新伺服器明確回傳 TradeStatus = 1 (已付款) 才能放行訂單！
 // =============================================================
-app.get('/api/payment/verify-status', async (req, res) => {
+app.get('/api/payment/verify-status', requirePaymentConfig, async (req, res) => {
   try {
     const orderId = req.query.orderId as string;
     const amtQuery = req.query.amt as string;
@@ -3645,19 +3636,24 @@ app.get('/api/payment/verify-status', async (req, res) => {
       return res.status(400).json({ success: false, isPaid: false, message: '缺少 orderId 參數' });
     }
 
-    // 1. 若伺服器已由 Webhook / ReturnURL 驗證過藍新簽章與狀態，直接放行
-    if (verifiedPaidOrdersStore[orderId] && verifiedPaidOrdersStore[orderId].isVerifiedByNewebPay) {
+    const saved = await loadCheckout(inventoryDatabase, orderId);
+    if (saved?.paid) {
       return res.json({
-        success: true,
-        isPaid: true,
-        order: verifiedPaidOrdersStore[orderId],
-        source: 'newebpay_webhook_verified'
+        success: true, isPaid: true, source: 'newebpay_webhook_verified',
+        order: { orderId, amt: saved.amount, status: 'paid', ...saved.paid, isVerifiedByNewebPay: true },
       });
     }
+    const cached = verifiedPaidOrdersStore[orderId];
+    if (cached?.isVerifiedByNewebPay) {
+      const { rawResult: _rawResult, authCode: _authCode, ...order } = cached;
+      return res.json({ success: true, isPaid: true, order, source: 'newebpay_webhook_verified' });
+    }
 
-    // 2. 主動呼叫藍新官方單筆交易查詢 API (QueryTradeInfo) 進行真實遠端查驗
-    const amt = amtQuery || pendingPaymentsStore[orderId]?.amount?.toString() || '0';
-    const queryUrl = process.env.NEWEBPAY_ENV === 'sandbox'
+    const amt = saved?.amount?.toString() || pendingPaymentsStore[orderId]?.amount?.toString() || amtQuery || '0';
+    if (!/^[a-zA-Z0-9_-]{1,120}$/.test(orderId) || !/^\d{1,10}$/.test(amt) || Number(amt) < 1) {
+      return res.status(400).json({ success: false, isPaid: false, message: '訂單編號或金額無效。' });
+    }
+    const queryUrl = NEWEBPAY_IS_SANDBOX
       ? 'https://ccore.newebpay.com/API/QueryTradeInfo'
       : 'https://core.newebpay.com/API/QueryTradeInfo';
 
@@ -3678,14 +3674,15 @@ app.get('/api/payment/verify-status', async (req, res) => {
       const apiRes = await fetch(queryUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString()
+        body: params.toString(),
+        signal: AbortSignal.timeout(12000),
       });
       const queryJson = await apiRes.json();
 
-      console.log('[NewebPay Query API Response]:', queryJson);
-
       // TradeStatus: 0:未付款, 1:已付款, 2:訂單失敗, 3:取消付款
-      if (queryJson.Status === 'SUCCESS' && queryJson.Result?.TradeStatus === '1') {
+      if (queryJson.Status === 'SUCCESS' && String(queryJson.Result?.TradeStatus) === '1' &&
+          queryJson.Result?.MerchantOrderNo === orderId && queryJson.Result?.TradeNo &&
+          Number(queryJson.Result.Amt) === Number(amt)) {
         const result = queryJson.Result;
         const verifiedRecord: VerifiedPaidOrder = {
           orderId,
@@ -3700,12 +3697,16 @@ app.get('/api/payment/verify-status', async (req, res) => {
           rawResult: result
         };
 
+        await settleCheckout(inventoryDatabase, orderId, verifiedRecord.amt, {
+          tradeNo: verifiedRecord.tradeNo, payTime: verifiedRecord.payTime, paymentType: verifiedRecord.paymentType,
+        });
         verifiedPaidOrdersStore[orderId] = verifiedRecord;
 
+        const { rawResult: _rawResult, authCode: _authCode, ...order } = verifiedRecord;
         return res.json({
           success: true,
           isPaid: true,
-          order: verifiedRecord,
+          order,
           source: 'newebpay_live_query'
         });
       } else {
@@ -3735,7 +3736,7 @@ app.get('/api/payment/verify-status', async (req, res) => {
 // 藍新金流：後台專用之正式入帳訂單列表
 // 100% 僅列出通過藍新檢測確認正確收款之訂單，無任何模擬數據
 // =============================================================
-app.get('/api/payment/verified-orders', (req, res) => {
+app.get('/api/payment/verified-orders', requireUser, requireAdmin, (req, res) => {
   res.json({
     success: true,
     orders: Object.values(verifiedPaidOrdersStore)
@@ -3745,34 +3746,19 @@ app.get('/api/payment/verified-orders', (req, res) => {
 // =============================================================
 // 藍新金流：單筆訂單 / VIP 扣款驗證端點 (verify-paid-order)
 // =============================================================
-app.get('/api/payment/verify-paid-order', (req, res) => {
+app.get('/api/payment/verify-paid-order', requireUser, (req, res) => {
   const orderId = String(req.query.orderId || '').trim();
   if (!orderId) {
     return res.status(400).json({ verified: false, message: '缺少訂單單號' });
   }
 
+  const pending = pendingPaymentsStore[orderId];
   const paidOrder = verifiedPaidOrdersStore[orderId];
-  if (paidOrder && paidOrder.status === 'paid' && paidOrder.isVerifiedByNewebPay) {
+  const plan = getSubscriptionTerms(pending?.vipPlanId);
+  if (plan && pending.userId === res.locals.user.uid && paidOrder?.isVerifiedByNewebPay && paidOrder.amt === plan.price) {
     return res.json({
-      verified: true,
-      orderId,
-      tradeNo: paidOrder.tradeNo,
-      amt: paidOrder.amt,
-      payTime: paidOrder.payTime,
-      source: 'verified_paid_orders_store'
-    });
-  }
-
-  const recurringSub = Object.values(recurringSubscriptionsStore).find(
-    (s: any) => s.orderId === orderId && s.status === 'active'
-  ) as any;
-  if (recurringSub) {
-    return res.json({
-      verified: true,
-      orderId,
-      periodNo: recurringSub.periodNo,
-      amt: recurringSub.price,
-      source: 'recurring_subscriptions_store'
+      verified: true, orderId, planName: pending.desc, days: plan.durationDays,
+      amt: paidOrder.amt, tradeNo: paidOrder.tradeNo, verifiedAt: paidOrder.verifiedAt,
     });
   }
 
@@ -4069,7 +4055,7 @@ app.post('/api/payment/logistics/notify', (req, res) => {
 // -------------------------------------------------------------
 
 // 1. 建立超商物流託運訂單 (Create CVS Shipping Order)
-app.post('/api/payment/logistics/create', async (req, res) => {
+app.post('/api/payment/logistics/create', requirePaymentConfig, async (req, res) => {
   try {
     const {
       orderId,
@@ -4791,22 +4777,20 @@ app.post('/', (req, res) => {
 // ==========================================
 // NewebPay (藍新金流) Integration Production Route (For VIP Subscription)
 // ==========================================
-app.post('/api/payment/vip-checkout', (req, res) => {
+app.post('/api/payment/vip-checkout', requirePaymentConfig, requireUser, (req, res) => {
   try {
-    if (!isNewebPayConfigured()) {
-      return res.status(503).json({ success: false, message: getNewebPayMissingConfigMessage() });
-    }
-
-    const { planId, planName, price, days, email, type } = req.body;
-    
+    const { planId, planName } = req.body;
+    const plan = getSubscriptionTerms(planId);
+    if (!plan) return res.status(400).json({ success: false, message: '無效的訂閱方案' });
     const MerchantID = NEWEBPAY_MERCHANT_ID;
     const Version = NEWEBPAY_VERSION;
-    const actionUrl = NEWEBPAY_URL; // Official NewebPay gateway from server env
-
-    const orderId = `VIP${Date.now()}`;
-    const host = req.get('host');
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const baseUrl = `${protocol}://${host}`;
+    const actionUrl = NEWEBPAY_URL;
+    const orderId = `VIP${crypto.randomBytes(10).toString('hex')}`;
+    pendingPaymentsStore[orderId] = {
+      orderId, amount: plan.price, email: res.locals.user.email || '', desc: String(planName || planId),
+      paymentMethod: 'credit_card', status: 'pending', createdAt: Date.now(),
+      userId: res.locals.user.uid, vipPlanId: planId,
+    };
 
     const tradeInfoObj: Record<string, any> = {
       MerchantID,
@@ -4814,12 +4798,12 @@ app.post('/api/payment/vip-checkout', (req, res) => {
       TimeStamp: Math.floor(Date.now() / 1000).toString(),
       Version,
       MerchantOrderNo: orderId,
-      Amt: Math.round(Number(price) || 99).toString(),
+      Amt: String(plan.price),
       ItemDesc: `神狗勾VIP-${(planName || '方案').slice(0, 20)}`,
-      ReturnURL: `${baseUrl}/?vip_success=true&planType=${encodeURIComponent(type || 'VIP')}&days=${days || 30}&orderId=${orderId}`,
-      NotifyURL: `${baseUrl}/api/payment/notify`,
-      ClientBackURL: `${baseUrl}/`,
-      Email: email || 'babe0615@gmail.com',
+      ReturnURL: `${webhookBaseUrl}/api/payment/return`,
+      NotifyURL: `${webhookBaseUrl}/api/payment/notify`,
+      ClientBackURL: `${clientBackUrl}/`,
+      Email: res.locals.user.email || '',
       LoginType: 0,
       CREDIT: 1,
       ANDROIDPAY: 1,
@@ -4869,32 +4853,20 @@ let isShuttingDown = false;
 
 async function startServer() {
   const isDev = process.env.NODE_ENV !== 'production';
-  const possiblePaths = [
-    path.resolve(process.cwd(), 'dist'),
-    path.resolve(__dirname, '.'),
-    path.resolve(__dirname, 'dist'),
-  ];
-  let distPath = '';
-  let hasBuiltDist = false;
-  for (const p of possiblePaths) {
-    try {
-      if (fs.existsSync(path.join(p, 'index.html'))) {
-        distPath = p;
-        hasBuiltDist = true;
-        break;
-      }
-    } catch {}
-  }
-  if (!distPath) {
-    distPath = path.resolve(process.cwd(), 'dist');
-  }
+  const distPath = path.resolve(process.cwd(), 'dist');
+  const hasBuiltDist = fs.existsSync(path.join(distPath, 'index.html'));
+  if (!isDev && !hasBuiltDist) throw new Error('Run npm run build before starting the production server.');
 
   // Serve public assets (images, icons, etc.) immediately with browser cache acceleration
   const staticOptions = {
     maxAge: '7d',
     etag: true,
     setHeaders: (res: express.Response, filePath: string) => {
-      if (/\.(webp|jpg|jpeg|png|svg|ico)$/i.test(filePath)) {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      } else if (/[/\\]assets[/\\][^/\\]+-[\w-]{8}\.(?:js|css)$/.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else if (/\.(webp|jpg|jpeg|png|svg|ico)$/i.test(filePath)) {
         res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
       }
     },
@@ -4904,56 +4876,40 @@ async function startServer() {
   const useProdStatic = process.env.NODE_ENV === 'production' && hasBuiltDist;
 
   if (!useProdStatic && isDev) {
-    process.env.DISABLE_HMR = 'true';
-    const viteReadyPromise = import('vite')
-      .then(({ createServer: createViteServer }) =>
-        createViteServer({
-          server: {
-            middlewareMode: true,
-            hmr: false,
-            ws: false,
-            watch: null,
-          },
-          appType: 'spa',
-        })
-      )
-      .then((vite) => {
-        activeViteServer = vite;
-        return vite;
-      })
-      .catch((e) => {
-        console.error('[神狗勾 Server] Vite middleware init error:', e);
-        return null;
+    try {
+      process.env.DISABLE_HMR = 'true';
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: false,
+          ws: false,
+          watch: null,
+        },
+        appType: 'spa',
       });
-
-    app.use((req, res, next) => {
-      if (activeViteServer) {
-        return activeViteServer.middlewares(req, res, next);
-      }
-      viteReadyPromise
-        .then((vite) => {
-          if (vite) {
-            vite.middlewares(req, res, next);
-          } else {
-            next();
-          }
-        })
-        .catch(() => next());
-    });
+      activeViteServer = vite;
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.error('[神狗勾 Server] Vite middleware init error:', e);
+    }
   }
 
-  if (hasBuiltDist) {
-    app.use(express.static(distPath, staticOptions));
-    app.get('*', (_req, res) => {
-      const indexPath = path.join(distPath, 'index.html');
-      res.sendFile(indexPath, (err) => {
-        if (err && !res.headersSent) {
-          res.status(503).send('<!doctype html><html><body>應用程式尚未就緒，請稍後重試。</body></html>');
-        }
+  if (useProdStatic || !activeViteServer) {
+    if (hasBuiltDist) {
+      app.use(express.static(distPath, staticOptions));
+      app.get('*', (_req, res) => {
+        const indexPath = path.join(distPath, 'index.html');
+        res.set('Cache-Control', 'no-cache');
+        res.sendFile(indexPath, (err) => {
+          if (err && !res.headersSent) {
+            res.status(503).send('<!doctype html><html><body>應用程式尚未就緒，請稍後重試。</body></html>');
+          }
+        });
       });
-    });
-  } else if (useProdStatic) {
-    console.error('[神狗勾 Server] Neither Vite middleware nor built dist/index.html is available.');
+    } else if (!activeViteServer) {
+      console.error('[神狗勾 Server] Neither Vite middleware nor built dist/index.html is available.');
+    }
   }
 
   const tryListen = (targetPort = PORT, retries = 25, delay = 300) => {
@@ -4967,7 +4923,6 @@ async function startServer() {
       } catch {}
       console.log(`[神狗勾 Server] Running on http://${HOST}:${targetPort} (env: ${process.env.NODE_ENV || 'development'})`);
       try { getAIClient(); } catch {}
-      scheduleFirestoreAIBridgeWorker(250);
     });
 
     s.on('error', (err: any) => {

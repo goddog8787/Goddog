@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { SEO } from '../../components/SEO';
 import { BLOG_ARTICLES } from '../../data/blogArticles';
-import { getBlogArticleAnimation } from '../../data/blogAnimations';
+import { hasBlogArticleAnimation } from '../../data/blogAnimations';
 import { AdSenseBanner } from '../../components/Monetization/AdSenseBanner';
 import { AdSenseConfig, LanguageCode } from '../../types';
 import { translateBlogArticle, translateBlogCategory } from '../../utils/i18n';
@@ -34,9 +34,10 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
   }, [lang]);
 
   const filteredArticles = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
+    const category = translateBlogCategory(selectedCategory, lang);
     return translatedArticles.filter(article => {
-      const matchesCat = selectedCategory === '全部' || article.category === translateBlogCategory(selectedCategory, lang);
-      const query = searchQuery.toLowerCase().trim();
+      const matchesCat = selectedCategory === '全部' || article.category === category;
       if (!query) return matchesCat;
       const matchesSearch = 
         article.title.toLowerCase().includes(query) ||
@@ -226,7 +227,7 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
               <span className="text-slate-400 text-[11px] flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
                 <span>{article.readTime}</span>
-                {getBlogArticleAnimation(article.id) && (
+                {hasBlogArticleAnimation(article.id) && (
                   <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400 font-medium ml-1.5">
                     <Play className="w-3 h-3" />
                     <span>{lang === 'en' ? 'Interactive Lab' : lang === 'ja' ? '実験アニメ付' : '互動實驗'}</span>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart3, 
   Package, 
@@ -94,9 +94,9 @@ import {
   syncCatalogDeltaToCloud,
   waitForLastCatalogCloudSync,
 } from '../../lib/productPersistence';
-import { matchesProductDeepSearch } from '../../utils/productSearch';
-import { saveNewebPayConfigToFirestore, loadNewebPayConfigFromFirestore } from '../../lib/firebase';
-import { getBackendApiBase } from '../../lib/geminiClient';
+import { evaluateProductDeepSearch, prepareProductSearch } from '../../utils/productSearch';
+import { EmailAuthProvider, GoogleAuthProvider, reauthenticateWithCredential, reauthenticateWithPopup } from 'firebase/auth';
+import { auth, saveNewebPayConfigToFirestore, loadNewebPayConfigFromFirestore, publicLogisticsSettings } from '../../lib/firebase';
 
 interface AdminDashboardProps {
   products: FilamentProduct[];
@@ -161,11 +161,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         if (parsed && typeof parsed.senderAddress === 'string' && (parsed.senderAddress.includes('1-50') || parsed.senderAddress.includes('福樂村'))) {
           parsed.senderAddress = '台灣線上物流集貨中心';
         }
-        if (parsed) {
-          delete parsed.newebpayLogisticsHashKey;
-          delete parsed.newebpayLogisticsHashIV;
-        }
-        return parsed;
+        return publicLogisticsSettings(parsed) as LogisticsSettings;
       } catch (e) {
         console.error(e);
       }
@@ -183,8 +179,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       dispatchLeadTime: '24H 現貨快速出貨 (工作日 15:00 前完成付款當日發貨)',
       packagingSpecs: '加厚密封袋防潮包裝 + 變色矽膠乾燥劑 + 防震氣柱加固',
       ecpayLogisticsMerchantId: '3002607',
-      newebpayLogisticsMerchantId: '',
-      newebpayLogisticsTestMode: false,
+      newebpayLogisticsMerchantId: 'MS1843364339',
       senderName: '神狗勾 3D 台灣官方旗艦店',
       senderPhone: '0911-331-772',
       senderAddress: '台灣線上物流集貨中心',
@@ -201,25 +196,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         } = remote;
         setLogisticsSettings((prev) => ({
           ...prev,
-          ...safeRemote,
+          ...remote,
         }));
       }
     });
   }, []);
 
   const handleSaveLogisticsSettings = (newSettings: LogisticsSettings) => {
-    const {
-      newebpayLogisticsHashKey: _omitKey,
-      newebpayLogisticsHashIV: _omitIv,
-      ...safeSettings
-    } = newSettings;
-    const cleaned: LogisticsSettings = {
-      ...safeSettings,
-      newebpayLogisticsMerchantId: (safeSettings.newebpayLogisticsMerchantId || '').trim(),
-    };
-    setLogisticsSettings(cleaned);
-    localStorage.setItem('printcore_logistics_settings', JSON.stringify(cleaned));
-    saveNewebPayConfigToFirestore(cleaned);
+    setLogisticsSettings(newSettings);
+    localStorage.setItem('printcore_logistics_settings', JSON.stringify(newSettings));
+    void saveNewebPayConfigToFirestore(newSettings);
   };
 
   const handleSaveProductEdit = (updated: FilamentProduct) => {
@@ -233,63 +219,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   };
 
-  // Admin Security Lock States
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
-    return sessionStorage.getItem('printcore_admin_unlocked') === 'true';
-  });
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState<string | null>(null);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
-  const [currentAdminPassword, setCurrentAdminPassword] = useState<string>(() => {
-    return localStorage.getItem('printcore_admin_password') || 'King8787@';
-  });
-  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [newAdminPasswordInput, setNewAdminPasswordInput] = useState('');
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const usesGoogle = auth.currentUser?.providerData.some(provider => provider.providerId === 'google.com');
+  useEffect(() => {
+    localStorage.removeItem('printcore_admin_password');
+    sessionStorage.removeItem('printcore_admin_unlocked');
+  }, []);
 
-  const handleUnlockAdmin = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleUnlockAdmin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const user = auth.currentUser;
+    if (!user?.emailVerified || !user.email || isUnlocking) return;
+    setIsUnlocking(true);
     setAdminPasswordError(null);
-    const trimmed = adminPasswordInput.trim();
-    const valid = 
-      trimmed === currentAdminPassword || 
-      trimmed === 'King8787@' || 
-      trimmed === 'king8787@' || 
-      trimmed === 'goddog' || 
-      trimmed === 'admin888' || 
-      trimmed === 'printcore2026';
-
-    if (valid) {
+    try {
+      if (usesGoogle) {
+        await reauthenticateWithPopup(user, new GoogleAuthProvider());
+      } else {
+        await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, adminPasswordInput));
+      }
       setIsAdminUnlocked(true);
-      sessionStorage.setItem('printcore_admin_unlocked', 'true');
-      setToastMessage('🔓 管理員身份驗證成功，歡迎進入神狗勾營運管理中樞！');
-      setTimeout(() => setToastMessage(null), 4000);
-    } else {
-      setAdminPasswordError('管理密碼錯誤，請重新輸入！');
+      setAdminPasswordInput('');
+    } catch {
+      setAdminPasswordError('身分驗證未完成，請重試。');
+    } finally {
+      setIsUnlocking(false);
     }
   };
 
   const handleLockAdmin = () => {
     setIsAdminUnlocked(false);
-    sessionStorage.removeItem('printcore_admin_unlocked');
     setAdminPasswordInput('');
-    setToastMessage('🔒 已退出後台並重新鎖定');
-    setTimeout(() => setToastMessage(null), 3000);
-  };
-
-  const handleChangeAdminPassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newAdminPasswordInput || newAdminPasswordInput.trim().length < 4) {
-      setToastMessage('❌ 新密碼長度請至少設定 4 位字元');
-      setTimeout(() => setToastMessage(null), 3000);
-      return;
-    }
-    const updated = newAdminPasswordInput.trim();
-    setCurrentAdminPassword(updated);
-    localStorage.setItem('printcore_admin_password', updated);
-    setIsChangePasswordOpen(false);
-    setNewAdminPasswordInput('');
-    setToastMessage('✨ 後台管理員密碼已成功更新！請妥善保存您的管理密碼。');
-    setTimeout(() => setToastMessage(null), 4000);
   };
 
   // Search & Filters in Product Management
@@ -723,12 +687,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   };
 
-  const filteredProducts = products.filter((p) => {
-    const q = productSearch.trim();
-    const matchesSearch = !q || matchesProductDeepSearch(p, q);
-    const matchesMat = selectedMaterialFilter === 'All' || p.material === selectedMaterialFilter;
-    return matchesSearch && matchesMat;
-  });
+  const filteredProducts = useMemo(() => {
+    const query = prepareProductSearch(productSearch);
+    return products.filter(product =>
+      (selectedMaterialFilter === 'All' || product.material === selectedMaterialFilter) &&
+      (!query.length || evaluateProductDeepSearch(product, query).matched)
+    );
+  }, [products, productSearch, selectedMaterialFilter]);
 
   // 嚴格非模擬：僅保留通過藍新金流真實收款驗證的訂單
   const realOrders = orders.filter((o) => {
@@ -759,7 +724,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             <h2 className="text-xl font-black text-slate-900 tracking-tight">神狗勾營運後台</h2>
             <p className="text-xs text-slate-500">
-              請輸入管理員密碼以解鎖庫存、訂單與金流設定
+              請再次驗證管理員帳號以解鎖庫存、訂單與金流設定
             </p>
           </div>
 
@@ -771,32 +736,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
 
           <form onSubmit={handleUnlockAdmin} className="mt-4 space-y-3.5">
-            <div className="relative">
+            {!usesGoogle && <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type={showAdminPassword ? 'text' : 'password'}
                 value={adminPasswordInput}
                 onChange={(e) => setAdminPasswordInput(e.target.value)}
-                placeholder="管理員密碼"
+                autoComplete="current-password"
+                aria-label="管理員帳號密碼"
+                placeholder="管理員帳號密碼"
                 autoFocus
                 required
                 className="w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono"
               />
               <button
                 type="button"
+                aria-label={showAdminPassword ? '隱藏密碼' : '顯示密碼'}
                 onClick={() => setShowAdminPassword(!showAdminPassword)}
                 className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 {showAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
-            </div>
+            </div>}
 
             <button
               type="submit"
+              disabled={isUnlocking}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               <KeyRound className="w-4 h-4" />
-              <span>進入管理後台</span>
+              <span>{isUnlocking ? '驗證中…' : usesGoogle ? '使用 Google 帳號驗證' : '驗證並進入後台'}</span>
             </button>
           </form>
 
@@ -909,15 +878,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsChangePasswordOpen(true)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:border-indigo-300 bg-slate-50 hover:bg-white text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
-              <span>變更密碼</span>
-            </button>
-
             <button
               type="button"
               onClick={handleLockAdmin}
@@ -2481,77 +2441,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* ------------------------------------------------------------- */}
       {/* CHANGE ADMIN PASSWORD MODAL                                    */}
-      {/* ------------------------------------------------------------- */}
-      {isChangePasswordOpen && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div 
-            className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-slate-900 text-white p-6 relative">
-              <button
-                type="button"
-                onClick={() => setIsChangePasswordOpen(false)}
-                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
 
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black tracking-tight">設定 / 變更後台管理密碼</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">自訂專屬店長安全金鑰</p>
-                </div>
-              </div>
-            </div>
-
-            <form onSubmit={handleChangeAdminPassword} className="p-6 space-y-4">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-center justify-between">
-                <span>管理安全金鑰狀態：</span>
-                <span className="font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  ●●●●●●●● (已受密碼保護)
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  請輸入新密碼 (至少 4 位字元)
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                  <input
-                    type="text"
-                    value={newAdminPasswordInput}
-                    onChange={(e) => setNewAdminPasswordInput(e.target.value)}
-                    placeholder="例如：myStorePass2026"
-                    required
-                    className="w-full pl-10 pr-3 py-2.5 text-sm rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsChangePasswordOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md transition-all cursor-pointer"
-                >
-                  儲存新密碼
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ------------------------------------------------------------- */}
       {/* TOAST ALERT NOTIFICATION                                       */}

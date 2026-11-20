@@ -5,7 +5,14 @@ on:
     branches:
       - main
       - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build_and_deploy:
@@ -14,32 +21,88 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: main
+          fetch-depth: 2
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
 
       - name: Install Dependencies
-        run: npm ci || npm install
+        run: npm ci
+
+      - name: Check types
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
 
       - name: Build Project
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           VITE_FIREBASE_PROJECT_ID: goddog-shop
           VITE_FIREBASE_APP_ID: 1:470116154074:web:6b5fe2382911d3fc3ec3e3
           VITE_FIREBASE_DATABASE_ID: ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4
         run: npm run build
 
+      - name: Upload website package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Goddog-website
+          path: dist/
+          if-no-files-found: error
 
-      - name: Deploy to Firebase Hosting
+      - name: Wait for the matching Render backend
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          STOREFRONT_API: ${{ vars.VITE_API_BASE_URL || 'https://goddog.onrender.com' }}
+        run: |
+          export RELEASE_REVISIONS="$RELEASE_SHA"
+          release_tree=$(git rev-parse "$RELEASE_SHA^{tree}")
+          if branch_tree=$(git rev-parse "$RELEASE_SHA^2^{tree}" 2>/dev/null) && [ "$branch_tree" = "$release_tree" ]; then
+            RELEASE_REVISIONS="$RELEASE_REVISIONS $(git rev-parse "$RELEASE_SHA^2")"
+          fi
+          node --input-type=module <<'JS'
+          const base = process.env.STOREFRONT_API.replace(/\/+$/, '');
+          const revisions = new Set(process.env.RELEASE_REVISIONS.split(' '));
+          const read = (path) => fetch(base + path, { signal: AbortSignal.timeout(12000) }).then(response => {
+            if (!response.ok) throw new Error('Backend endpoint is not ready');
+            return response.json();
+          });
+          const deadline = Date.now() + 8 * 60 * 1000;
+          let ready = false;
+          do {
+            try {
+              const health = await read('/api/health');
+              if (revisions.has(health.revision)) {
+                const [payment, inventory, handler] = await Promise.all([
+                  read('/api/payment/config-status'),
+                  read('/api/payment/inventory-status'),
+                  fetch('https://goddog.space/__/auth/handler', { signal: AbortSignal.timeout(12000) }),
+                ]);
+                ready = payment.configured === true && payment.sandbox === false && inventory.ready === true &&
+                  handler.ok && (await handler.text()).includes('fireauth');
+              }
+            } catch {
+              // Render may still be building or starting the release.
+            }
+            if (!ready) await new Promise(resolve => setTimeout(resolve, 10000));
+          } while (!ready && Date.now() < deadline);
+          if (!ready) throw new Error('Matching Render release, payment, inventory, or Firebase Auth is unavailable');
+          JS
+
+      - name: Deploy Firestore rules and Firebase Hosting
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         env:
           SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_GODDOG_SHOP }}
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
           if [ -n "$SERVICE_ACCOUNT_KEY" ]; then
-            echo "$SERVICE_ACCOUNT_KEY" > /tmp/gcp-key.json
-            export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
+            export GOOGLE_APPLICATION_CREDENTIALS="$(mktemp)"
+            trap 'rm -f "$GOOGLE_APPLICATION_CREDENTIALS"' EXIT
+            printf '%s' "$SERVICE_ACCOUNT_KEY" > "$GOOGLE_APPLICATION_CREDENTIALS"
           fi
-          npx --yes firebase-tools deploy --only hosting --project goddog-shop --non-interactive
+          npx --yes firebase-tools deploy --only firestore:rules,hosting --project goddog-shop --non-interactive

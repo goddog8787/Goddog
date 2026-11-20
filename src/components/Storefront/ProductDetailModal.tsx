@@ -682,7 +682,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 type="button"
                 disabled={isOutOfStock}
                 onClick={handleAdd}
-                className={`w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                className={`btn-tactile-primary w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
                   isOutOfStock
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : isAdded
@@ -710,7 +710,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 type="button"
                 disabled={isOutOfStock}
                 onClick={handleBuyNow}
-                className={`w-full py-3 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                className={`btn-tactile-primary w-full py-3 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
                   isOutOfStock
                     ? 'bg-slate-300 cursor-not-allowed'
                     : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 shadow-md shadow-indigo-500/20 cursor-pointer'

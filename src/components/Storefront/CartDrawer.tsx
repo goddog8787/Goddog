@@ -627,7 +627,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   onClose();
                   onProceedCheckout(pointsUsed, appliedCoupon?.code);
                 }}
-                className="flex-1 max-w-[210px] py-2.5 sm:py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 active:scale-98 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10 transition-all cursor-pointer"
+                className="btn-tactile-primary flex-1 max-w-[210px] py-2.5 sm:py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10 transition-all cursor-pointer"
               >
                 <span>{lang === 'en' ? 'Checkout' : lang === 'ja' ? 'ご購入手続き' : '前往結帳'}</span>
                 <ArrowRight className="w-4 h-4" />

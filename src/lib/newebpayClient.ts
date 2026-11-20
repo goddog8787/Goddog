@@ -1,147 +1,73 @@
-import { getBackendApiBase } from './geminiClient';
+import { authenticatedStoreFetch } from './firebase';
+import { getStoreApiBase } from './backendUrl';
 
-export interface NewebPayCheckoutRequest {
+type CheckoutEndpoint = 'checkout' | 'period-checkout';
+
+interface CheckoutForm {
+  url: string;
   orderId: string;
-  docId?: string;
-  returnFrom?: 'checkout' | 'profile';
-  userId?: string;
-  customerName?: string;
-  amount: number;
-  email: string;
-  desc: string;
-  paymentMethod: string;
+  formParams: Record<string, string>;
 }
 
-export interface NewebPayCheckoutResponse {
-  success: boolean;
-  url?: string;
-  orderId?: string;
-  formParams?: Record<string, string>;
-  message?: string;
+export function newCheckoutOrderId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return 'GD' + Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export interface NewebPayPeriodCheckoutRequest {
-  planId: string;
-  planName: string;
-  price: number;
-  days: number;
-  email: string;
-  frequencyLabel?: string;
-  userId?: string;
-}
-
-/**
- * Request signed NewebPay MPG checkout parameters strictly from the backend server.
- * HashKey and HashIV are never stored, read, or encrypted in browser code.
- */
-export async function requestServerNewebPayCheckout(
-  params: NewebPayCheckoutRequest
-): Promise<NewebPayCheckoutResponse> {
-  const apiBase = getBackendApiBase() || (typeof window !== 'undefined' ? window.location.origin : '');
+export async function requestCheckout(endpoint: CheckoutEndpoint, details: object): Promise<CheckoutForm> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
-
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(`${apiBase}/api/payment/checkout`, {
+    const path = '/api/payment/' + endpoint;
+    const options: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(details),
       signal: controller.signal,
-      body: JSON.stringify({
-        orderId: params.orderId,
-        docId: params.docId,
-        returnFrom: params.returnFrom,
-        userId: params.userId,
-        customerName: params.customerName,
-        amount: params.amount,
-        email: params.email,
-        desc: params.desc,
-        paymentMethod: params.paymentMethod,
-        originUrl: typeof window !== 'undefined' ? window.location.origin : '',
-      }),
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      return {
-        success: false,
-        message: '後端金流簽章服務暫時無回應，請確認後端伺服器已啟動並完成藍新金流環境變數設定。',
-      };
-    }
-
-    const data = await res.json();
-    if (!res.ok || !data?.success || !data?.formParams) {
-      return {
-        success: false,
-        message: data?.message || '無法取得藍新金流加密表單，請確認伺服器金流設定。',
-      };
-    }
-
-    return data;
-  } catch (err: any) {
-    return {
-      success: false,
-      message:
-        err?.name === 'AbortError'
-          ? '連線後端金流伺服器逾時，請稍後再試。'
-          : '無法連線至後端金流伺服器，請確認網路狀態或伺服器設定。',
     };
+    const response = endpoint === 'period-checkout'
+      ? await authenticatedStoreFetch(path, options)
+      : await fetch(getStoreApiBase() + path, options);
+    if (response.status === 409 && endpoint === 'checkout') {
+      const conflict = await response.json().catch(() => null);
+      throw new Error(conflict?.message || '商品庫存有變動，請更新購物車後再試。');
+    }
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+      throw new Error('付款服務暫時無法連線，請稍後再試。');
+    }
+    const data = await response.json();
+    const gatewayPath = endpoint === 'checkout' ? 'mpg_gateway' : 'period';
+    const validGateways = [`https://core.newebpay.com/MPG/${gatewayPath}`, `https://ccore.newebpay.com/MPG/${gatewayPath}`];
+    const required = endpoint === 'checkout'
+      ? ['MerchantID', 'TradeInfo', 'TradeSha', 'Version']
+      : ['MerchantID_', 'PostData_'];
+    if (data?.success !== true || typeof data.orderId !== 'string' || !data.orderId ||
+        !validGateways.includes(data.url) ||
+        !required.every(key => typeof data.formParams?.[key] === 'string' && data.formParams[key])) {
+      throw new Error('無法建立付款單，請稍後再試。');
+    }
+    return { url: data.url, orderId: data.orderId, formParams: data.formParams };
   } finally {
     clearTimeout(timer);
   }
 }
 
-/**
- * Request signed NewebPay Period (recurring VIP) checkout parameters strictly from the backend server.
- */
-export async function requestServerNewebPayPeriodCheckout(
-  params: NewebPayPeriodCheckoutRequest
-): Promise<NewebPayCheckoutResponse> {
-  const apiBase = getBackendApiBase() || (typeof window !== 'undefined' ? window.location.origin : '');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
-
+export function submitCheckout({ url, formParams }: CheckoutForm): void {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = url;
+  if (window.self !== window.top) form.target = '_blank';
+  for (const [name, value] of Object.entries(formParams)) {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
   try {
-    const res = await fetch(`${apiBase}/api/payment/period-checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        planId: params.planId,
-        planName: params.planName,
-        price: params.price,
-        days: params.days,
-        email: params.email,
-        frequencyLabel: params.frequencyLabel,
-        userId: params.userId,
-      }),
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    if (!contentType.includes('application/json')) {
-      return {
-        success: false,
-        message: '後端定期定額金流服務暫時無回應，請稍後再試。',
-      };
-    }
-
-    const data = await res.json();
-    if (!res.ok || !data?.success || !data?.formParams) {
-      return {
-        success: false,
-        message: data?.message || '無法建立藍新定期定額委託，請確認伺服器金流環境變數設定。',
-      };
-    }
-
-    return data;
-  } catch (err: any) {
-    return {
-      success: false,
-      message:
-        err?.name === 'AbortError'
-          ? '連線後端金流伺服器逾時，請稍後再試。'
-          : '無法連線至後端金流伺服器，請稍後再試。',
-    };
+    form.submit();
   } finally {
-    clearTimeout(timer);
+    form.remove();
   }
 }

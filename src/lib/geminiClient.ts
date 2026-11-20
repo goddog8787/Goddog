@@ -1,55 +1,8 @@
-import { requestGeminiViaFirestoreBridge as callFirestoreLiveBridge } from './firebase';
 
 export type SupportedChatLang = 'zh-TW' | 'en' | 'ja';
 
-const CLOUD_RUN_BACKENDS = [
-  'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app',
-  'https://ais-dev-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app',
-];
-
-export function isStaticHostingEnv(): boolean {
-  if (typeof window === 'undefined') return false;
-  const host = (window.location.hostname || '').toLowerCase();
-  return (
-    host.includes('goddog.space') ||
-    host.endsWith('.web.app') ||
-    host.endsWith('.firebaseapp.com') ||
-    host.endsWith('.github.io') ||
-    host.endsWith('.pages.dev')
-  );
-}
-
-export function getBackendApiBase(): string {
-  const customBase = (import.meta as any).env?.VITE_API_BASE_URL;
-  if (customBase && typeof customBase === 'string' && customBase.trim()) {
-    return customBase.trim().replace(/\/+$/, '');
-  }
-  if (typeof window !== 'undefined') {
-    try {
-      const storedBase = localStorage.getItem('god_dog_ai_base_url');
-      if (storedBase && storedBase.trim().startsWith('http')) {
-        return storedBase.trim().replace(/\/+$/, '');
-      }
-    } catch {}
-    if (isStaticHostingEnv()) {
-      return CLOUD_RUN_BACKENDS[0];
-    }
-  }
-  return '';
-}
-
-export function getCandidateApiBases(): string[] {
-  const primary = getBackendApiBase();
-  if (!isStaticHostingEnv()) {
-    return [primary];
-  }
-  const bases = new Set<string>();
-  if (primary) bases.add(primary);
-  for (const b of CLOUD_RUN_BACKENDS) {
-    bases.add(b);
-  }
-  return Array.from(bases);
-}
+import { getCandidateApiBases } from './backendUrl';
+export { getBackendApiBase, getCandidateApiBases, isStaticHostingEnv } from './backendUrl';
 
 export function getLocalizedSystemPrompt(lang: SupportedChatLang = 'zh-TW', contextStr = ''): string {
   if (lang === 'en') {
@@ -187,7 +140,7 @@ export async function callDirectBrowserGemini(
 
 /**
  * Fast unified SSE dispatcher: streams from backend /api/ai/chat/stream (trying primary base with crisp 4s first-byte timeout),
- * or falls back cleanly to Firestore Live Bridge on static hosts like goddog.space without redundant retry loops.
+ * and tries the other configured API endpoints when the first connection is unavailable.
  */
 export async function dispatchGeminiStream(params: {
   message: string;
@@ -288,25 +241,6 @@ export async function dispatchGeminiStream(params: {
     }
   }
 
-  // 2. Real-time Firestore AI Live Bridge (primary cross-origin relay for static hosting like goddog.space)
-  try {
-    const bridgeReply = await callFirestoreLiveBridge({
-      message: params.message,
-      history: (params.history || []).map((m) => ({
-        sender: m.sender || m.role || 'user',
-        text: m.text,
-      })),
-      model: normalizedModel,
-      storeContext: params.storeContext,
-      onChunk: params.onChunk,
-      signal: params.signal,
-    });
-    if (bridgeReply && bridgeReply.trim()) {
-      return { reply: bridgeReply.trim() };
-    }
-  } catch (err: any) {
-    if (params.signal?.aborted || err?.name === 'AbortError') throw err;
-  }
 
   return null;
 }
