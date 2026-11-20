@@ -2478,6 +2478,7 @@ export default function App() {
 
         {isCustomerSupportOpen && (
           <CustomerSupportModal
+            key={isLoggedIn ? member?.id ?? 'guest' : 'guest'}
             isOpen={isCustomerSupportOpen}
             onClose={() => {
               setIsCustomerSupportOpen(false);

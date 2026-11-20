@@ -21,7 +21,6 @@ import {
   Zap,
 } from 'lucide-react';
 import {
-  getBackendApiBase,
   dispatchGeminiStream,
   generateSmart3DExpertReply,
 } from '../../lib/geminiClient';
@@ -46,7 +45,6 @@ interface CustomerSupportModalProps {
   lang?: LanguageCode;
 }
 
-const STORAGE_KEY = 'goddog_ai_chat_history_v2';
 
 /**
  * Sanitizes chat messages to eliminate unwanted ** asterisks, markdown headers, and unnecessary fluff
@@ -104,132 +102,11 @@ function getWelcomeMessage(lang: LanguageCode = 'zh-TW'): ChatMessage {
   };
 }
 
-const DEFAULT_WELCOME_MESSAGE: ChatMessage = getWelcomeMessage('zh-TW');
 
 // Intelligent built-in 3D printing engineering engine for zero-failure client replies
-function generateClientExpertReply(text: string): { reply: string; modelUsed: string; solution?: DiagnosticSolution } {
-  const lower = text.toLowerCase();
-  
-  if (/差別|不同|比較|差異|對比|哪裡不同|vs|versus/i.test(lower)) {
-    if ((lower.includes('pla') && lower.includes('petg')) || lower.includes('petg')) {
-      return {
-        reply: '【PLA+ 與 PETG 深度對比指引】\n• 耐溫性能：PLA+ 耐溫約 55~60°C，高溫車內曝曬易軟化變形；PETG 耐溫達 75~80°C，耐候抗 UV 性能顯著優異。\n• 機械強度：PLA+ 剛性硬度高、列印不易翹邊，適合精緻公仔與展示模型；PETG 韌性極佳、抗衝擊摔不裂，適合機械治具、掛鉤與受力件。\n• 列印難易：PLA+ 極易列印且支援 600mm/s 高速機；PETG 黏著力強，建議熱床降溫後再取件，列印速度建議 80~150mm/s。\n\n選購建議：室內展示首選 High-Speed PLA+；功能耐摔或戶外首選 PETG-HF。',
-        modelUsed: '神狗勾 3D 專家顧問',
-      };
-    }
-  }
-
-  if (/溫度|設幾度|幾度|熱床/i.test(lower)) {
-    if (lower.includes('petg')) {
-      return {
-        reply: '【神狗勾 PETG-HF 推薦參數】\n• 噴嘴溫度：235°C ~ 250°C（高速機型首層 245°C）\n• 熱床溫度：70°C ~ 80°C（PEI 塗層板建議 75°C）\n• 冷卻風扇：20% ~ 50%（高速過橋可開至 70%）\n• 列印速度：80 ~ 200 mm/s\n\n小提醒：取件時請待熱床降溫至室溫（約 35°C 以下）再輕彎底板，避免破壞 PEI 鍍層。',
-        modelUsed: '神狗勾 3D 專家顧問',
-      };
-    }
-    if (lower.includes('tpu')) {
-      return {
-        reply: '【神狗勾 TPU 95A 柔性線材參數】\n• 噴嘴溫度：215°C ~ 230°C\n• 熱床溫度：40°C ~ 50°C（亦可不加熱）\n• 列印速度：20 ~ 40 mm/s（柔性線材請關閉高加減速）\n• 回抽距離：0.8 ~ 1.5mm（直驅擠出機），關閉過長回抽以防纏輪。\n\n重要提示：TPU 軟膠禁止放入拓竹 AMS 多色供料系統，請改用後方單盤料架直供。',
-        modelUsed: '神狗勾 3D 專家顧問',
-      };
-    }
-    if (lower.includes('abs') || lower.includes('asa')) {
-      return {
-        reply: '【神狗勾 ABS+ / ASA 耐熱線材參數】\n• 噴嘴溫度：245°C ~ 265°C\n• 熱床溫度：95°C ~ 105°C\n• 設備要求：強烈建議封箱機型（拓竹 X1/P1S、Creality K1），列印時務必關閉箱體通風與輔助側風扇，以徹底防止層裂與翹邊。',
-        modelUsed: '神狗勾 3D 專家顧問',
-      };
-    }
-    if (lower.includes('cf') || lower.includes('碳纖維')) {
-      return {
-        reply: '【神狗勾 PLA-CF 碳纖維強化線材參數】\n• 噴嘴溫度：215°C ~ 235°C\n• 熱床溫度：55°C ~ 65°C\n• 噴嘴規格：硬度要求極高，務必使用「0.4mm 或 0.6mm 硬化鋼噴嘴」，嚴禁使用一般黃銅噴嘴以防快速磨損磨穿。\n• 外觀特點：消光碳纖質感，層紋極不明顯，剛性比標準 PLA 提升 35% 以上。',
-        modelUsed: '神狗勾 3D 專家顧問',
-      };
-    }
-    return {
-      reply: '【神狗勾 High-Speed PLA+ 推薦切片參數】\n• 噴嘴溫度：205°C ~ 220°C（高速機首層 215°C）\n• 熱床溫度：50°C ~ 60°C\n• 冷卻風扇：100% 全速運轉\n• 列印速度：相容 50 ~ 500 mm/s（拓竹 AMS / K1 預設 Standard 即可完美成型）。',
-      modelUsed: '神狗勾 3D 專家顧問',
-    };
-  }
-
-  if (/ams|拓竹|bambu/i.test(lower)) {
-    return {
-      reply: '【拓竹 Bambu Lab AMS 多色系統完全相容保證】\n• 神狗勾全系列 1kg 線材均採用標準外徑 200mm、軸寬 65mm 規格，可 100% 完美放入 AMS 與 AMS Lite，蓋子順暢密合旋轉不卡料。\n• 線盤出廠均通過光學高精度 ±0.02mm 檢測與真空乾燥包裝。\n• 注意：TPU 彈性軟膠請由機身後方掛架單獨進料，其餘 PLA、PETG、ABS、PLA-CF 均完全相容 AMS 多色切換！',
-      modelUsed: '神狗勾 3D 專家顧問',
-    };
-  }
-
-  if (/拉絲|牽絲/i.test(lower)) {
-    return {
-      reply: '【3D 列印拉絲排查四大對策】\n1. 降低噴嘴溫度：以 5°C 為單位微調降溫（高溫會大幅增加流動性造成滲料）。\n2. 調整回抽（Retraction）：直驅機型建議回抽距離 0.8~1.2mm、速度 30~45mm/s；遠程機型建議 4~6mm。\n3. 開啟空駛擦嘴（Wipe while retracting）與退料滑行（Coasting）。\n4. 線材防潮退濕：線材受潮氣化會產生氣泡並擠出拉絲，建議使用乾燥烘料盒 50°C 烘烤 4~6 小時。',
-      modelUsed: '神狗勾 3D 專家顧問',
-    };
-  }
-
-  if (/翹邊|不黏|底板/i.test(lower)) {
-    return {
-      reply: '【首層不黏與翹邊急救 SOP】\n1. 清洗熱床底板：使用洗碗精與溫水刷洗 PEI 板表面油脂，再以無水酒精擦拭（勿直接徒手觸碰列印區域）。\n2. 提高首層熱床溫度：PLA 設 60°C、PETG 設 75°C、ABS 設 100°C。\n3. 首層列印降速：第一層列印速度降至 25~35 mm/s，首層關閉冷卻風扇。\n4. 切片輔助邊框：在切片軟體中開啟裙邊或加寬 Brim（外側邊緣 5mm）。',
-      modelUsed: '神狗勾 3D 專家顧問',
-    };
-  }
-
-  if (/^欸|哈囉|你好|嗨|hi|hello|在嗎|安安|早安|午安|晚安|神狗勾|小幫手/i.test(lower) || lower.length <= 3) {
-    return {
-      reply: '您好！我是神狗勾 3D 官方智能顧問。\n\n無論是材料選購、拓竹 AMS 多色系統相容性、切片溫度與速度參數調整，或是列印拉絲、翹邊等故障排查，都可以隨時跟我聊聊喔！請告訴我您的疑問或使用的 3D 印表機型號！',
-      modelUsed: '神狗勾 3D 專家顧問',
-    };
-  }
-
-  const topic = text.trim();
-  return {
-    reply: `關於您詢問的「${topic}」：\n\n神狗勾 3D 顧問團隊為您提供以下說明與建議：\n• High-Speed PLA+ 推薦噴嘴 205~220°C / 熱床 55~60°C；PETG-HF 推薦噴嘴 235~245°C / 熱床 75°C。\n• 線盤與 AMS 相容性：神狗勾全館 1kg 標準線盤外徑 200mm，100% 相容拓竹 Bambu AMS 多色系統與 Creality K1 高速機型。\n• 現貨出貨與免運：下單後 24 小時內快速出庫，全館滿 NT$999 享超商與宅配免運！\n\n您可以隨時告訴我您使用的印表機型號或切片疑問，我將為您提供最適合的參數調校！`,
-    modelUsed: '神狗勾 3D 專家顧問',
-  };
-}
-
-// Sanitize any historically corrupted chat order so AI answers never appear behind subsequent questions
-function sanitizeChatOrder(msgs: ChatMessage[]): ChatMessage[] {
-  if (!Array.isArray(msgs) || msgs.length === 0) return [DEFAULT_WELCOME_MESSAGE];
-  
-  const filtered = msgs.filter((m) => {
-    if (!m || !m.text) return false;
-    const text = String(m.text);
-    return !(
-      text.includes('目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？') ||
-      text.includes('針對您詢問的「')
-    );
-  });
-
-  if (filtered.length === 0) return [DEFAULT_WELCOME_MESSAGE];
-
-  // Auto-heal any historic 'Failed to fetch' or 'API 未呼叫成功' error bubbles by answering the preceding user question
-  return filtered.map((m, idx) => {
-    const rawText = String(m.text || '');
-    if (
-      m.sender === 'ai' &&
-      (rawText.includes('【API 未呼叫成功】') ||
-        rawText.includes('Failed to fetch') ||
-        rawText.includes('API 連線失敗'))
-    ) {
-      const prevMsg = idx > 0 ? filtered[idx - 1] : null;
-      const repaired = generateSmart3DExpertReply(
-        prevMsg && prevMsg.sender === 'user' ? prevMsg.text : '3D列印耗材諮詢'
-      );
-      return {
-        ...m,
-        id: m.id || `ai-${idx}-${m.timestamp || Date.now()}`,
-        isLoading: false,
-        text: cleanChatText(repaired.reply),
-        solution: repaired.solution || m.solution,
-        modelUsed: repaired.modelUsed,
-      };
-    }
-
-    return {
-      ...m,
-      id: m.id || `${m.sender}-${idx}-${m.timestamp || Date.now()}`,
-      isLoading: false,
-      text: m.sender === 'ai' ? cleanChatText(m.text) : m.text,
-    };
-  });
+function restoreChatHistory(messages: ChatMessage[] | null, lang: LanguageCode): ChatMessage[] {
+  const restored = (messages ?? []).filter(message => message.text && !message.isLoading);
+  return restored.length ? restored : [getWelcomeMessage(lang)];
 }
 
 export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
@@ -251,34 +128,11 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   const [copiedParamId, setCopiedParamId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Track which user ID's chat history is currently loaded so account switches never leak messages
   const activeChatUserId = normalizeCustomerId(member?.id);
-  const loadedChatUserIdRef = useRef<string | null>(activeChatUserId);
-
-  // Initialize messages from isolated user-scoped storage or default welcome message
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    try {
-      const cached = getStoredCustomerChatSync(activeChatUserId);
-      if (Array.isArray(cached) && cached.length > 0) {
-        const cleaned = cached.filter((m: any) => {
-          if (!m || !m.text) return false;
-          const text = String(m.text);
-          return !(
-            text.includes('【Gemini 模型調度指示】') ||
-            text.includes('【Gemini 模型調度異常】') ||
-            text.includes('【Gemini 調度異常】') ||
-            text.includes('尚未偵測到 Google Gemini API Key') ||
-            text.includes('目前伺服器連線正常，請問今天有什麼材質選購或列印參數問題我可以為您解答？') ||
-            text.includes('針對您詢問的')
-          );
-        });
-        if (cleaned.length > 0) return sanitizeChatOrder(cleaned);
-      }
-    } catch {
-      // ignore JSON parse error
-    }
-    return [DEFAULT_WELCOME_MESSAGE];
-  });
+  const chatChangedRef = useRef(false);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    restoreChatHistory(getStoredCustomerChatSync(activeChatUserId), lang)
+  );
 
   const [chatInput, setChatInput] = useState('');
 
@@ -307,78 +161,22 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
   const currentModelObj = SUPPORTED_AI_MODELS.find((m) => m.id === selectedModel) || SUPPORTED_AI_MODELS[0];
 
-  // Immediately switch chat history when customer logs in, logs out, or switches account
   useEffect(() => {
-    if (loadedChatUserIdRef.current !== activeChatUserId) {
-      loadedChatUserIdRef.current = activeChatUserId;
-      const syncCached = getStoredCustomerChatSync(activeChatUserId);
-      setMessages(syncCached.length > 0 ? sanitizeChatOrder(syncCached) : [DEFAULT_WELCOME_MESSAGE]);
-
-      loadCustomerChatMessages(activeChatUserId).then((loaded) => {
-        if (loadedChatUserIdRef.current === activeChatUserId) {
-          setMessages(loaded && loaded.length > 0 ? sanitizeChatOrder(loaded) : [DEFAULT_WELCOME_MESSAGE]);
-        }
-      });
-    }
-  }, [activeChatUserId]);
-
-  // Load customer chat history when modal opens or initialPrompt is provided
-  const initialLoadedRef = useRef(false);
-  useEffect(() => {
-    if (isOpen && !initialLoadedRef.current) {
-      initialLoadedRef.current = true;
-      loadCustomerChatMessages(activeChatUserId).then((loaded) => {
-        const baseMessages = (loaded && loaded.length > 0) ? sanitizeChatOrder(loaded) : [DEFAULT_WELCOME_MESSAGE];
-        if (loadedChatUserIdRef.current === activeChatUserId) {
-          setMessages(baseMessages);
-        }
-        
-        // If there is an initial prompt from another modal (e.g. AI Advisor)
-        if (initialPrompt && initialPrompt.trim()) {
-          triggerPromptExecution(initialPrompt.trim(), baseMessages);
-        }
-      });
-    }
+    if (!isOpen) return;
+    let active = true;
+    void loadCustomerChatMessages(activeChatUserId).then(loaded => {
+      if (!active || chatChangedRef.current) return;
+      const history = restoreChatHistory(loaded, lang);
+      const prompt = initialPrompt?.trim();
+      if (prompt) void triggerPromptExecution(prompt, history);
+      else setMessages(history);
+    });
+    return () => { active = false; };
   }, [isOpen, activeChatUserId, initialPrompt]);
 
-  // Handle member ID changes - if user logs in/out, allow a reload on next open
   useEffect(() => {
-    initialLoadedRef.current = false;
-  }, [activeChatUserId]);
-
-  // Automatically adapt the initial/welcome AI greeting whenever the user switches language
-  useEffect(() => {
-    setMessages((prev) => {
-      if (!prev || prev.length === 0) return [getWelcomeMessage(lang)];
-      return prev.map((m, idx) => {
-        if (
-          idx === 0 &&
-          m.sender === 'ai' &&
-          (m.id === 'welcome-init' ||
-            String(m.id).startsWith('reset-welcome-') ||
-            m.text.includes('我是神狗勾 3D') ||
-            m.text.includes('GodDog 3D Filament & Slicing') ||
-            m.text.includes('3Dフィラメント専属AIアドバイザー') ||
-            m.text.includes('記憶已重新整理') ||
-            m.text.includes('Conversation history cleared') ||
-            m.text.includes('会話履歴をリセットしました'))
-        ) {
-          return {
-            ...m,
-            text: getWelcomeMessage(lang).text,
-          };
-        }
-        return m;
-      });
-    });
-  }, [lang]);
-
-  // Persist messages ONLY to the currently loaded customer's isolated storage
-  useEffect(() => {
-    if (messages && messages.length > 0 && loadedChatUserIdRef.current === activeChatUserId) {
-      saveCustomerChatMessages(activeChatUserId, messages);
-    }
-  }, [messages, activeChatUserId]);
+    if (chatChangedRef.current && !isLoading) void saveCustomerChatMessages(activeChatUserId, messages);
+  }, [messages, activeChatUserId, isLoading]);
 
   // Keep viewing product updated if opened with one
   useEffect(() => {
@@ -447,10 +245,13 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         timestamp: Date.now(),
       },
     ];
+    chatChangedRef.current = true;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsLoading(false);
     setMessages(freshMessages);
     setCheckedSteps({});
     setIsResetConfirming(false);
-    saveCustomerChatMessages(member?.id, freshMessages);
   };
 
   // Dynamic context-aware quick prompts
@@ -506,11 +307,8 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
   // Core Prompt Dispatcher: Guarantees strict Question -> Answer pairing
   const triggerPromptExecution = async (text: string, currentMsgs: ChatMessage[]) => {
-    if (!text || isLoading) return;
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    if (!text || abortControllerRef.current) return;
+    chatChangedRef.current = true;
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -554,8 +352,8 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
       cartCount: cartItems.reduce((acc, item) => acc + item.quantity, 0),
       member: member ? { name: member.name, points: (member?.points || 0) } : undefined,
     };
-    const historyPayload = updatedHistory
-      .filter((m) => !m.isLoading)
+    const historyPayload = currentMsgs
+      .filter(m => m.sender === 'user' || (m.source === 'gemini' && m.modelId === selectedModel))
       .map((m) => ({ sender: m.sender, text: m.text }));
 
     try {
@@ -578,7 +376,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         return;
       }
 
-      let resolvedModelName = currentModelObj.name;
+      let resolvedModelName = '';
       const dispatched = await dispatchGeminiStream({
         message: text,
         model: selectedModel,
@@ -641,6 +439,8 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                   text: cleanChatText(dispatched.reply),
                   isLoading: false,
                   modelUsed: finalModel,
+                  modelId: dispatched.modelId,
+                  source: 'gemini',
                 }
               : m
           )
@@ -660,152 +460,20 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         ? { ...m, text: message, isLoading: false, modelUsed: lang === 'en' ? 'Connection status' : lang === 'ja' ? '接続状況' : '連線狀態' }
         : m));
     } finally {
-      setIsLoading(false);
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        setIsLoading(false);
+      }
     }
   };
 
-  // Quick symptom diagnosis with structured checklist
-  const handleQuickDiagnose = async (category: string) => {
-    if (isLoading) return;
-
-    const userTxt =
-      lang === 'en'
-        ? `Troubleshoot print issue: ${category}`
-        : lang === 'ja'
-        ? `造形トラブル診断：${category}`
-        : `排查列印異常：${category}`;
-    const userMsgId = `usr-diag-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const aiMsgId = `ai-diag-${Date.now() + 1}-${Math.random().toString(36).substring(2, 7)}`;
-
-    const userMsg: ChatMessage = {
-      id: userMsgId,
-      sender: 'user',
-      text: userTxt,
-      timestamp: Date.now(),
-    };
-
-    const pendingAiMsg: ChatMessage = {
-      id: aiMsgId,
-      sender: 'ai',
-      text: '',
-      isLoading: true,
-      timestamp: Date.now() + 1,
-    };
-
-    // Strict pairing insertion
-    setMessages((prev) => [...prev, userMsg, pendingAiMsg]);
-    setIsLoading(true);
-
-    const apiBase = getBackendApiBase();
-
-    try {
-      if (lang === 'zh-TW') {
-        const diagController = new AbortController();
-        const diagTimer = setTimeout(() => diagController.abort(), 4000);
-        const res = await fetch(`${apiBase}/api/ai/support-diagnose`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: diagController.signal,
-          body: JSON.stringify({
-            issueType: category,
-            filamentType: activeViewingProduct?.material || 'PLA / PETG / TPU',
-            description: `創客排查問題：${category}`,
-            lang,
-          }),
-        }).finally(() => clearTimeout(diagTimer));
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          const aiTxt = cleanChatText(
-            data.answer ||
-              `【異常排查建議】針對「${category}」，請逐項核對下方「切片與列印參數確認清單」，通常只需微調溫度與清潔熱床即可解決！`
-          );
-
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === aiMsgId
-                ? {
-                    ...m,
-                    text: aiTxt,
-                    solution: data,
-                    isLoading: false,
-                    modelUsed: data?.modelUsed || '排查指南',
-                  }
-                : m
-            )
-          );
-          return;
-        }
-      }
-      throw new Error('Use localized client diagnostic engine');
-    } catch {
-      const diagResult = generateSmart3DExpertReply(
-        category,
-        { viewingProduct: activeViewingProduct },
-        lang
-      );
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === aiMsgId
-            ? {
-                ...m,
-                text: cleanChatText(diagResult.reply),
-                solution:
-                  diagResult.solution ||
-                  (lang === 'en'
-                    ? {
-                        solutions: [
-                          'Wash Textured PEI plate with warm water and dish soap to remove skin oils',
-                          'Lower Z-Offset by 0.03–0.05mm for firmer first-layer squish',
-                          'Set first layer speed to 25–30 mm/s and keep cooling fan at 0% for Layer 1–2',
-                          'Enable 5–8mm Outer Brim in slicer to anchor corners down',
-                        ],
-                        recommendedAdjustment: {
-                          temperature: 'Nozzle 215–225°C / Bed 60–65°C',
-                          speed: 'First Layer 30 mm/s (Other layers 200–300 mm/s)',
-                          retraction: 'Direct 0.8mm @ 35mm/s / Bowden 4.5mm',
-                          cooling: 'Layer 1–2: 0% (100% from Layer 3)',
-                        },
-                      }
-                    : lang === 'ja'
-                    ? {
-                        solutions: [
-                          'PEIプレートをぬるま湯と中性洗剤で洗浄し、皮脂や指紋を完全に除去する',
-                          'Zオフセットを0.03〜0.05mm下げて1層目の定着力を高める',
-                          '初層速度を25〜30 mm/sに落とし、1〜2層目は冷却ファンをOFFにする',
-                          'スライサーで5〜8mmの外側ブリム（Brim）を有効にして反りを防ぐ',
-                        ],
-                        recommendedAdjustment: {
-                          temperature: 'ノズル 215〜225°C / ベッド 60〜65°C',
-                          speed: '1層目 30 mm/s（2層目以降 200〜300 mm/s）',
-                          retraction: 'ダイレクト式 0.8mm @ 35mm/s',
-                          cooling: '1〜2層目 0%（3層目以降 100%）',
-                        },
-                      }
-                    : {
-                        solutions: [
-                          '以 99% 異丙醇或洗碗精徹底清洗熱床表面，消除指紋油脂',
-                          '微調 Z-Offset 降低 0.03mm-0.05mm 增強首層擠出壓實感',
-                          '切片設定首層列印速度降至 25-30 mm/s，首層完全關閉風扇',
-                          '開啟切片裙邊 (Brim) 5mm-8mm 以擴大與熱床的抓附面積',
-                        ],
-                        recommendedAdjustment: {
-                          temperature: '噴嘴 215-225°C / 熱床 60-65°C',
-                          speed: '首層 30 mm/s (其餘層 200-300 mm/s)',
-                          retraction: '近端 0.8mm @ 35mm/s / 遠端 4.5mm',
-                          cooling: '首層 0% (第 3 層後開啟至 100%)',
-                        },
-                      }),
-                isLoading: false,
-                modelUsed: currentModelObj.name,
-              }
-            : m
-        )
-      );
-    } finally {
-      setIsLoading(false);
-    }
+  const handleQuickDiagnose = (category: string) => {
+    const question = lang === 'en'
+      ? `Troubleshoot print issue: ${category}`
+      : lang === 'ja'
+      ? `造形トラブル診断：${category}`
+      : `排查列印異常：${category}`;
+    void triggerPromptExecution(question, messages);
   };
 
   const handleSendChat = (overrideText?: string) => {

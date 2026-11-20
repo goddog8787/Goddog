@@ -351,18 +351,6 @@ function getAIClient(customApiKey?: string): GoogleGenAI | null {
   return aiClient;
 }
 
-// In-memory cache for ultra-fast instant responses (< 5ms)
-const chatResponseCache = new Map<string, { reply: string; modelUsed?: string; timestamp: number }>();
-
-function setCachedChatReply(key: string, reply: string, modelUsed?: string) {
-  if (!reply || !reply.trim()) return;
-  if (chatResponseCache.size >= 300) {
-    const oldestKey = chatResponseCache.keys().next().value;
-    if (oldestKey) chatResponseCache.delete(oldestKey);
-  }
-  chatResponseCache.set(key, { reply, modelUsed, timestamp: Date.now() });
-}
-
 // Helper to detect transient API rate limits, temporary unavailability, or high demand spikes
 function isTransientGeminiError(err: any): boolean {
   if (!err) return false;
@@ -568,7 +556,7 @@ async function* generateGeminiChatStreamSafely(
   const model = selectedChatModel(preferredModel);
   if (!model || model === 'local-expert' || abortSignal?.aborted) return;
 
-  const deadline = AbortSignal.timeout(20_000);
+  const deadline = AbortSignal.timeout(model === 'gemini-4-hydrogen' ? 40_000 : 22_000);
   const attemptSignal = abortSignal ? AbortSignal.any([abortSignal, deadline]) : deadline;
   let started = false;
   try {
@@ -637,7 +625,7 @@ async function generateGeminiChatSafely(
   }
 
   try {
-    const deadline = AbortSignal.timeout(15_000);
+    const deadline = AbortSignal.timeout(model === 'gemini-4-hydrogen' ? 25_000 : 16_000);
     const response = await ai.models.generateContent({
       model,
       contents: rawContents,
@@ -647,8 +635,11 @@ async function generateGeminiChatSafely(
       },
     });
     if (response.text?.trim()) return { reply: response.text.trim(), modelUsed: model };
-  } catch {
-    // The caller reports that the selected model was unavailable.
+  } catch (error) {
+    if (!abortSignal?.aborted) {
+      const status = Number((error as { status?: number } | null)?.status);
+      console.warn('[Gemini chat] Regular request failed', { model, status: Number.isInteger(status) ? status : 'transport' });
+    }
   }
   return null;
 }
@@ -1362,7 +1353,7 @@ app.post('/api/ai/chat/stream', async (req, res) => {
 
   // Set SSE Headers
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Cache-Control', 'no-store, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
@@ -1472,18 +1463,6 @@ ${contextNotes}`;
         ? '神狗勾の全1kgスプール（外径200mm・公差±0.02mm）はBambu Lab AMSおよび主流の高速CoreXY機にそのまま対応しています。推奨設定はHyper PLAがノズル210〜225°C・ベッド55°C、PETG-HFがノズル235〜245°C・ベッド70°C、軟質TPU 95Aが外部給紙で220〜230°Cです。NT$999以上のご注文で送料無料・24時間以内に発送いたします！'
         : '神狗勾全系列 1kg 標準線盤（外徑 200mm、公差 ±0.02mm）全面相容 Bambu Lab AMS 與主流高速機型。常用建議參數：Hyper PLA 噴嘴 210–225°C / 熱床 55°C；PETG-HF 噴嘴 235–245°C / 熱床 70°C；TPU 95A 軟膠請由機身外掛料架進料（220–230°C）。全館滿 NT$999 免運並於 24H 內快速出貨！';
 
-    const sseCacheKey = `${lang}::${requestedModel}::${latestUserMessage.toLowerCase()}::${storeContext?.viewingProduct?.name || ''}`;
-    if (requestedModel !== 'local-expert' && normalizedFullHistory.length <= 2 && latestUserMessage.length <= 100) {
-      const cached = chatResponseCache.get(sseCacheKey);
-      if (cached && Date.now() - cached.timestamp < 300000) {
-        totalCustomerQueriesServed++;
-        res.write(`data: ${JSON.stringify({ meta: { modelUsed: cached.modelUsed || MODEL_DISPLAY_NAMES[requestedModel] || requestedModel, cached: true } })}\n\n`);
-        res.write(`data: ${JSON.stringify({ text: cached.reply })}\n\n`);
-        res.write('data: [DONE]\n\n');
-        return res.end();
-      }
-    }
-
     if (requestedModel === 'local-expert' || !effectiveApiKey) {
       if (requestedModel === 'local-expert') {
         res.write(`data: ${JSON.stringify({ meta: { modelUsed: '內建回答' }, text: fallbackExpertReply })}\n\n`);
@@ -1494,7 +1473,6 @@ ${contextNotes}`;
       return res.end();
     }
 
-    let resolvedModelId = requestedModel;
     const generator = generateGeminiChatStreamSafely(
       history,
       systemPrompt,
@@ -1503,22 +1481,19 @@ ${contextNotes}`;
       effectiveApiKey,
       abortController.signal,
       (modelId) => {
-        resolvedModelId = modelId;
         if (!clientDisconnected && !res.writableEnded) {
           const displayName = MODEL_DISPLAY_NAMES[modelId] || modelId;
-          res.write(`data: ${JSON.stringify({ meta: { modelUsed: displayName } })}\n\n`);
+          res.write(`data: ${JSON.stringify({ meta: { source: 'gemini', modelId, modelUsed: displayName } })}\n\n`);
         }
       }
     );
 
     let streamedAnyChunk = false;
-    let streamedFullText = '';
     for await (const chunkText of generator) {
       if (clientDisconnected || abortController.signal.aborted) {
         break;
       }
       streamedAnyChunk = true;
-      streamedFullText += chunkText;
       res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
     }
     if (!streamedAnyChunk && !abortController.signal.aborted) {
@@ -1526,19 +1501,13 @@ ${contextNotes}`;
         history, systemPrompt, latestUserMessage, requestedModel, effectiveApiKey, abortController.signal,
       );
       if (result?.reply && !abortController.signal.aborted) {
-        resolvedModelId = result.modelUsed;
-        streamedFullText = result.reply;
+        const modelId = result.modelUsed;
         streamedAnyChunk = true;
-        res.write(`data: ${JSON.stringify({ meta: { modelUsed: MODEL_DISPLAY_NAMES[resolvedModelId] || resolvedModelId } })}\n\n`);
-        res.write(`data: ${JSON.stringify({ text: streamedFullText })}\n\n`);
+        res.write(`data: ${JSON.stringify({ meta: { source: 'gemini', modelId, modelUsed: MODEL_DISPLAY_NAMES[modelId] || modelId } })}\n\n`);
+        res.write(`data: ${JSON.stringify({ text: result.reply })}\n\n`);
       }
     }
-    if (streamedAnyChunk) {
-      totalCustomerQueriesServed++;
-      if (normalizedFullHistory.length <= 2 && latestUserMessage.length <= 100 && streamedFullText.trim()) {
-        setCachedChatReply(sseCacheKey, streamedFullText.trim(), MODEL_DISPLAY_NAMES[resolvedModelId] || resolvedModelId);
-      }
-    }
+    if (streamedAnyChunk) totalCustomerQueriesServed++;
 
     if (!streamedAnyChunk && !clientDisconnected && !abortController.signal.aborted) {
       res.write(`data: ${JSON.stringify({ error: 'MODEL_UNAVAILABLE' })}\n\n`);
@@ -1641,23 +1610,6 @@ app.post('/api/ai/chat', async (req, res) => {
 
     const targetDisplayName = MODEL_DISPLAY_NAMES[targetModel] || targetModel;
     const lower = latestUserMessage.toLowerCase();
-    const cacheKey = `${lang}::${targetModel}::${lower}::${storeContext?.viewingProduct?.name || ''}`;
-    
-    // Fast path cache for offline expert mode OR short repeated single/early-turn queries (< 5ms)
-    if (normalizedFullHistory.length <= 2 && lower.length <= 100) {
-      const cached = chatResponseCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < 300000) {
-        totalCustomerQueriesServed++;
-        return res.json({
-          success: true,
-          reply: cached.reply,
-          modelUsed: cached.modelUsed || (targetModel === 'local-expert' ? '神狗勾 3D 專家顧問' : targetDisplayName),
-          contextualMemoryActive: true,
-          cached: true,
-        });
-      }
-    }
-
     const systemPrompt =
       lang === 'en'
         ? `You are the official AI Filament & Slicing Specialist at GodDog 3D Filaments.
@@ -1697,12 +1649,11 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
           totalCustomerQueriesServed++;
           const usedDisplayName = MODEL_DISPLAY_NAMES[geminiReply.modelUsed] || geminiReply.modelUsed;
           const cleanReplyText = cleanChatReply(geminiReply.reply.trim());
-          if (normalizedFullHistory.length <= 2 && lower.length <= 100) {
-            setCachedChatReply(cacheKey, cleanReplyText, usedDisplayName);
-          }
           return res.json({
             success: true,
             reply: cleanReplyText,
+            source: 'gemini',
+            modelId: geminiReply.modelUsed,
             modelUsed: usedDisplayName,
             contextualMemoryActive: true,
           });
@@ -1955,7 +1906,6 @@ Speak in natural, conversational, idiomatic American English—like a friendly, 
       dynamicReply = `您好！我是神狗勾 3D 智能顧問。\n\n針對您的問題「${latestUserMessage}」：\n無論是 High-Speed PLA+、PETG-HF、ABS+、TPU 95A 或 PLA-CF 碳纖維，我們均備妥原廠切片參數與拓竹 AMS 供料調校數據。\n\n您可直接詢問特定材質（例如：「PLA 速度怎麼調？」、「PETG 熱床要幾度？」或「列印拉絲怎麼辦？」），我會立即提供精確數值！`;
     }
 
-    chatResponseCache.set(cacheKey, { reply: dynamicReply, timestamp: Date.now() });
     totalCustomerQueriesServed++;
 
     return res.json({
