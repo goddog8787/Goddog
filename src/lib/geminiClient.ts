@@ -148,9 +148,9 @@ export async function dispatchGeminiStream(params: {
   storeContext?: any;
   signal?: AbortSignal;
   onChunk?: (streamedSoFar: string) => void;
-  onMeta?: (meta: { modelUsed?: string; cached?: boolean }) => void;
+  onMeta?: (meta: { modelUsed?: string; modelId?: string; source?: string }) => void;
   lang?: SupportedChatLang;
-}): Promise<{ reply: string; modelUsed?: string; forbidden?: boolean; forbiddenMessage?: string } | null> {
+}): Promise<{ reply: string; modelUsed?: string; modelId?: string; forbidden?: boolean; forbiddenMessage?: string } | null> {
   if (params.signal?.aborted) return null;
 
   const normalizedModel = normalizeModelId(params.model);
@@ -193,6 +193,7 @@ export async function dispatchGeminiStream(params: {
         const decoder = new TextDecoder('utf-8');
         let accumulatedText = '';
         let resolvedModelUsed = '';
+        let confirmedModelId = '';
         let streamDone = false;
         let streamFailed = false;
         let pending = '';
@@ -221,11 +222,12 @@ export async function dispatchGeminiStream(params: {
               try {
                 const parsed = JSON.parse(dataStr);
                 if (parsed.error) streamFailed = true;
-                if (parsed.meta?.modelUsed) {
-                  resolvedModelUsed = parsed.meta.modelUsed;
+                if (parsed.meta?.source === 'gemini' && parsed.meta.modelId === normalizedModel) {
+                  confirmedModelId = parsed.meta.modelId;
+                  resolvedModelUsed = parsed.meta.modelUsed || confirmedModelId;
                   params.onMeta?.(parsed.meta);
                 }
-                if (parsed.text) {
+                if (confirmedModelId && parsed.text) {
                   accumulatedText += parsed.text;
                   params.onChunk?.(accumulatedText);
                 }
@@ -238,10 +240,11 @@ export async function dispatchGeminiStream(params: {
           await reader.cancel().catch(() => {});
         }
 
-        if (!streamFailed && !params.signal?.aborted && accumulatedText.trim()) {
+        if (streamDone && !streamFailed && !params.signal?.aborted && confirmedModelId && accumulatedText.trim()) {
           return {
             reply: accumulatedText.trim(),
-            modelUsed: resolvedModelUsed || undefined,
+            modelUsed: resolvedModelUsed,
+            modelId: confirmedModelId,
           };
         }
       }

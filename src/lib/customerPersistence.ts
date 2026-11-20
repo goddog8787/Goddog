@@ -779,24 +779,13 @@ export interface ChatMessage {
   solution?: DiagnosticSolution;
   isLoading?: boolean;
   modelUsed?: string;
+  modelId?: string;
+  source?: 'gemini';
 }
 
 function cleanStoredMessages(msgs: ChatMessage[]): ChatMessage[] {
   if (!Array.isArray(msgs)) return [];
-  return msgs.filter((m) => {
-    if (!m || !m.text) return false;
-    if (
-      m.text.includes('【Gemini 模型調度指示】') ||
-      m.text.includes('【Gemini 模型調度異常】') ||
-      m.text.includes('【Gemini 調度異常】') ||
-      m.text.includes('尚未偵測到 Google Gemini API Key') ||
-      m.text.includes('針對您詢問的') ||
-      m.text.includes('神狗勾 3D 專家團隊為您提供以下建議')
-    ) {
-      return false;
-    }
-    return true;
-  });
+  return msgs.filter(m => m && !m.isLoading && typeof m.text === 'string' && m.text.trim());
 }
 
 export function getStoredCustomerChatSync(userId?: string | null): ChatMessage[] {
@@ -820,11 +809,13 @@ export async function saveCustomerChatMessages(
 ): Promise<void> {
   const cleanUid = normalizeCustomerId(userId);
   const sanitized = cleanStoredMessages(messages);
+  const updatedAt = new Date().toISOString();
   const storageKey = cleanUid ? `printcore_user_chat_${cleanUid}` : GUEST_CHAT_KEY;
 
   // Strictly save only to this user's isolated key (never to a global shared key)
   try {
     localStorage.setItem(storageKey, JSON.stringify(sanitized));
+    if (cleanUid) localStorage.setItem(`printcore_chat_updated_${cleanUid}`, updatedAt);
     // Purge legacy global shared key so accounts never mix chat histories
     localStorage.removeItem('goddog_ai_chat_history_v2');
   } catch {}
@@ -840,7 +831,7 @@ export async function saveCustomerChatMessages(
       userId: cleanUid,
       type: 'chat',
       data: JSON.stringify(trimmed),
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     });
   } catch (error) {
     console.warn('Firestore chat save fallback:', error);
@@ -855,16 +846,23 @@ export async function loadCustomerChatMessages(
 
   if (cleanUid) {
     try {
+      const updatedKey = `printcore_chat_updated_${cleanUid}`;
+      const localUpdatedAt = localStorage.getItem(updatedKey);
       const chatRef = doc(db, 'users', cleanUid, 'userData', 'chat');
       const snap = await getDoc(chatRef);
+      if (localStorage.getItem(updatedKey) !== localUpdatedAt) {
+        return getStoredCustomerChatSync(cleanUid);
+      }
       if (snap.exists()) {
         const data = snap.data();
         if (data?.data) {
           const parsed = JSON.parse(data.data);
           if (Array.isArray(parsed) && parsed.length > 0) {
             const cleaned = cleanStoredMessages(parsed);
-            if (cleaned.length >= localMessages.length && cleaned.length > 0) {
+            const localTime = localUpdatedAt || (localMessages.at(-1)?.timestamp ? new Date(localMessages.at(-1)!.timestamp!).toISOString() : '');
+            if (cleaned.length && (!localMessages.length || (data.updatedAt && data.updatedAt > localTime))) {
               localStorage.setItem(`printcore_user_chat_${cleanUid}`, JSON.stringify(cleaned));
+              if (data.updatedAt) localStorage.setItem(updatedKey, data.updatedAt);
               return cleaned;
             }
           }

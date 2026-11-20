@@ -45,9 +45,17 @@ test('Gemini chat only uses the selected model for streaming and regular replies
       });
       assert.equal(response.status, 200);
       const events = await response.text();
+      assert.match(events, /"source":"gemini","modelId":"gemini-4-hydrogen"/);
       assert.match(events, /"modelUsed":"Gemini 4 Hydrogen"/);
       assert.match(events, /Gemini smoke test/);
       assert.deepEqual(models, ['gemini-4-hydrogen']);
+
+      const repeated = await fetch(base + '/api/ai/chat/stream', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Test cloud reply', model: 'gemini-4-hydrogen' }),
+      });
+      assert.match(await repeated.text(), /Gemini smoke test/);
+      assert.deepEqual(models, Array(2).fill('gemini-4-hydrogen'));
 
       streamUnavailable = true;
       const fallback = await fetch(base + '/api/ai/chat/stream', {
@@ -57,7 +65,7 @@ test('Gemini chat only uses the selected model for streaming and regular replies
       const fallbackEvents = await fallback.text();
       assert.match(fallbackEvents, /"modelUsed":"Gemini 4 Hydrogen"/);
       assert.match(fallbackEvents, /Gemini smoke test/);
-      assert.deepEqual(models, Array(3).fill('gemini-4-hydrogen'));
+      assert.deepEqual(models, Array(4).fill('gemini-4-hydrogen'));
 
       modelUnavailable = true;
       for (const path of ['/api/ai/chat/stream', '/api/ai/chat']) {
@@ -69,7 +77,7 @@ test('Gemini chat only uses the selected model for streaming and regular replies
         assert.match(body, /MODEL_UNAVAILABLE/);
         assert.doesNotMatch(body, /modelUsed|Gemini smoke test/);
       }
-      assert.deepEqual(models, Array(6).fill('gemini-4-hydrogen'));
+      assert.deepEqual(models, Array(7).fill('gemini-4-hydrogen'));
     }, { GEMINI_API_KEY: 'local-test-key', GOOGLE_GEMINI_BASE_URL: `http://127.0.0.1:${addr.port}` });
   } finally {
     gateway.closeAllConnections();
