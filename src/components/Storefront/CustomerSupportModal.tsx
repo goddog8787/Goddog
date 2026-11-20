@@ -286,16 +286,13 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
   const [selectedModel, setSelectedModel] = useState<string>(() => {
     try {
       const saved = localStorage.getItem('printcore_selected_ai_model');
-      if (saved === 'gemini-3.8-flash') {
-        localStorage.setItem('printcore_selected_ai_model', 'gemini-4-hydrogen');
-        return 'gemini-4-hydrogen';
-      }
+      if (saved === 'gemini-flash-latest') return 'gemini-3.8-flash';
       if (saved && SUPPORTED_AI_MODELS.some((m) => m.id === saved)) {
         return saved;
       }
-      return 'gemini-4-hydrogen';
+      return 'gemini-3.1-flash-lite';
     } catch {
-      return 'gemini-4-hydrogen';
+      return 'gemini-3.1-flash-lite';
     }
   });
   const [showModelPicker, setShowModelPicker] = useState(false);

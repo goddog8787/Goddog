@@ -78,10 +78,9 @@ async function fetchWithTimeout(
 }
 
 export function normalizeModelId(model?: string): string {
-  if (!model || model === 'gemini-3.8-flash' || model === 'gemini-3-flash-preview') {
-    return 'gemini-4-hydrogen';
-  }
-  return model;
+  if (model === 'gemini-flash-latest') return 'gemini-3.8-flash';
+  if (model === 'gemini-3-flash-preview') return 'gemini-4-hydrogen';
+  return model || 'gemini-3.1-flash-lite';
 }
 
 /**

@@ -26,6 +26,9 @@ export function getStoreApiBase(): string {
 }
 
 export function getBackendApiBase(): string {
+  const configured = configuredApiBase();
+  if (configured) return configured;
+  if (typeof window !== 'undefined' && window.location.hostname === 'goddog.space') return '';
   return getStoreApiBase();
 }
 
