@@ -1,3 +1,5 @@
+const PRODUCTION_STORE_API = 'https://goddog.onrender.com';
+
 const CLOUD_RUN_BACKENDS = [
   'https://ais-pre-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app',
   'https://ais-dev-epkqvggcyqcjwbkc4rilrx-662608706001.asia-northeast1.run.app',
@@ -25,7 +27,7 @@ function configuredApiBase(): string {
 
 // Checkout and verification always use a deployment-controlled backend.
 export function getStoreApiBase(): string {
-  return configuredApiBase() || (isStaticHostingEnv() ? CLOUD_RUN_BACKENDS[0] : '');
+  return configuredApiBase() || (isStaticHostingEnv() ? PRODUCTION_STORE_API : '');
 }
 
 export function getBackendApiBase(): string {
