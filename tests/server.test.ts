@@ -15,7 +15,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 const serverFile = fileURLToPath(new URL('../server.ts', import.meta.url));
 
-test('Gemini chat retries 503 once before allowing the Flash-Lite fallback', async () => {
+test('Gemini chat uses Flash-Lite after a rate limit, timeout, or repeated 503', async () => {
   const hydrogen = 'gemini-4-hydrogen';
   const lite = 'gemini-3.1-flash-lite';
   const calls: Array<{ model: string; startedAt: number }> = [];
@@ -84,11 +84,23 @@ test('Gemini chat retries 503 once before allowing the Flash-Lite fallback', asy
       assert.equal(data.reply, 'Gemini smoke test');
       assert.deepEqual(attemptedModels(), [hydrogen, hydrogen, lite]);
 
-      statuses = [429, 200];
-      const rateLimitedFallback = await checkStream(hydrogen);
-      assert.match(rateLimitedFallback, /"modelId":"gemini-3\.1-flash-lite".*"fallbackFrom":"gemini-4-hydrogen"/);
-      assert.match(rateLimitedFallback, /Gemini smoke test/);
-      assert.deepEqual(attemptedModels(), [hydrogen, lite]);
+      for (const scenario of [
+        { responses: [429, 200], expected: [hydrogen, lite] },
+        { responses: [503, 429, 200], expected: [hydrogen, hydrogen, lite] },
+        { responses: [504, 200], expected: [hydrogen, lite] },
+      ]) {
+        statuses = scenario.responses;
+        const recovered = await checkStream(hydrogen);
+        assert.match(recovered, /"modelId":"gemini-3\.1-flash-lite".*"fallbackFrom":"gemini-4-hydrogen"/);
+        assert.match(recovered, /Gemini smoke test/);
+        assert.deepEqual(attemptedModels(), scenario.expected);
+      }
+
+      const publicStatus = await fetch(base + '/api/ai/status');
+      assert.equal(publicStatus.status, 200);
+      const guestProbe = await fetch(base + '/api/ai/status?probe=gemini-4-hydrogen');
+      assert.equal(guestProbe.status, 401);
+      assert.deepEqual(attemptedModels(), []);
 
       for (const scenario of [
         { model: hydrogen, failures: [503, 503, 503], expected: [hydrogen, hydrogen, lite] },
