@@ -503,7 +503,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       submitCheckout(checkoutData);
     } catch (err) {
       console.error(err);
-      setFormError('付款服務暫時無法使用，購物車已保留。請稍後再試。');
+      setFormError(
+        err instanceof Error && err.message
+          ? err.message
+          : '付款服務暫時無法使用，購物車已保留。請稍後再試。'
+      );
     } finally {
       setIsProcessing(false);
     }

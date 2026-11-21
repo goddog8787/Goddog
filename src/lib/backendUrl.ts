@@ -20,15 +20,21 @@ function configuredApiBase(): string {
   return '';
 }
 
+function isAiStudioPreviewEnv(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = (window.location.hostname || '').toLowerCase();
+  return host.startsWith('ais-') && host.endsWith('.run.app');
+}
+
 // Checkout and verification always use a deployment-controlled backend.
 export function getStoreApiBase(): string {
-  return configuredApiBase() || (isStaticHostingEnv() ? PRODUCTION_STORE_API : '');
+  return configuredApiBase() || (isStaticHostingEnv() || isAiStudioPreviewEnv() ? PRODUCTION_STORE_API : '');
 }
 
 export function getBackendApiBase(): string {
   const configured = configuredApiBase();
   if (configured) return configured;
-  if (typeof window !== 'undefined' && window.location.hostname === 'goddog.space') return '';
+  if (typeof window !== 'undefined' && (window.location.hostname === 'goddog.space' || isAiStudioPreviewEnv())) return '';
   return getStoreApiBase();
 }
 

@@ -16,7 +16,7 @@ export function newCheckoutOrderId() {
 
 export async function requestCheckout(endpoint: CheckoutEndpoint, details: object): Promise<CheckoutForm> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), 25000);
   try {
     const path = '/api/payment/' + endpoint;
     const options: RequestInit = {

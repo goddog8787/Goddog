@@ -84,7 +84,7 @@ export function normalizeModelId(model?: string): string {
   return model || DEFAULT_GEMINI_CHAT_MODEL;
 }
 
-const CHAT_NETWORK_TIMEOUT_MS = 22_000;
+const CHAT_NETWORK_TIMEOUT_MS = 35_000;
 
 interface GeminiReplyMetadata {
   source: 'gemini';

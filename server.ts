@@ -560,16 +560,31 @@ async function* generateGeminiChat(
   let model = originalModel;
   const { signal, stream } = options;
 
+  let usedFallback = false;
+  let retriedSameModel = false;
+
   for (let attempt = 0; !signal?.aborted; attempt++) {
-    const deadline = AbortSignal.timeout(model === DEFAULT_GEMINI_CHAT_MODEL ? 16_000 : 22_000);
-    const abortSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+    const firstByteMs = model === DEFAULT_GEMINI_CHAT_MODEL ? 8_000 : 4_500;
+    const streamFinishMs = 12_000;
+    const timeoutController = new AbortController();
+    let timedOut = false;
+    let timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      timeoutController.abort();
+    }, firstByteMs);
+    const abortSignal = signal
+      ? AbortSignal.any([signal, timeoutController.signal])
+      : timeoutController.signal;
     const request = {
       model,
       contents,
       config: {
         ...buildModelGenConfig(model, { systemInstruction, maxOutputTokens: 700 }),
         abortSignal,
-        httpOptions: { retryOptions: { attempts: 1 } },
+        httpOptions: {
+          headers: { 'User-Agent': 'aistudio-build' },
+          retryOptions: { attempts: 1 },
+        },
       },
     };
     let sentText = false;
@@ -579,32 +594,77 @@ async function* generateGeminiChat(
         : [await ai.models.generateContent(request)];
       for await (const chunk of responses) {
         if (signal?.aborted) return;
-        deadline.throwIfAborted();
+        if (timedOut) throw new Error('Gemini request timeout');
         if (!chunk.text) continue;
-        sentText = true;
+        if (!sentText) {
+          sentText = true;
+          clearTimeout(timeoutHandle);
+          timeoutHandle = setTimeout(() => {
+            timedOut = true;
+            timeoutController.abort();
+          }, streamFinishMs);
+        }
         yield { modelId: model, text: chunk.text };
       }
-      if (sentText) deadline.throwIfAborted();
+      if (sentText && timedOut) throw new Error('Gemini request timeout');
       return;
     } catch (error) {
       if (signal?.aborted) return;
-      const status = Number((error as { status?: number } | null)?.status);
-      console.warn('[Gemini chat] Upstream request failed', {
-        model, attempt: attempt + 1,
-        reason: deadline.aborted ? 'timeout' : Number.isInteger(status) ? status : 'transport',
-      });
-      if (sentText) throw error;
-      if (status !== 503 || attempt >= 2) return;
-      if (attempt === 0) {
+      const errObj = error as { status?: number; code?: number; error?: { code?: number } } | null;
+      const status = Number(errObj?.status ?? errObj?.code ?? errObj?.error?.code);
+      const isTimeout = timedOut;
+      const reason = isTimeout ? 'timeout' : Number.isInteger(status) ? status : 'transport';
+
+      if (sentText) {
+        console.warn('[Gemini chat] Upstream stream interrupted', { model, attempt: attempt + 1, reason });
+        throw error;
+      }
+
+      const canRetrySameModel =
+        (status === 503 || (isTimeout && model === DEFAULT_GEMINI_CHAT_MODEL)) &&
+        !retriedSameModel &&
+        !usedFallback;
+      const canFallbackToDefault =
+        !usedFallback &&
+        model !== DEFAULT_GEMINI_CHAT_MODEL &&
+        (status === 503 || status === 429 || status === 404 || isTimeout);
+
+      if (canRetrySameModel) {
+        console.info('[Gemini chat] Transient upstream failure, retrying once', {
+          model,
+          attempt: attempt + 1,
+          reason,
+        });
+        retriedSameModel = true;
         try {
           await wait(CHAT_RETRY_WAIT_MS, undefined, { signal });
         } catch {
           return;
         }
-      } else {
-        if (model === DEFAULT_GEMINI_CHAT_MODEL) return;
-        model = DEFAULT_GEMINI_CHAT_MODEL;
+        continue;
       }
+
+      if (canFallbackToDefault) {
+        console.info('[Gemini chat] Switching to Flash-Lite fallback', {
+          fromModel: model,
+          toModel: DEFAULT_GEMINI_CHAT_MODEL,
+          reason,
+        });
+        model = DEFAULT_GEMINI_CHAT_MODEL;
+        usedFallback = true;
+        retriedSameModel = false;
+        continue;
+      }
+
+      const logFn = reason === 'timeout' || reason === 429 || reason === 503 ? console.info : console.warn;
+      logFn('[Gemini chat] Upstream request unavailable', {
+        model,
+        attempt: attempt + 1,
+        reason,
+      });
+      return;
+    } finally {
+      clearTimeout(timeoutHandle);
     }
   }
 }
@@ -1100,11 +1160,42 @@ app.post('/api/ai/recommend-filament', async (req, res) => {
 // -------------------------------------------------------------
 // 1.1 AI 官方 API 狀態與 Google 帳號直連配置 API
 // -------------------------------------------------------------
-app.get('/api/ai/status', (_req, res) => {
+app.get('/api/ai/status', async (req, res) => {
   const hasEnvKey = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
   const hasRuntimeKey = !!(runtimeCustomApiKey && runtimeCustomApiKey.trim());
   const isConnected = hasEnvKey || hasRuntimeKey;
-  
+  const probeModel = typeof req.query.probe === 'string' ? req.query.probe.trim() : '';
+
+  let probe: Record<string, any> | undefined;
+  if (probeModel) {
+    const ai = getAIClient();
+    if (ai) {
+      const target = selectedChatModel(probeModel) || probeModel;
+      const started = Date.now();
+      try {
+        const out = await ai.models.generateContent({
+          model: target,
+          contents: 'Say OK',
+          config: {
+            ...buildModelGenConfig(target, { maxOutputTokens: 16 }),
+            abortSignal: AbortSignal.timeout(8000),
+            httpOptions: { headers: { 'User-Agent': 'aistudio-build' }, retryOptions: { attempts: 1 } },
+          },
+        });
+        probe = { model: target, ok: Boolean(out.text), latencyMs: Date.now() - started };
+      } catch (err: any) {
+        const status = Number(err?.status ?? err?.code ?? err?.error?.code) || undefined;
+        probe = {
+          model: target,
+          ok: false,
+          status,
+          message: String(err?.message || '').slice(0, 220),
+          latencyMs: Date.now() - started,
+        };
+      }
+    }
+  }
+
   res.json({
     connected: isConnected,
     source: hasEnvKey ? 'server_env' : (hasRuntimeKey ? 'official_cluster' : 'ready'),
@@ -1113,6 +1204,7 @@ app.get('/api/ai/status', (_req, res) => {
     defaultModel: CHAT_MODEL_ORDER[0],
     supportedModels: SUPPORTED_AI_MODELS.map(model => model.id),
     canDirectAnswer: true,
+    ...(probe ? { probe } : {}),
   });
 });
 

@@ -84,9 +84,16 @@ test('Gemini chat retries 503 once before allowing the Flash-Lite fallback', asy
       assert.equal(data.reply, 'Gemini smoke test');
       assert.deepEqual(attemptedModels(), [hydrogen, hydrogen, lite]);
 
+      statuses = [429, 200];
+      const rateLimitedFallback = await checkStream(hydrogen);
+      assert.match(rateLimitedFallback, /"modelId":"gemini-3\.1-flash-lite".*"fallbackFrom":"gemini-4-hydrogen"/);
+      assert.match(rateLimitedFallback, /Gemini smoke test/);
+      assert.deepEqual(attemptedModels(), [hydrogen, lite]);
+
       for (const scenario of [
         { model: hydrogen, failures: [503, 503, 503], expected: [hydrogen, hydrogen, lite] },
-        { model: hydrogen, failures: [429], expected: [hydrogen] },
+        { model: hydrogen, failures: [429, 429], expected: [hydrogen, lite] },
+        { model: lite, failures: [429], expected: [lite] },
         { model: lite, failures: [503, 503], expected: [lite, lite] },
       ]) {
         statuses = scenario.failures;
