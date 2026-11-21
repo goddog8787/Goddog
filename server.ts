@@ -564,14 +564,11 @@ async function* generateGeminiChat(
   let retriedSameModel = false;
 
   for (let attempt = 0; !signal?.aborted; attempt++) {
-    const firstByteMs = model === DEFAULT_GEMINI_CHAT_MODEL ? 8_000 : 4_500;
-    const streamFinishMs = 12_000;
+    const firstTextMs = model === DEFAULT_GEMINI_CHAT_MODEL ? 16_000 : 22_000;
+    const streamIdleMs = 16_000;
     const timeoutController = new AbortController();
-    let timedOut = false;
-    let timeoutHandle = setTimeout(() => {
-      timedOut = true;
-      timeoutController.abort();
-    }, firstByteMs);
+    const expire = () => timeoutController.abort(new Error('Gemini request timeout'));
+    let timeoutHandle = setTimeout(expire, firstTextMs);
     const abortSignal = signal
       ? AbortSignal.any([signal, timeoutController.signal])
       : timeoutController.signal;
@@ -594,25 +591,21 @@ async function* generateGeminiChat(
         : [await ai.models.generateContent(request)];
       for await (const chunk of responses) {
         if (signal?.aborted) return;
-        if (timedOut) throw new Error('Gemini request timeout');
+        timeoutController.signal.throwIfAborted();
         if (!chunk.text) continue;
-        if (!sentText) {
-          sentText = true;
-          clearTimeout(timeoutHandle);
-          timeoutHandle = setTimeout(() => {
-            timedOut = true;
-            timeoutController.abort();
-          }, streamFinishMs);
-        }
+        sentText = true;
+        clearTimeout(timeoutHandle);
+        timeoutHandle = setTimeout(expire, streamIdleMs);
         yield { modelId: model, text: chunk.text };
       }
-      if (sentText && timedOut) throw new Error('Gemini request timeout');
+      if (signal?.aborted) return;
+      timeoutController.signal.throwIfAborted();
       return;
     } catch (error) {
       if (signal?.aborted) return;
       const errObj = error as { status?: number; code?: number; error?: { code?: number } } | null;
       const status = Number(errObj?.status ?? errObj?.code ?? errObj?.error?.code);
-      const isTimeout = timedOut;
+      const isTimeout = timeoutController.signal.aborted || status === 408 || status === 504;
       const reason = isTimeout ? 'timeout' : Number.isInteger(status) ? status : 'transport';
 
       if (sentText) {
@@ -1160,7 +1153,13 @@ app.post('/api/ai/recommend-filament', async (req, res) => {
 // -------------------------------------------------------------
 // 1.1 AI 官方 API 狀態與 Google 帳號直連配置 API
 // -------------------------------------------------------------
-app.get('/api/ai/status', async (req, res) => {
+// Keep the public status lightweight and require administrator access for paid model probes.
+const authorizeGeminiProbe: express.RequestHandler = (req, res, next) => {
+  if (typeof req.query.probe !== 'string' || !req.query.probe.trim()) return next();
+  return requireUser(req, res, () => requireAdmin(req, res, next));
+};
+
+app.get('/api/ai/status', authorizeGeminiProbe, async (req, res) => {
   const hasEnvKey = !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
   const hasRuntimeKey = !!(runtimeCustomApiKey && runtimeCustomApiKey.trim());
   const isConnected = hasEnvKey || hasRuntimeKey;
@@ -1168,9 +1167,10 @@ app.get('/api/ai/status', async (req, res) => {
 
   let probe: Record<string, any> | undefined;
   if (probeModel) {
+    const target = selectedChatModel(probeModel);
+    if (!target || target === 'local-expert') return res.status(400).json({ error: 'UNSUPPORTED_MODEL' });
     const ai = getAIClient();
     if (ai) {
-      const target = selectedChatModel(probeModel) || probeModel;
       const started = Date.now();
       try {
         const out = await ai.models.generateContent({
@@ -1178,7 +1178,7 @@ app.get('/api/ai/status', async (req, res) => {
           contents: 'Say OK',
           config: {
             ...buildModelGenConfig(target, { maxOutputTokens: 16 }),
-            abortSignal: AbortSignal.timeout(8000),
+            abortSignal: AbortSignal.timeout(22_000),
             httpOptions: { headers: { 'User-Agent': 'aistudio-build' }, retryOptions: { attempts: 1 } },
           },
         });
@@ -1189,7 +1189,6 @@ app.get('/api/ai/status', async (req, res) => {
           model: target,
           ok: false,
           status,
-          message: String(err?.message || '').slice(0, 220),
           latencyMs: Date.now() - started,
         };
       }
