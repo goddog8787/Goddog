@@ -44,10 +44,6 @@
   },
   "firestore": [
     {
-      "database": "(default)",
-      "rules": "firestore.rules"
-    },
-    {
       "database": "ai-studio-printcore3d-e440897e-fa15-4ea7-94c2-6c136dcf17c4",
       "rules": "firestore.rules"
     }
