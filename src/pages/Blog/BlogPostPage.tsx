@@ -174,7 +174,7 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ adSenseConfig, lang:
       </div>
 
       {/* Main Article Container */}
-      <div className="bg-white dark:bg-slate-800/90 rounded-3xl p-6 sm:p-10 border border-slate-200 dark:border-slate-700 shadow-sm">
+      <div className="bg-white dark:bg-slate-800/90 rounded-3xl p-3.5 sm:p-8 border border-slate-200 dark:border-slate-700 shadow-sm">
         {/* Category & Meta */}
         <div className="flex flex-wrap items-center gap-2.5 text-xs mb-4">
           <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-100 dark:border-indigo-800">
@@ -196,13 +196,13 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ adSenseConfig, lang:
         </h1>
 
         {/* Author Bio Header Card (E-E-A-T) */}
-        <div className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/80 mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700/80 mb-8">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-600 to-sky-500 text-white flex items-center justify-center font-bold text-sm shadow-xs">
               <User className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">{article.author}</span>
                 <span className="text-[11px] px-2 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950 text-sky-800 dark:text-sky-300 font-medium">
                   {article.authorTitle}

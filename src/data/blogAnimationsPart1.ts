@@ -1,3 +1,4 @@
+import { labRuntime, labStyles } from './blogLabRuntime';
 export interface BlogAnimationEntry {
   title: string;
   subtitle: string;
@@ -152,6 +153,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     .status-line { flex-wrap: wrap; gap: 4px; }
     .title-group p { display: none; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -198,6 +200,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const tempRange = document.getElementById('tempRange');
   const tempVal = document.getElementById('tempVal');
   const impactBtn = document.getElementById('impactBtn');
@@ -242,12 +245,12 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
   tempRange.addEventListener('input', (e) => {
     temp = Number(e.target.value);
-    tempVal.textContent = temp + '°C';
+    setLabText(tempVal, temp + '°C');
     tempVal.style.color = temp >= 75 ? '#fb7185' : temp >= 55 ? '#fbbf24' : '#38bdf8';
   });
 
   impactBtn.addEventListener('click', () => {
-    impactTime = performance.now();
+    impactTime = labNow();
   });
 
   function drawChamber(canvas, opts) {
@@ -267,7 +270,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
     // Heat wave lines when hot
     if (temp > 50) {
-      const tSec = performance.now() * 0.003;
+      const tSec = labNow() * 0.003;
       ctx.strokeStyle = 'rgba(251, 146, 60, ' + Math.min(0.45, (temp - 50) / 90) + ')';
       ctx.lineWidth = 1.2;
       for (let i = 0; i < 4; i++) {
@@ -350,7 +353,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
       ctx.fillStyle = '#e2e8f0';
       ctx.font = 'bold 9px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('500g', tipX + 8, tipY + 24);
+      drawLabLabel(ctx, '500g', tipX + 8, tipY + 24);
     }
 
     // Steel impact ball animation
@@ -435,43 +438,34 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
     // Update readouts
     if (plaShatter > 0.25) {
-      plaState.textContent = '狀態：高應力脆性斷裂';
+      setLabText(plaState, '狀態：高應力脆性斷裂');
       plaState.className = 'warn';
     } else if (temp >= 58) {
-      plaState.textContent = '狀態：已達玻璃轉移軟化區';
+      setLabText(plaState, '狀態：已達玻璃轉移軟化區');
       plaState.className = 'warn';
     } else {
-      plaState.textContent = '狀態：高剛性穩固支撐';
+      setLabText(plaState, '狀態：高剛性穩固支撐');
       plaState.className = 'ok';
     }
 
     if (ballProgress >= 0.32 && ballProgress < 0.85) {
-      petgState.textContent = '狀態：彈性吸能回彈中';
+      setLabText(petgState, '狀態：彈性吸能回彈中');
       petgState.className = 'ok';
     } else if (temp >= 80) {
-      petgState.textContent = '狀態：高溫微軟化區';
+      setLabText(petgState, '狀態：高溫微軟化區');
       petgState.className = 'warn';
     } else {
-      petgState.textContent = '狀態：高韌性耐高溫穩定';
+      setLabText(petgState, '狀態：高韌性耐高溫穩定');
       petgState.className = 'ok';
     }
 
-    plaDroopEl.textContent = '形變量：' + (plaDroop * 0.45).toFixed(1) + ' mm';
-    petgDroopEl.textContent = '形變量：' + ((petgDroop + Math.abs(petgFlex)) * 0.45).toFixed(1) + ' mm';
+    setLabText(plaDroopEl, '形變量：' + (plaDroop * 0.45).toFixed(1) + ' mm');
+    setLabText(petgDroopEl, '形變量：' + ((petgDroop + Math.abs(petgFlex)) * 0.45).toFixed(1) + ' mm');
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -571,6 +565,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     .toggle-btn { flex: 1 1 135px; text-align: center; }
     .canvas-wrap { flex: none; height: 245px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -606,6 +601,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const canvas = document.getElementById('simCanvas');
   const tempSlider = document.getElementById('tempSlider');
   const retSlider = document.getElementById('retSlider');
@@ -623,20 +619,20 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
   tempSlider.addEventListener('input', (e) => {
     temp = Number(e.target.value);
-    tempLbl.textContent = temp + '°C';
+    setLabText(tempLbl, temp + '°C');
   });
   retSlider.addEventListener('input', (e) => {
     retract = Number(e.target.value);
-    retLbl.textContent = retract.toFixed(1) + 'mm';
+    setLabText(retLbl, retract.toFixed(1) + 'mm');
   });
   wipeBtn.addEventListener('click', () => {
     wipe = !wipe;
-    wipeBtn.textContent = wipe ? '擦嘴 Wipe: 開' : '擦嘴 Wipe: 關';
+    setLabText(wipeBtn, wipe ? '擦嘴 Wipe: 開' : '擦嘴 Wipe: 關');
     wipeBtn.classList.toggle('active', wipe);
   });
   wetBtn.addEventListener('click', () => {
     isWet = !isWet;
-    wetBtn.textContent = isWet ? '狀態: 線材受潮' : '狀態: 乾燥完成 (<15%RH)';
+    setLabText(wetBtn, isWet ? '狀態: 線材受潮' : '狀態: 乾燥完成 (<15%RH)');
     wetBtn.classList.toggle('wet', isWet);
     wetBtn.classList.toggle('active', !isWet);
   });
@@ -671,7 +667,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     // Bed surface
@@ -812,19 +808,10 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
     ctx.restore();
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -927,6 +914,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     .grid { flex: none; grid-template-columns: 1fr; gap: 10px; }
     .panel { min-height: 185px; padding: 9px 10px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -973,6 +961,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const spdSlider = document.getElementById('spdSlider');
   const spdVal = document.getElementById('spdVal');
   const flowVal = document.getElementById('flowVal');
@@ -1014,8 +1003,8 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
   function updateLabels() {
     const flow = getVolumetricFlow();
-    spdVal.textContent = speed + ' mm/s';
-    flowVal.textContent = flow.toFixed(1) + ' mm³/s';
+    setLabText(spdVal, speed + ' mm/s');
+    setLabText(flowVal, flow.toFixed(1) + ' mm³/s');
 
     const stdLoad = Math.min(100, (flow / 16) * 100);
     const hypLoad = Math.min(100, (flow / 34) * 100);
@@ -1025,28 +1014,28 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
     if (flow > 16) {
       stdBar.style.background = '#f43f5e';
-      stdRatio.textContent = '超過極限 (+' + Math.round(((flow - 16) / 16) * 100) + '%)';
+      setLabText(stdRatio, '超過極限 (+' + Math.round(((flow - 16) / 16) * 100) + '%)');
       stdRatio.style.color = '#fb7185';
-      stdBead.textContent = '擠出狀態：冷心供料不足・跳齒發白';
+      setLabText(stdBead, '擠出狀態：冷心供料不足・跳齒發白');
     } else {
       stdBar.style.background = '#10b981';
-      stdRatio.textContent = '負載 ' + Math.round(stdLoad) + '%';
+      setLabText(stdRatio, '負載 ' + Math.round(stdLoad) + '%');
       stdRatio.style.color = '#34d399';
-      stdBead.textContent = '擠出狀態：正常出料・表面平滑';
+      setLabText(stdBead, '擠出狀態：正常出料・表面平滑');
     }
 
     if (flow > 33) {
       hypBar.style.background = '#f59e0b';
-      hypRatio.textContent = '高負載臨界';
+      setLabText(hypRatio, '高負載臨界');
       hypRatio.style.color = '#fbbf24';
-      hypBead.textContent = '擠出狀態：接近高流上限・微霧光';
-      hypBond.textContent = '層間結合：86%';
+      setLabText(hypBead, '擠出狀態：接近高流上限・微霧光');
+      setLabText(hypBond, '層間結合：86%');
     } else {
       hypBar.style.background = '#0ea5e9';
-      hypRatio.textContent = '高效暢流 (' + Math.round(hypLoad) + '%)';
+      setLabText(hypRatio, '高效暢流 (' + Math.round(hypLoad) + '%)');
       hypRatio.style.color = '#34d399';
-      hypBead.textContent = '擠出狀態：超微晶快速導熱・高強度';
-      hypBond.textContent = '層間結合：' + (flow < 20 ? '97%' : '93%');
+      setLabText(hypBead, '擠出狀態：超微晶快速導熱・高強度');
+      setLabText(hypBond, '層間結合：' + (flow < 20 ? '97%' : '93%'));
     }
   }
   updateLabels();
@@ -1141,7 +1130,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     }
   }
 
-  let last = performance.now();
+  let last = labNow();
   function loop(now) {
     const dt = (now - last) / 1000;
     last = now;
@@ -1150,19 +1139,10 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     drawNozzleSim(cStd, 16, false, now);
     drawNozzleSim(cHyp, 33, true, now);
 
-    requestAnimationFrame(loop);
+    scheduleLabFrame(loop);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(loop);
+
+  scheduleLabFrame(loop);
 })();
 </script>
 </body>
@@ -1255,6 +1235,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     .chk { padding: 7px 8px; font-size: 11px; line-height: 1.25; }
     .stage { flex: none; height: 245px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -1282,6 +1263,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const state = { wash: false, z: false, brim: false, fan: false };
   const buttons = [
     ['btnWash', 'wash'],
@@ -1319,7 +1301,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     const adhesionForce = 22 + (state.wash ? 34 : 0) + (state.z ? 24 : 0) + (state.brim ? 26 : 0);
@@ -1331,13 +1313,13 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
       '底板抓地力：<strong>' + adhesionForce + ' N</strong> ｜ 上層冷卻拉扯應力：<strong>' + shrinkStress + ' N</strong>';
 
     if (currentCurl < 1.2) {
-      warpVerdict.textContent = '完美服貼：邊角平貼零翹曲';
+      setLabText(warpVerdict, '完美服貼：邊角平貼零翹曲');
       warpVerdict.style.color = '#34d399';
     } else if (currentCurl < 14) {
-      warpVerdict.textContent = '輕微邊角應力集中，建議加開 Brim 或清潔鋼板';
+      setLabText(warpVerdict, '輕微邊角應力集中，建議加開 Brim 或清潔鋼板');
       warpVerdict.style.color = '#fbbf24';
     } else {
-      warpVerdict.textContent = '警告：收縮力大於抓地力，邊角嚴重翹邊！';
+      setLabText(warpVerdict, '警告：收縮力大於抓地力，邊角嚴重翹邊！');
       warpVerdict.style.color = '#fb7185';
     }
 
@@ -1366,16 +1348,16 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
       if (w < 420) {
-        ctx.fillText('手指油膜殘留區（底板抓地力大幅下降）', w * 0.5, bedY + 34);
+        drawLabLabel(ctx, '手指油膜殘留區（底板抓地力大幅下降）', w * 0.5, bedY + 34);
       } else {
-        ctx.fillText('手指油膜殘留區 (低抓地力)', leftX + 72, bedY + 34);
-        ctx.fillText('手指油膜殘留區', leftX + plateW - 72, bedY + 34);
+        drawLabLabel(ctx, '手指油膜殘留區 (低抓地力)', leftX + 72, bedY + 34);
+        drawLabLabel(ctx, '手指油膜殘留區', leftX + plateW - 72, bedY + 34);
       }
     } else {
       ctx.fillStyle = '#34d399';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('PEI 微米粗糙顆粒已徹底脫脂潔淨', w * 0.5, bedY + 34);
+      drawLabLabel(ctx, 'PEI 微米粗糙顆粒已徹底脫脂潔淨', w * 0.5, bedY + 34);
     }
 
     // Printed multi-layer model warping at left & right edges
@@ -1425,7 +1407,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
       ctx.fillStyle = '#7dd3fc';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('強風急速冷卻收縮', w * 0.5, 16);
+      drawLabLabel(ctx, '強風急速冷卻收縮', w * 0.5, 16);
     }
 
     // Force vectors on left corner
@@ -1448,7 +1430,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     ctx.fill();
     ctx.font = 'bold 10px sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('收縮拉力 ' + shrinkStress + 'N', Math.max(10, cornerX - 24), Math.max(30, cornerY - 16 - upLen));
+    drawLabLabel(ctx, '收縮拉力 ' + shrinkStress + 'N', Math.max(10, cornerX - 24), Math.max(30, cornerY - 16 - upLen));
 
     // Adhesion downward arrow on right corner
     const rCornerX = mRight - 10;
@@ -1467,21 +1449,12 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     ctx.closePath();
     ctx.fill();
     ctx.textAlign = 'right';
-    ctx.fillText('抓地力 ' + adhesionForce + 'N', Math.min(w - 10, rCornerX + 24), Math.max(30, rCornerY - 26 - downLen));
+    drawLabLabel(ctx, '抓地力 ' + adhesionForce + 'N', Math.min(w - 10, rCornerX + 24), Math.max(30, rCornerY - 26 - downLen));
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -1576,6 +1549,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     .grid { flex: none; grid-template-columns: 1fr; gap: 10px; }
     .card { min-height: 188px; padding: 9px 10px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -1619,6 +1593,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const gramSlider = document.getElementById('gramSlider');
   const gramVal = document.getElementById('gramVal');
   const cBrass = document.getElementById('cBrass');
@@ -1655,7 +1630,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
   gramSlider.addEventListener('input', (e) => {
     grams = Number(e.target.value);
-    gramVal.textContent = grams + ' g';
+    setLabText(gramVal, grams + ' g');
   });
 
   function drawNozzleCutaway(canvas, isSteel, now) {
@@ -1767,32 +1742,23 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     const brassAreaErr = Math.round((Math.pow(brassMm / 0.4, 2) - 1) * 100);
     const steelAreaErr = Math.round((Math.pow(steelMm / 0.4, 2) - 1) * 100);
 
-    brassDia.textContent = '實測孔徑：' + brassMm.toFixed(2) + ' mm';
+    setLabText(brassDia, '實測孔徑：' + brassMm.toFixed(2) + ' mm');
     brassDia.style.color = brassMm > 0.46 ? '#fb7185' : '#fbbf24';
-    brassFlow.textContent = '溢料誤差：+' + brassAreaErr + '%';
-    brassStatus.textContent = brassMm > 0.5 ? '狀態：嚴重擴孔失真・層紋崩壞' : brassMm > 0.43 ? '狀態：孔壁出現顯著磨耗' : '狀態：尚未嚴重磨損';
+    setLabText(brassFlow, '溢料誤差：+' + brassAreaErr + '%');
+    setLabText(brassStatus, brassMm > 0.5 ? '狀態：嚴重擴孔失真・層紋崩壞' : brassMm > 0.43 ? '狀態：孔壁出現顯著磨耗' : '狀態：尚未嚴重磨損');
 
-    steelDia.textContent = '實測孔徑：' + steelMm.toFixed(2) + ' mm';
-    steelFlow.textContent = '溢料誤差：+' + steelAreaErr + '%';
+    setLabText(steelDia, '實測孔徑：' + steelMm.toFixed(2) + ' mm');
+    setLabText(steelFlow, '溢料誤差：+' + steelAreaErr + '%');
 
     drawNozzleCutaway(cBrass, false, now);
     drawNozzleSimCall(now);
-    requestAnimationFrame(loop);
+    scheduleLabFrame(loop);
   }
   function drawNozzleSimCall(now) {
     drawNozzleCutaway(cSteel, true, now);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(loop);
+
+  scheduleLabFrame(loop);
 })();
 </script>
 </body>
@@ -1889,6 +1855,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     .opt-btn { width: 100%; text-align: center; }
     .stage { flex: none; height: 240px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -1917,6 +1884,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const canvas = document.getElementById('amsCanvas');
   const slotBtns = document.querySelectorAll('.slot-btn');
   const optBtn = document.getElementById('optBtn');
@@ -1938,14 +1906,14 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
       prevSlot = activeSlot;
       activeSlot = next;
       slotBtns.forEach((b) => b.classList.toggle('active', Number(b.dataset.slot) === activeSlot));
-      switchTime = performance.now();
+      switchTime = labNow();
     });
   });
 
   optBtn.addEventListener('click', () => {
     optimized = !optimized;
     optBtn.classList.toggle('on', optimized);
-    optBtn.textContent = optimized ? '沖刷減量 (0.6x + 填入填充)' : '原廠預設沖刷 (1.0x)';
+    setLabText(optBtn, optimized ? '沖刷減量 (0.6x + 填入填充)' : '原廠預設沖刷 (1.0x)');
     updateWasteText();
   });
 
@@ -1977,7 +1945,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     let stageProgress = 1;
@@ -2078,7 +2046,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
       ctx.fillStyle = isCur ? '#38bdf8' : '#94a3b8';
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('A' + (i + 1), sx, amsY + 18);
+      drawLabLabel(ctx, 'A' + (i + 1), sx, amsY + 18);
     }
 
     // 5-way Filament Hub
@@ -2092,7 +2060,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     ctx.fillStyle = '#cbd5e1';
     ctx.font = 'bold 9px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('五通閥', hubX, hubY + 30);
+    drawLabLabel(ctx, '五通閥', hubX, hubY + 30);
 
     // Main PTFE line from Hub to Toolhead
     ctx.beginPath();
@@ -2148,7 +2116,7 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
     ctx.strokeRect(headX - partW / 2, partY, partW, 22);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '9px sans-serif';
-    ctx.fillText(optimized ? (isNarrow ? '填入填充' : '廢料匯入內部填充') : (isNarrow ? '排泄廢料' : '外部排泄廢料塊'), headX, partY + 14);
+    drawLabLabel(ctx, optimized ? (isNarrow ? '填入填充' : '廢料匯入內部填充') : (isNarrow ? '排泄廢料' : '外部排泄廢料塊'), headX, partY + 14);
 
     purgeDrops = purgeDrops.filter((d) => d.y < partY);
     purgeDrops.forEach((d) => {
@@ -2159,19 +2127,10 @@ export const BLOG_ANIMATIONS_PART1: Record<number, BlogAnimationEntry> = {
       ctx.fill();
     });
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>

@@ -1,3 +1,4 @@
+import { labRuntime, labStyles } from './blogLabRuntime';
 import { BlogAnimationEntry } from './blogAnimationsPart1';
 
 export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
@@ -59,6 +60,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     .slider-wrap input { flex: 1; width: auto; min-width: 70px; }
     .stage { flex: none; height: 245px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -87,6 +89,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const canvas = document.getElementById('tpuCanvas');
   const driveBtn = document.getElementById('driveBtn');
   const shoreBtn = document.getElementById('shoreBtn');
@@ -101,17 +104,17 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
   driveBtn.addEventListener('click', () => {
     isDirect = !isDirect;
-    driveBtn.textContent = isDirect ? '近端 Direct Drive' : '遠端 Bowden 長管';
+    setLabText(driveBtn, isDirect ? '近端 Direct Drive' : '遠端 Bowden 長管');
     driveBtn.classList.toggle('active', isDirect);
   });
   shoreBtn.addEventListener('click', () => {
     is95A = !is95A;
-    shoreBtn.textContent = is95A ? '硬度：95A' : '硬度：83A (超軟)';
+    setLabText(shoreBtn, is95A ? '硬度：95A' : '硬度：83A (超軟)');
     limitLbl.innerHTML = '建議速度上限：<strong>' + (is95A ? '≤ 40 mm/s' : '≤ 22 mm/s') + '</strong>';
   });
   spdSlider.addEventListener('input', (e) => {
     speed = Number(e.target.value);
-    spdVal.textContent = speed + ' mm/s';
+    setLabText(spdVal, speed + ' mm/s');
   });
 
   function resize() {
@@ -151,7 +154,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     const safeMax = isDirect ? (is95A ? 42 : 24) : (is95A ? 18 : 10);
@@ -239,26 +242,17 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     ctx.font = isNarrow ? '10px sans-serif' : '11px sans-serif';
     ctx.textAlign = 'left';
     const noteX = cx + (isNarrow ? 60 : 68);
-    ctx.fillText(
+    drawLabLabel(ctx,
       isDirect ? (isNarrow ? '近端直驅（極短導料）' : '極短導料距離 (無側向空間)') : (isNarrow ? '遠端長管（易壓縮屈曲）' : '長距離鐵氟龍管 (內部彈簧壓縮效應)'),
       noteX,
       gearY + 10
     );
-    ctx.fillText(isNarrow ? '230°C 慢速熱端阻力區' : '噴嘴阻力區 (230°C 慢速熔融)', cx + 30, hotendY + 16);
+    drawLabLabel(ctx, isNarrow ? '230°C 慢速熱端阻力區' : '噴嘴阻力區 (230°C 慢速熔融)', cx + 30, hotendY + 16);
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -309,6 +303,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     .btn { flex: 1 1 135px; text-align: center; }
     .stage { flex: none; height: 245px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -332,6 +327,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const canvas = document.getElementById('encCanvas');
   const doorBtn = document.getElementById('doorBtn');
   const filterBtn = document.getElementById('filterBtn');
@@ -353,12 +349,12 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
   doorBtn.addEventListener('click', () => {
     isClosed = !isClosed;
-    doorBtn.textContent = isClosed ? '機箱門：已密閉保溫' : '機箱門：敞開漏風';
+    setLabText(doorBtn, isClosed ? '機箱門：已密閉保溫' : '機箱門：敞開漏風');
     doorBtn.className = 'btn ' + (isClosed ? 'on' : 'warn');
   });
   filterBtn.addEventListener('click', () => {
     filterOn = !filterOn;
-    filterBtn.textContent = filterOn ? 'HEPA + 活性碳循環：開啟' : 'HEPA + 活性碳循環：關閉';
+    setLabText(filterBtn, filterOn ? 'HEPA + 活性碳循環：開啟' : 'HEPA + 活性碳循環：關閉');
     filterBtn.className = 'btn ' + (filterOn ? 'on' : 'warn');
   });
 
@@ -378,7 +374,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     const targetTemp = isClosed ? 56 : 26;
@@ -434,7 +430,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
       ctx.fillStyle = '#93c5fd';
       ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('室溫冷風灌入 (24°C)', bx + 10, by + 26);
+      drawLabLabel(ctx, '室溫冷風灌入 (24°C)', bx + 10, by + 26);
     }
 
     // Heatbed 105°C
@@ -468,7 +464,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
       ctx.fillStyle = '#fb7185';
       ctx.font = 'bold 10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('熱收縮撕裂 (Delamination)', w / 2, py - 20);
+      drawLabLabel(ctx, '熱收縮撕裂 (Delamination)', w / 2, py - 20);
     }
 
     // Nozzle melting ABS & releasing VOC particles
@@ -493,9 +489,9 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     ctx.fillStyle = '#ecfdf5';
     ctx.font = 'bold 9px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('HEPA', fX + fW / 2, fY + 23);
-    ctx.fillText('活性碳', fX + fW / 2, fY + 39);
-    ctx.fillText(filterOn ? '運轉中' : '已關閉', fX + fW / 2, fY + 55);
+    drawLabLabel(ctx, 'HEPA', fX + fW / 2, fY + 23);
+    drawLabLabel(ctx, '活性碳', fX + fW / 2, fY + 39);
+    drawLabLabel(ctx, filterOn ? '運轉中' : '已關閉', fX + fW / 2, fY + 55);
 
     // VOC styrene particles motion
     particles.forEach((p) => {
@@ -525,19 +521,10 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
       ctx.fill();
     });
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -596,6 +583,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     .slider-box input { flex: 1; width: auto; min-width: 70px; }
     .stage { flex: none; height: 235px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -626,6 +614,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const MATS = {
     pla: { name: 'PLA / PLA+', recMin: 45, recMax: 50, tg: 56, hours: '4–6 小時', color: '#818cf8' },
     petg: { name: 'PETG / PETG-CF', recMin: 60, recMax: 65, tg: 78, hours: '6–8 小時', color: '#2dd4bf' },
@@ -650,13 +639,13 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
       const m = MATS[curKey];
       ovenTemp = Math.round((m.recMin + m.recMax) / 2);
       ovenSlider.value = String(ovenTemp);
-      ovenVal.textContent = ovenTemp + '°C';
+      setLabText(ovenVal, ovenTemp + '°C');
     });
   });
 
   ovenSlider.addEventListener('input', (e) => {
     ovenTemp = Number(e.target.value);
-    ovenVal.textContent = ovenTemp + '°C';
+    setLabText(ovenVal, ovenTemp + '°C');
   });
 
   const h2o = Array.from({ length: 28 }, (_, i) => ({
@@ -681,7 +670,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     const m = MATS[curKey];
@@ -768,34 +757,25 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     ctx.fillStyle = '#94a3b8';
     ctx.font = isNarrow ? 'bold 10px sans-serif' : 'bold 11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('艙內相對濕度', rx + rw / 2, ry + 26);
+    drawLabLabel(ctx, '艙內相對濕度', rx + rw / 2, ry + 26);
 
     ctx.fillStyle = pulseRH < 20 ? '#34d399' : '#fbbf24';
     ctx.font = isNarrow ? 'bold 20px monospace' : 'bold 26px monospace';
-    ctx.fillText(pulseRH + '%', rx + rw / 2, ry + 58);
+    drawLabLabel(ctx, pulseRH + '%', rx + rw / 2, ry + 58);
 
     ctx.fillStyle = '#cbd5e1';
     ctx.font = isNarrow ? '10px sans-serif' : '11px sans-serif';
-    ctx.fillText(overTg ? '線圈軟化變形中！' : (isNarrow ? '熱風脫水中' : '熱風循環脫水運作'), rx + rw / 2, ry + 86);
+    drawLabLabel(ctx, overTg ? '線圈軟化變形中！' : (isNarrow ? '熱風脫水中' : '熱風循環脫水運作'), rx + rw / 2, ry + 86);
 
     // Exhaust arrow at top of box
     ctx.fillStyle = '#38bdf8';
     ctx.font = 'bold 10px sans-serif';
-    ctx.fillText('▲ 水蒸氣頂部排氣口', sx, by + 18);
+    drawLabLabel(ctx, '▲ 水蒸氣頂部排氣口', sx, by + 18);
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -848,6 +828,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     .step-btn, .auto-btn { padding: 6px 4px; text-align: center; font-size: 10.5px; }
     .stage { flex: none; height: 235px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -875,6 +856,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const DESCS = [
     { txt: '噴孔內壁沉積焦黑碳化雜質，造成架橋堵塞與跳齒', temp: 205, color: '#fb7185' },
     { txt: '加熱至 250°C 推入純白尼龍/PLA 線材，熔融裹附所有碳化黑點', temp: 250, color: '#f97316' },
@@ -885,7 +867,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
   let step = 0;
   let autoPlay = true;
-  let stepStart = performance.now();
+  let stepStart = labNow();
   let pullOffset = 0;
 
   const canvas = document.getElementById('cpCanvas');
@@ -896,7 +878,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
   function setStep(idx) {
     step = idx;
-    stepStart = performance.now();
+    stepStart = labNow();
     stepBtns.forEach((b) => b.classList.toggle('active', Number(b.dataset.step) === step));
     stepDesc.innerHTML = '階段 ' + (step + 1) + '：<strong>' + DESCS[step].txt + '</strong>';
     tempReadout.innerHTML = '噴嘴溫度：<strong style="color:' + DESCS[step].color + '">' + DESCS[step].temp + '°C</strong>';
@@ -905,15 +887,15 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
   stepBtns.forEach((b) => {
     b.addEventListener('click', () => {
       autoPlay = false;
-      autoBtn.textContent = '啟動自動演示';
+      setLabText(autoBtn, '啟動自動演示');
       setStep(Number(b.dataset.step));
     });
   });
 
   autoBtn.addEventListener('click', () => {
     autoPlay = !autoPlay;
-    autoBtn.textContent = autoPlay ? '自動循環演示' : '啟動自動演示';
-    stepStart = performance.now();
+    setLabText(autoBtn, autoPlay ? '自動循環演示' : '啟動自動演示');
+    stepStart = labNow();
   });
 
   setStep(0);
@@ -938,7 +920,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
 
     if (autoPlay && now - stepStart > 2200) {
       setStep((step + 1) % 5);
@@ -1050,7 +1032,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
       ctx.fill();
       ctx.font = 'bold 10.5px sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('垂直猛力拔出', cx + 60, 44);
+      drawLabLabel(ctx, '垂直猛力拔出', cx + 60, 44);
     }
 
     // Right side thermal & inspection info box
@@ -1066,27 +1048,18 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     ctx.fillStyle = DESCS[step].color;
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('NOZZLE: ' + DESCS[step].temp + '°C', infoX + 10, infoY + 24);
+    drawLabLabel(ctx, 'NOZZLE: ' + DESCS[step].temp + '°C', infoX + 10, infoY + 24);
     ctx.fillStyle = '#cbd5e1';
     ctx.font = isNarrow ? '10.5px sans-serif' : '11px sans-serif';
-    ctx.fillText(step === 3 || step === 4 ? '尖端呈完整倒模錐形' : step === 2 ? '半固態強韌咬合階段' : step === 1 ? '熱熔裹附碳化微粒' : '0.4mm 噴孔異物堵塞', infoX + 10, infoY + 46);
+    drawLabLabel(ctx, step === 3 || step === 4 ? '尖端呈完整倒模錐形' : step === 2 ? '半固態強韌咬合階段' : step === 1 ? '熱熔裹附碳化微粒' : '0.4mm 噴孔異物堵塞', infoX + 10, infoY + 46);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '10px sans-serif';
-    ctx.fillText(isNarrow ? '材料：純白 PLA/尼龍' : '建議使用：純白 PLA 或尼龍清洗料', infoX + 10, infoY + 66);
+    drawLabLabel(ctx, isNarrow ? '材料：純白 PLA/尼龍' : '建議使用：純白 PLA 或尼龍清洗料', infoX + 10, infoY + 66);
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -1135,6 +1108,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     .btn { flex: 1 1 100%; text-align: left; }
     .stage { flex: none; height: 235px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -1159,6 +1133,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const fix = { oldham: false, pid: false, tol: false };
   const map = [['oldhamBtn', 'oldham'], ['pidBtn', 'pid'], ['tolBtn', 'tol']];
   map.forEach(([id, key]) => {
@@ -1189,7 +1164,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     const screwAmp = fix.oldham ? 0.4 : 7.5;
@@ -1231,7 +1206,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     ctx.fillStyle = '#94a3b8';
     ctx.font = isNarrow ? '10px sans-serif' : '11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(fix.oldham ? (isNarrow ? 'Oldham 吸收偏擺' : 'Oldham 聯軸器吸收偏擺') : (isNarrow ? '螺桿偏擺中' : 'T8 螺桿旋轉偏擺中'), screwX, h - 8);
+    drawLabLabel(ctx, fix.oldham ? (isNarrow ? 'Oldham 吸收偏擺' : 'Oldham 聯軸器吸收偏擺') : (isNarrow ? '螺桿偏擺中' : 'T8 螺桿旋轉偏擺中'), screwX, h - 8);
 
     // Center: Printed Tower Side Profile with Layer-by-Layer Lighting & Displacement
     const towerX = isNarrow ? w * 0.45 : w * 0.56;
@@ -1271,7 +1246,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     ctx.fillStyle = '#94a3b8';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(isNarrow ? '熱床 PID 曲線' : '熱床溫度 PID 穩定曲線', gx + gw / 2, gy + 16);
+    drawLabLabel(ctx, isNarrow ? '熱床 PID 曲線' : '熱床溫度 PID 穩定曲線', gx + gw / 2, gy + 16);
 
     ctx.beginPath();
     const pidSwing = fix.pid ? 2 : 18;
@@ -1287,21 +1262,12 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
     ctx.fillStyle = fix.pid ? '#34d399' : '#fb7185';
     ctx.font = 'bold 10px monospace';
-    ctx.fillText(fix.pid ? '60.0°C (±0.2°C)' : '60.0°C (±4.0°C)', gx + gw / 2, gy + gh - 8);
+    drawLabLabel(ctx, fix.pid ? '60.0°C (±0.2°C)' : '60.0°C (±4.0°C)', gx + gw / 2, gy + gh - 8);
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>
@@ -1354,6 +1320,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     .sbox input { flex: 1; width: auto; min-width: 70px; }
     .stage { flex: none; height: 235px; }
   }
+${labStyles}
 </style>
 </head>
 <body>
@@ -1385,6 +1352,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
 <script>
 (() => {
+${labRuntime}
   const zSlider = document.getElementById('zSlider');
   const fSlider = document.getElementById('fSlider');
   const zVal = document.getElementById('zVal');
@@ -1398,11 +1366,11 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
 
   zSlider.addEventListener('input', (e) => {
     zOff = Number(e.target.value);
-    zVal.textContent = (zOff > 0 ? '+' : '') + zOff.toFixed(2) + ' mm';
+    setLabText(zVal, (zOff > 0 ? '+' : '') + zOff.toFixed(2) + ' mm');
   });
   fSlider.addEventListener('input', (e) => {
     flow = Number(e.target.value);
-    fVal.textContent = Math.round(flow * 100) + '%';
+    setLabText(fVal, Math.round(flow * 100) + '%');
   });
 
   function resize() {
@@ -1421,7 +1389,7 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     const ctx = canvas.getContext('2d');
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    if (!w || !h) { requestAnimationFrame(frame); return; }
+    if (!w || !h) { scheduleLabFrame(frame); return; }
     ctx.clearRect(0, 0, w, h);
 
     // Update evaluation labels
@@ -1496,21 +1464,12 @@ export const BLOG_ANIMATIONS_PART2: Record<number, BlogAnimationEntry> = {
     ctx.fillStyle = '#e2e8f0';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('剖面顯微放大檢視 (間距 0.45mm)', w * 0.5, bedY + 32);
+    drawLabLabel(ctx, '剖面顯微放大檢視 (間距 0.45mm)', w * 0.5, bedY + 32);
 
-    requestAnimationFrame(frame);
+    scheduleLabFrame(frame);
   }
-  if (window.self !== window.top) document.documentElement.classList.add('embedded');
-  const reportHeight = () => {
-    try {
-      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-      window.parent.postMessage({ type: 'goddog-sim-height', height: h }, '*');
-    } catch {}
-  };
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(reportHeight).observe(document.body);
-  window.addEventListener('load', reportHeight);
-  setTimeout(reportHeight, 80);
-  requestAnimationFrame(frame);
+
+  scheduleLabFrame(frame);
 })();
 </script>
 </body>

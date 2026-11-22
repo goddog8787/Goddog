@@ -1977,8 +1977,8 @@ export default function App() {
 
             {/* Daylight Flagship Storefront Cover */}
             <section className="rounded-2xl sm:rounded-3xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs">
-              <div className="px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-9 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5 lg:gap-8">
-                <div className="space-y-3 sm:space-y-3.5 max-w-2xl">
+              <div className="grid md:grid-cols-[1.25fr_1fr] items-stretch">
+                <div className="p-5 sm:p-7 lg:p-9 space-y-3 self-center min-w-0">
                   <div className="text-[11px] sm:text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400">
                     {lang === 'en'
                       ? 'Taiwan Local Stock · Same-Day Dispatch'
@@ -2002,14 +2002,13 @@ export default function App() {
                       ? 'GodDog・Bambu Lab・eSUN・Polymaker 正規在庫。±0.02mm レーザー管理と防湿密封袋包装でお届け。'
                       : '嚴選神狗勾、Bambu Lab 拓竹、eSUN 與 Polymaker 原廠正品。全線通過 ±0.02mm 雙軸測徑檢驗，採用密封袋防潮包裝當日寄出。'}
                   </p>
-                </div>
 
                 {/* Crisp Dual CTAs */}
-                <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 pt-1 lg:pt-0">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <button
                     id="hero-scroll-catalog-btn"
                     onClick={() => {
-                      const el = document.getElementById('storefront-product-grid');
+                      const el = document.getElementById('storefront-catalog-heading');
                       el?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
                     }}
                     className="btn-tactile-primary group flex-1 sm:flex-initial justify-center px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer whitespace-nowrap shadow-xs"
@@ -2033,6 +2032,8 @@ export default function App() {
                     <span>{lang === 'en' ? 'Match Printer' : lang === 'ja' ? '機種別選材' : '依機型選材'}</span>
                   </button>
                 </div>
+                </div>
+                <img src="/images/filament-studio.webp" width={840} height={469} alt="" fetchPriority="high" className="w-full h-28 sm:h-40 md:h-full md:min-h-48 object-cover object-center" />
               </div>
 
                   {/* Unified Bottom Spec & Guarantee Strip (Consolidated, responsive spacing so mobile never truncates) */}
@@ -2150,7 +2151,7 @@ export default function App() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[12.5px] sm:text-[13.5px] font-bold tracking-tight text-slate-900 dark:text-slate-100 truncate">
+                        <span className="text-[12.5px] sm:text-[13.5px] font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-snug">
                           {tool.title}
                         </span>
                         {tool.badgeCount > 0 && (
@@ -2159,7 +2160,7 @@ export default function App() {
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
                         {tool.subtitle}
                       </div>
                     </div>
@@ -2172,6 +2173,9 @@ export default function App() {
 
             {/* Unified Storefront Search & Material Filter Console */}
             <div className="relative bg-white dark:bg-slate-900/95 rounded-2xl border border-slate-200/85 dark:border-slate-800 shadow-[0_6px_24px_-12px_rgba(15,23,42,0.08)] dark:shadow-none">
+              <h2 id="storefront-catalog-heading" className="scroll-mt-24 lg:scroll-mt-36 px-3.5 sm:px-5 pt-4 text-lg font-bold tracking-tight text-slate-900 dark:text-white">
+                {lang === 'en' ? 'Shop filaments & accessories' : lang === 'ja' ? 'フィラメント・周辺機器' : '選購線材與配件'}
+              </h2>
               {/* Upper Toolbar: Search Bar + Quiet Count & Integrated Sort */}
               <div className="p-3.5 sm:px-5 sm:pt-4 sm:pb-3.5 flex flex-col md:flex-row md:items-center justify-between gap-2.5 md:gap-4">
                 <div className="flex-1 md:max-w-xl">
