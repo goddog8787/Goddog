@@ -43,6 +43,7 @@ interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cartItems: CartItem[];
+  hasUnavailableItems?: boolean;
   currency: CurrencyCode;
   lang: LanguageCode;
   member: MemberProfile;
@@ -57,6 +58,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
   onClose,
   cartItems,
+  hasUnavailableItems = false,
   currency,
   lang,
   member,
@@ -404,6 +406,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Launch real NewebPay gateway form submit (signed strictly by backend server)
   const triggerNewebPayCheckout = async (methodToUse: PaymentGateway = paymentGateway) => {
+    if (hasUnavailableItems) {
+      setFormError('商品庫存或規格已變更，請返回購物車確認後再試。');
+      return;
+    }
     setIsProcessing(true);
     try {
       const generatedOrderId = newCheckoutOrderId();

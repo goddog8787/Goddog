@@ -1,3 +1,4 @@
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import { getDocs, getDoc, setDoc, query, collection, where, orderBy, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import {
   loadCustomerUserData,
@@ -234,7 +235,7 @@ export const OrderModal: React.FC<{
   const [selectedLogisticsOrder, setSelectedLogisticsOrder] = useState<any | null>(null);
   const [isConfirmingId, setIsConfirmingId] = useState<string | null>(null);
   const [isPayingId, setIsPayingId] = useState<string | null>(null);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const { copy, copiedKey: copiedText, failedKey, errorText } = useClipboardFeedback();
   const [toastMsg, setToastMsg] = useState<string>('');
   const [reviewingOrder, setReviewingOrder] = useState<any | null>(null);
   const [reviewRating, setReviewRating] = useState<number>(5);
@@ -248,11 +249,7 @@ export const OrderModal: React.FC<{
     setTimeout(() => setToastMsg(''), 3200);
   };
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedText(text);
-    setTimeout(() => setCopiedText(null), 2000);
-  };
+  const handleCopy = (text: string) => { void copy(text); };
 
   useEffect(() => {
     if (isOpen) {
@@ -680,7 +677,7 @@ export const OrderModal: React.FC<{
                     className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 transition-colors cursor-pointer shrink-0"
                     title="複製訂單編號"
                   >
-                    {copiedText === order.id ? (
+                    {failedKey === order.id ? <span role="status">{errorText}</span> : copiedText === order.id ? (
                       <span className="text-[10px] text-emerald-600 font-bold">已複製</span>
                     ) : (
                       <Copy className="w-3 h-3" />
@@ -722,7 +719,7 @@ export const OrderModal: React.FC<{
                         className="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-700 transition-colors cursor-pointer shrink-0"
                         title="複製物流單號"
                       >
-                        {copiedText === order.raw.trackingNumber ? (
+                        {failedKey === order.raw.trackingNumber ? <span role="status">{errorText}</span> : copiedText === order.raw.trackingNumber ? (
                           <span className="text-[10px] text-emerald-600 font-bold">已複製</span>
                         ) : (
                           <Copy className="w-3 h-3" />
@@ -2067,16 +2064,14 @@ export const CouponModal: React.FC<{ isOpen: boolean; onClose: () => void; membe
   const [code, setCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const { copy, copiedKey: copiedCode, failedKey, errorText } = useClipboardFeedback();
 
   const coupons = Array.isArray(member?.coupons) ? member.coupons : [];
   const isVip = isMemberVipActive(member);
 
   const handleCopyCode = (cCode: string) => {
     if (!cCode) return;
-    navigator.clipboard?.writeText(cCode).catch(() => {});
-    setCopiedCode(cCode);
-    setTimeout(() => setCopiedCode(null), 2000);
+    void copy(cCode);
   };
 
   const handleRedeem = () => {
@@ -2201,7 +2196,7 @@ export const CouponModal: React.FC<{ isOpen: boolean; onClose: () => void; membe
                       title="複製優惠碼於結帳套用"
                     >
                       <span>{codeLabel}</span>
-                      {copiedCode === codeLabel ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      {failedKey === codeLabel ? <span role="status">{errorText}</span> : copiedCode === codeLabel ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                     </button>
                   )}
                 </div>

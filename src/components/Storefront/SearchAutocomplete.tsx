@@ -149,6 +149,8 @@ const TRENDING_SEARCH_TAGS = [
   { label: '8K 光固化樹脂', query: 'Resin', icon: '💎' },
 ];
 
+const FALLBACK_SEARCH_TAGS = ['High-Speed PLA', 'Carbon Fiber', 'PETG', 'TPU', 'Bambu', '神狗勾'];
+
 export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   searchQuery,
   setSearchQuery,
@@ -162,7 +164,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   size = 'md'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -170,6 +172,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setActiveKey(null);
         setIsOpen(false);
       }
     };
@@ -181,7 +184,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   useEffect(() => {
     if (id !== 'storefront-product-search') return;
     const handleGlobalShortcut = (e: KeyboardEvent) => {
-      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.defaultPrevented || e.isComposing || e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
       const active = document.activeElement as HTMLElement | null;
       const tag = active?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || active?.isContentEditable) return;
@@ -274,82 +277,86 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       .slice(0, 6);
   }, [trimmedQuery, products]);
 
-  // Combine suggestions for keyboard navigation
-  const allSuggestions = useMemo(() => {
-    const list: Array<{
-      type: 'material' | 'brand' | 'product' | 'tag';
-      key: string;
-      item: any;
-    }> = [];
-
-    matchedMaterials.forEach((m) => list.push({ type: 'material', key: `mat-${m.key}`, item: m }));
-    matchedBrands.forEach((b) => list.push({ type: 'brand', key: `brand-${b.name}`, item: b }));
-    matchedProducts.forEach((entry) =>
-      list.push({ type: 'product', key: `prod-${entry.product.id}`, item: entry.product })
-    );
-
-    return list;
-  }, [matchedMaterials, matchedBrands, matchedProducts]);
-
-  // Reset selected index when query changes
-  useEffect(() => {
-    setSelectedIndex(-1);
-  }, [trimmedQuery]);
+  const dropdownId = `${id}-autocomplete-dropdown`;
+  const finishSelection = () => {
+    setActiveKey(null);
+    setIsOpen(false);
+  };
 
   const handleSelectMaterial = (mat: MaterialMeta) => {
     setSearchQuery(mat.key);
     onSelectMaterial?.(mat.key);
-    setIsOpen(false);
-    inputRef.current?.blur();
+    finishSelection();
   };
 
   const handleSelectBrand = (brand: BrandMeta) => {
     setSearchQuery(brand.name);
-    setIsOpen(false);
-    inputRef.current?.blur();
+    finishSelection();
   };
 
   const handleSelectProduct = (prod: FilamentProduct) => {
     setSearchQuery(prod.name);
     onSelectProduct?.(prod);
-    setIsOpen(false);
-    inputRef.current?.blur();
+    finishSelection();
   };
 
   const handleSelectTag = (query: string) => {
     setSearchQuery(query);
-    setIsOpen(false);
-    inputRef.current?.blur();
+    finishSelection();
+  };
+
+  const hasMatches = matchedMaterials.length > 0 || matchedBrands.length > 0 || matchedProducts.length > 0;
+  const suggestions = !trimmedQuery ? [
+    ...TRENDING_SEARCH_TAGS.map(tag => ({ key: `tag-${tag.query}`, select: () => handleSelectTag(tag.query) })),
+    ...MATERIAL_METAS.slice(0, 6).map(mat => ({ key: `popular-${mat.key}`, select: () => handleSelectMaterial(mat) })),
+  ] : hasMatches ? [
+    ...matchedMaterials.map(mat => ({ key: `mat-${mat.key}`, select: () => handleSelectMaterial(mat) })),
+    ...matchedBrands.map(brand => ({ key: `brand-${brand.name}`, select: () => handleSelectBrand(brand) })),
+    ...matchedProducts.map(({ product }) => ({ key: `prod-${product.id}`, select: () => handleSelectProduct(product) })),
+    { key: 'all', select: finishSelection },
+  ] : FALLBACK_SEARCH_TAGS.map(query => ({ key: `fallback-${query}`, select: () => handleSelectTag(query) }));
+  const selectedIndex = suggestions.findIndex(option => option.key === activeKey);
+  const activeId = isOpen && selectedIndex >= 0 ? `${dropdownId}-option-${selectedIndex}` : undefined;
+
+  useEffect(() => {
+    if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
+  }, [activeId]);
+
+  const optionProps = (key: string) => {
+    const index = suggestions.findIndex(option => option.key === key);
+    return {
+      id: `${dropdownId}-option-${index}`,
+      role: 'option',
+      tabIndex: -1,
+      'aria-selected': index === selectedIndex,
+      onMouseDown: (event: React.MouseEvent) => event.preventDefault(),
+    };
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!isOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter') {
-        setIsOpen(true);
-      }
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape' && isOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishSelection();
       return;
     }
-
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev < allSuggestions.length - 1 ? prev + 1 : 0));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : allSuggestions.length - 1));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (selectedIndex >= 0 && selectedIndex < allSuggestions.length) {
-        const item = allSuggestions[selectedIndex];
-        if (item.type === 'material') handleSelectMaterial(item.item);
-        else if (item.type === 'brand') handleSelectBrand(item.item);
-        else if (item.type === 'product') handleSelectProduct(item.item);
-      } else {
-        // Just submit current query
-        setIsOpen(false);
-        inputRef.current?.blur();
+      if (!isOpen) {
+        setIsOpen(true);
+        return;
       }
-    } else if (e.key === 'Escape') {
-      setIsOpen(false);
+      const last = suggestions.length - 1;
+      const nextIndex = e.key === 'ArrowDown'
+        ? (selectedIndex === last ? 0 : selectedIndex + 1)
+        : (selectedIndex <= 0 ? last : selectedIndex - 1);
+      setActiveKey(suggestions[nextIndex]?.key ?? null);
+    } else if (e.key === 'Enter' && isOpen) {
+      e.preventDefault();
+      const selected = suggestions[selectedIndex];
+      if (selected) selected.select();
+      else finishSelection();
     }
   };
 
@@ -392,7 +399,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
     );
   };
 
-  const hasMatches = matchedMaterials.length > 0 || matchedBrands.length > 0 || matchedProducts.length > 0;
+
 
   return (
     <div ref={containerRef} className={`relative w-full ${className}`}>
@@ -406,13 +413,22 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           ref={inputRef}
           id={id}
           type="text"
+          role="combobox"
+          aria-label={placeholder}
+          aria-expanded={isOpen}
+          aria-autocomplete="list"
+          aria-controls={isOpen ? dropdownId : undefined}
+          aria-activedescendant={activeId}
+          autoComplete="off"
           value={searchQuery}
           autoFocus={autoFocus}
           onChange={(e) => {
+            setActiveKey(null);
             setSearchQuery(e.target.value);
             if (!isOpen) setIsOpen(true);
           }}
           onFocus={() => setIsOpen(true)}
+          onBlur={finishSelection}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={`w-full bg-slate-100/75 dark:bg-slate-800/75 hover:bg-slate-100 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-200/80 dark:border-slate-700/80 focus:border-slate-900 dark:focus:border-indigo-400 rounded-xl focus:outline-hidden focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/15 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 text-ellipsis ${
@@ -425,10 +441,13 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
             type="button"
             onClick={() => {
               setSearchQuery('');
+              setActiveKey(null);
               inputRef.current?.focus();
+              setIsOpen(true);
             }}
             className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-700 transition-colors cursor-pointer"
             title="清除搜尋內容"
+            aria-label="清除搜尋內容"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -445,8 +464,10 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       {/* Autocomplete Suggestions Dropdown Panel */}
       {isOpen && (
         <div 
-          id={`${id}-autocomplete-dropdown`}
-          className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 z-50 overflow-hidden animate-in fade-in zoom-in-98 duration-150 max-h-[75vh] sm:max-h-[480px] overflow-y-auto"
+          id={dropdownId}
+          role="listbox"
+          aria-label={placeholder}
+          className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 z-50 overflow-hidden animate-in fade-in zoom-in-98 duration-150 max-h-[75vh] sm:max-h-[480px] overflow-y-auto [&_[aria-selected=true]]:outline-2 [&_[aria-selected=true]]:outline-offset-[-2px] [&_[aria-selected=true]]:outline-indigo-500"
         >
           {/* STATE 1: Empty Query - Show Hot Trending Searches */}
           {!trimmedQuery && (
@@ -461,6 +482,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   {TRENDING_SEARCH_TAGS.map((tag) => (
                     <button
                       key={tag.label}
+                      {...optionProps(`tag-${tag.query}`)}
                       type="button"
                       onClick={() => handleSelectTag(tag.query)}
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-100/80 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-700 dark:hover:text-indigo-300 border border-slate-200/70 dark:border-slate-700/70 hover:border-indigo-200 dark:hover:border-indigo-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors cursor-pointer group"
@@ -485,6 +507,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                     return (
                       <button
                         key={mat.key}
+                        {...optionProps(`popular-${mat.key}`)}
                         type="button"
                         onClick={() => handleSelectMaterial(mat)}
                         className="flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 text-left border border-transparent hover:border-slate-200/80 dark:hover:border-slate-700 transition-colors cursor-pointer group"
@@ -520,11 +543,12 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   </div>
                   <div className="mt-1 space-y-1">
                     {matchedMaterials.map((mat) => {
-                      const globalIdx = allSuggestions.findIndex((s) => s.key === `mat-${mat.key}`);
+                      const globalIdx = suggestions.findIndex((s) => s.key === `mat-${mat.key}`);
                       const isSelected = globalIdx === selectedIndex;
                       return (
                         <button
                           key={mat.key}
+                          {...optionProps(`mat-${mat.key}`)}
                           type="button"
                           onClick={() => handleSelectMaterial(mat)}
                           className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition-colors cursor-pointer ${
@@ -570,11 +594,12 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   </div>
                   <div className="mt-1 space-y-1">
                     {matchedBrands.map((b) => {
-                      const globalIdx = allSuggestions.findIndex((s) => s.key === `brand-${b.name}`);
+                      const globalIdx = suggestions.findIndex((s) => s.key === `brand-${b.name}`);
                       const isSelected = globalIdx === selectedIndex;
                       return (
                         <button
                           key={b.name}
+                          {...optionProps(`brand-${b.name}`)}
                           type="button"
                           onClick={() => handleSelectBrand(b)}
                           className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between gap-2 transition-colors cursor-pointer ${
@@ -620,13 +645,14 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                   </div>
                   <div className="mt-1 space-y-1">
                     {matchedProducts.map(({ product: p, matchedFeatures }) => {
-                      const globalIdx = allSuggestions.findIndex((s) => s.key === `prod-${p.id}`);
+                      const globalIdx = suggestions.findIndex((s) => s.key === `prod-${p.id}`);
                       const isSelected = globalIdx === selectedIndex;
                       const primaryFeature =
                         matchedFeatures[0] || (Array.isArray(p.features) && p.features[0]) || '';
                       return (
                         <button
                           key={p.id}
+                          {...optionProps(`prod-${p.id}`)}
                           type="button"
                           onClick={() => handleSelectProduct(p)}
                           className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition-colors cursor-pointer ${
@@ -685,10 +711,8 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
               <div className="p-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsOpen(false);
-                    inputRef.current?.blur();
-                  }}
+                  {...optionProps('all')}
+                  onClick={finishSelection}
                   className="w-full py-2 px-3 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between transition-colors cursor-pointer"
                 >
                   <span className="flex items-center gap-1.5 min-w-0">
@@ -716,9 +740,10 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 </p>
               </div>
               <div className="flex flex-wrap justify-center gap-1.5 pt-1">
-                {['High-Speed PLA', 'Carbon Fiber', 'PETG', 'TPU', 'Bambu', '神狗勾'].map((kw) => (
+                {FALLBACK_SEARCH_TAGS.map((kw) => (
                   <button
                     key={kw}
+                    {...optionProps(`fallback-${kw}`)}
                     type="button"
                     onClick={() => handleSelectTag(kw)}
                     className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 hover:text-indigo-600 dark:hover:text-indigo-300 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"

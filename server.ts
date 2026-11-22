@@ -4523,8 +4523,7 @@ app.get('/api/logistics/track/:trackingNumber', (req, res) => {
     paymentStatus: 'paid',
     isVerifiedByNewebPay: true,
     orderStatus: matchedOrder.orderStatus || 'picking',
-    storeOrAddress: matchedOrder.storeOrAddress || (req.query.store as string) || undefined,
-    createdAt: matchedOrder.payTime || (req.query.createdAt as string) || undefined,
+    createdAt: matchedOrder.payTime,
     payTime: matchedOrder.payTime,
   });
 
@@ -4541,22 +4540,23 @@ app.get('/api/logistics/track/:trackingNumber', (req, res) => {
 const resendKey = process.env.RESEND_API_KEY;
 
 app.post('/api/contact', async (req, res) => {
+  const fields = req.body ?? {};
+  const name = typeof fields.name === 'string' ? fields.name.trim() : '';
+  const email = typeof fields.email === 'string' ? fields.email.trim() : '';
+  const message = typeof fields.message === 'string' ? fields.message.trim() : '';
+  if (!name || name.length > 100 || /[\r\n]/.test(name) ||
+      email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      !message || message.length > 5000) {
+    return res.status(400).json({ success: false, error: '請確認姓名、信箱與訊息內容後重試。' });
+  }
+
+  if (!resendKey) {
+    return res.status(503).json({ success: false, error: '表單寄信服務暫時無法使用，請直接透過本頁的客服信箱聯絡。' });
+  }
+
   try {
-    const { name, email, message } = req.body;
-    
-    if (!name || !email || !message) {
-      return res.status(400).json({ error: '請填寫完整資訊。' });
-    }
-
-    if (!resendKey) {
-      console.log('Contact message received:', { name, email, messageSnippet: message.slice(0, 50) });
-      return res.json({ success: true, message: '感謝您的來信，客服團隊已收到您的訊息！' });
-    }
-
     const { Resend } = await import('resend');
     const resend = new Resend(resendKey);
-
-    // 1. Send notification to the admin (you)
     const adminRes = await resend.emails.send({
       from: '神狗勾客服系統 <noreply@goddog.space>',
       to: 'babe0615@gmail.com',
@@ -4564,44 +4564,27 @@ app.post('/api/contact', async (req, res) => {
       subject: `【客服通知】來自 ${name} 的新訊息`,
       text: `姓名: ${name}\n信箱: ${email}\n\n訊息內容:\n${message}`,
     });
-    
-    if (adminRes.error) {
-       console.error("Resend Admin Error:", adminRes.error);
-       throw adminRes.error;
+    if (adminRes.error || !adminRes.data?.id) {
+      console.error('Contact notification rejected:', adminRes.error?.name);
+      return res.status(502).json({ success: false, error: '寄信失敗，請稍後再試或直接聯絡客服信箱。' });
     }
 
-    // 2. Send auto-reply to the customer
-    const userRes = await resend.emails.send({
-      from: '神狗勾客服團隊 <support@goddog.space>',
-      to: email,
-      subject: '【神狗勾耗材商城】已收到您的客服訊息',
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
-          <h2 style="color: #4f46e5;">感謝您的來信！</h2>
-          <p>親愛的 <strong>${name}</strong> 您好：</p>
-          <p>神狗勾客服團隊已成功收到您的訊息，我們會盡快在 24 小時內回覆您。</p>
-          <br/>
-          <p style="color: #666; font-size: 14px;">您的原始訊息內容如下：</p>
-          <blockquote style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; font-size: 14px; margin: 0;">
-            ${message.replace(/\n/g, '<br/>')}
-          </blockquote>
-          <br/>
-          <p>祝您列印順心！</p>
-          <p><strong>神狗勾耗材商城 敬上</strong></p>
-        </div>
-      `,
-    });
-    
-    if (userRes.error) {
-       console.error("Resend User Error:", userRes.error);
-       throw userRes.error;
+    try {
+      const userRes = await resend.emails.send({
+        from: '神狗勾客服團隊 <support@goddog.space>',
+        to: email,
+        subject: '【神狗勾耗材商城】已收到您的客服訊息',
+        text: `親愛的 ${name} 您好：\n\n客服團隊已收到您的訊息，我們會盡快回覆。\n\n您的原始訊息：\n${message}\n\n神狗勾耗材商城 敬上`,
+      });
+      if (userRes.error) console.error('Contact confirmation rejected:', userRes.error.name);
+    } catch {
+      console.error('Contact confirmation request failed');
     }
 
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Email send error:', error);
-    res.status(500).json({ error: '寄信失敗，請稍後再試。' });
+    return res.json({ success: true });
+  } catch {
+    console.error('Contact notification request failed');
+    return res.status(502).json({ success: false, error: '寄信失敗，請稍後再試或直接聯絡客服信箱。' });
   }
 });
 

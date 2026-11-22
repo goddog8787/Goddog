@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
+import React, { useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
@@ -66,6 +67,13 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ adSenseConfig, lang:
     return { part1: article.content, part2: '' };
   }, [article?.content]);
 
+  const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback(lang);
+  const copied = copiedKey === 'article';
+
+  const handleCopyLink = () => {
+    void copy(window.location.href, 'article');
+  };
+
   if (!article) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16 text-center">
@@ -126,13 +134,6 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ adSenseConfig, lang:
     }
   };
 
-  const [copied, setCopied] = useState(false);
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-  };
 
   return (
     <article className="max-w-4xl mx-auto px-4 py-8 sm:py-12 mt-2">
@@ -222,7 +223,7 @@ export const BlogPostPage: React.FC<BlogPostPageProps> = ({ adSenseConfig, lang:
             }`}
             title={lang === 'en' ? 'Share this article' : lang === 'ja' ? 'この記事を共有' : '分享這篇文章'}
           >
-            {copied ? (
+            {failedKey === 'article' ? <span role="status">{errorText}</span> : copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-500" />
                 <span>{lang === 'en' ? 'Link Copied!' : lang === 'ja' ? 'リンクをコピーしました！' : '已複製文章連結！'}</span>

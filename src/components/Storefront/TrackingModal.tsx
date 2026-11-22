@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { getStoreApiBase } from '../../lib/backendUrl';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, 
   Truck, 
@@ -66,39 +67,39 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [savedNumbers, setSavedNumbers] = useState<string[]>([]);
 
+  const activeRequest = useRef<AbortController | null>(null);
+  const savedHistory = useRef<Promise<string[]>>(Promise.resolve([]));
+  const currentSavedNumbers = useRef<string[]>([]);
+
   useEffect(() => {
+    setIsLoading(false);
     setInputCode(cleanDefaultCode);
     setTrackingData(null);
     setErrorMessage(null);
   }, [userId, cleanDefaultCode]);
 
-  // Load saved tracking numbers on open, purges any mock test numbers
   useEffect(() => {
-    if (isOpen) {
-      loadCustomerTrackingNumbers(userId).then((nums) => {
-        if (nums && nums.length > 0) {
-          const clean = nums.filter(n => 
-            n && 
-            n !== '77391829310' && 
-            !n.includes('77391829310') && 
-            !n.startsWith('TEST') && 
-            !n.startsWith('MOCK')
-          );
-          setSavedNumbers(clean);
-          if (clean.length !== nums.length) {
-            saveCustomerTrackingNumbers(userId, clean);
-          }
-        } else {
-          setSavedNumbers([]);
-        }
-      });
-    }
+    if (!isOpen) return;
+    let active = true;
+    currentSavedNumbers.current = [];
+    setSavedNumbers([]);
+    savedHistory.current = loadCustomerTrackingNumbers(userId).then(numbers => {
+      if (active) {
+        currentSavedNumbers.current = numbers;
+        setSavedNumbers(numbers);
+      }
+      return numbers;
+    });
+    return () => { active = false; };
   }, [isOpen, userId]);
 
   const fetchTracking = async (code: string, car: string) => {
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    setTrackingData(null);
     const trimmed = String(code || '').trim();
     if (!trimmed) {
-      setTrackingData(null);
+      setIsLoading(false);
       setErrorMessage(
         lang === 'en' 
           ? 'Please enter a package tracking number to search.' 
@@ -110,7 +111,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
     }
 
     if (trimmed === '77391829310' || trimmed.includes('77391829310') || trimmed.startsWith('TEST') || trimmed.startsWith('MOCK')) {
-      setTrackingData(null);
+      setIsLoading(false);
       setErrorMessage(
         lang === 'en'
           ? 'This tracking number was a demo test reference and has been invalidated. Please enter your genuine tracking number.'
@@ -121,6 +122,10 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
       return;
     }
 
+    const request = new AbortController();
+    activeRequest.current = request;
+    const timeout = setTimeout(() => request.abort(), 10000);
+    const apiBase = getStoreApiBase();
     setIsLoading(true);
     setErrorMessage(null);
 
@@ -133,8 +138,9 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
     try {
       let res: Response;
       if (matchedLocalOrder) {
-        res = await fetch('/api/logistics/track-order', {
+        res = await fetch(`${apiBase}/api/logistics/track-order`, {
           method: 'POST',
+          signal: request.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             trackingNumber: matchedLocalOrder.trackingNumber || '',
@@ -155,17 +161,20 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
           }),
         });
       } else {
-        res = await fetch(`/api/logistics/track/${encodeURIComponent(trimmed)}?carrier=${encodeURIComponent(car)}`);
+        res = await fetch(`${apiBase}/api/logistics/track/${encodeURIComponent(trimmed)}?carrier=${encodeURIComponent(car)}`, { signal: request.signal });
       }
       const data = await res.json();
-      if (res.ok && data.success) {
+      if (activeRequest.current !== request) return;
+      if (res.ok && data.success && data.tracking) {
         setTrackingData(data.tracking);
         const savedKey = matchedLocalOrder?.trackingNumber || trimmed;
-        if (savedKey && !savedNumbers.includes(savedKey)) {
-          const updated = [savedKey, ...savedNumbers].slice(0, 15);
+        void savedHistory.current.then(() => {
+          if (activeRequest.current !== request || !savedKey || currentSavedNumbers.current.includes(savedKey)) return;
+          const updated = [savedKey, ...currentSavedNumbers.current].slice(0, 15);
+          currentSavedNumbers.current = updated;
           setSavedNumbers(updated);
-          saveCustomerTrackingNumbers(userId, updated);
-        }
+          void saveCustomerTrackingNumbers(userId, updated);
+        });
       } else {
         setTrackingData(null);
         setErrorMessage(
@@ -178,8 +187,8 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
           )
         );
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      if (activeRequest.current !== request) return;
       setTrackingData(null);
       setErrorMessage(
         lang === 'en'
@@ -189,27 +198,26 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
           : '物流狀態伺服器連線中，請稍候重試或至物流官網查詢。'
       );
     } finally {
-      setIsLoading(false);
+      clearTimeout(timeout);
+      if (activeRequest.current === request) setIsLoading(false);
     }
   };
 
-  const handleRemoveSavedNumber = (codeToRemove: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = savedNumbers.filter((n) => n !== codeToRemove);
+  const handleRemoveSavedNumber = (codeToRemove: string) => {
+    const updated = currentSavedNumbers.current.filter(n => n !== codeToRemove);
+    currentSavedNumbers.current = updated;
     setSavedNumbers(updated);
     saveCustomerTrackingNumbers(userId, updated);
   };
 
   useEffect(() => {
-    if (isOpen) {
-      const targetCode = cleanDefaultCode || inputCode || '';
-      if (targetCode && targetCode !== '77391829310' && !targetCode.includes('77391829310')) {
-        fetchTracking(targetCode, carrier);
-      } else {
-        setTrackingData(null);
-      }
-    }
-  }, [isOpen, cleanDefaultCode]);
+    if (isOpen && cleanDefaultCode) void fetchTracking(cleanDefaultCode, carrier);
+    return () => {
+      const request = activeRequest.current;
+      activeRequest.current = null;
+      request?.abort();
+    };
+  }, [isOpen, userId, cleanDefaultCode]);
 
   // Close on Escape key
   useEffect(() => {
@@ -274,7 +282,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                   value={inputCode}
                   onChange={(e) => setInputCode(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
                       e.preventDefault();
                       fetchTracking(inputCode, carrier);
                     }
@@ -290,7 +298,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                   onChange={(e) => {
                     const val = e.target.value as any;
                     setCarrier(val);
-                    fetchTracking(inputCode, val);
+                    if (inputCode.trim()) void fetchTracking(inputCode, val);
                   }}
                   className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-medium cursor-pointer"
                 >
@@ -348,19 +356,21 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
                 {savedNumbers.map((num) => (
                   <div
                     key={num}
-                    onClick={() => {
-                      setInputCode(num);
-                      fetchTracking(num, carrier);
-                    }}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border font-mono text-xs cursor-pointer transition-colors ${
                       inputCode === num
                         ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
                         : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    <span>{num}</span>
+                    <button type="button" onClick={() => {
+                      setInputCode(num);
+                      void fetchTracking(num, carrier);
+                    }}>
+                      {num}
+                    </button>
                     <button
-                      onClick={(e) => handleRemoveSavedNumber(num, e)}
+                      type="button"
+                      onClick={() => handleRemoveSavedNumber(num)}
                       className="text-slate-400 hover:text-rose-500 ml-0.5"
                       title={lang === 'en' ? 'Remove' : lang === 'ja' ? '削除' : '移除記錄'}
                     >
@@ -374,7 +384,7 @@ export const TrackingModal: React.FC<TrackingModalProps> = ({
 
           {/* Error / Not Found View */}
           {errorMessage && !isLoading && (
-            <div className="p-5 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 space-y-3">
+            <div role="alert" className="p-5 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 space-y-3">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>

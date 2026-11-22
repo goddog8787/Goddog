@@ -283,3 +283,20 @@ test('a test payment callback updates shared inventory even without a browser re
     await deleteApp(app);
   }
 });
+
+test('contact responds with validation and configuration errors without claiming delivery', async () => {
+  await withServer(false, async base => {
+    const send = (body: unknown) => fetch(base + '/api/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const malformed = await send({ name: 'Fixture', email: 'shop@example.test', message: [] });
+    assert.equal(malformed.status, 400);
+    assert.equal((await malformed.json()).success, false);
+
+    const unconfigured = await send({ name: 'Fixture', email: 'shop@example.test', message: 'Isolated test' });
+    assert.equal(unconfigured.status, 503);
+    assert.equal((await unconfigured.json()).success, false);
+  });
+});

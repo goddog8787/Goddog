@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Mail, Phone, Clock, Check, Loader2 } from 'lucide-react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { getStoreApiBase } from '../../lib/backendUrl';
 import { LanguageCode } from '../../types';
 import { translations } from '../../utils/i18n';
 
@@ -9,9 +9,8 @@ interface ContactUsProps {
 }
 
 export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const isSuccess = searchParams.get('success') === 'true';
+  const [isSuccess, setIsSuccess] = useState(false);
+  const requestPending = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -20,6 +19,8 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (requestPending.current) return;
+    requestPending.current = true;
     setIsSubmitting(true);
     setFormError(null);
     
@@ -31,7 +32,7 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
     };
 
     try {
-      const response = await fetch('/api/contact', {
+      const response = await fetch(`${getStoreApiBase()}/api/contact`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -39,14 +40,18 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
         body: JSON.stringify(data),
       });
 
-      if (response.ok) {
-        navigate('/contact?success=true');
+      const result = await response.json().catch(() => null);
+      if (response.ok && result?.success === true) {
+        setIsSuccess(true);
+      } else if (activeLang === 'zh-TW' && typeof result?.error === 'string') {
+        setFormError(result.error);
       } else {
         setFormError(t.contactFormError || '發送失敗，請確認填寫內容或稍後再試。');
       }
     } catch (err) {
       setFormError(t.contactNetworkError || '網路連線異常，請稍後再試。');
     } finally {
+      requestPending.current = false;
       setIsSubmitting(false);
     }
   };
@@ -102,7 +107,7 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
         {/* Contact Form */}
         <div className="lg:col-span-7 bg-slate-50 dark:bg-slate-800/60 p-6 sm:p-8 rounded-2xl border border-slate-200/70 dark:border-slate-700/80">
           {isSuccess ? (
-            <div className="text-center py-10">
+            <div role="status" className="text-center py-10">
               <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8" />
               </div>
@@ -110,12 +115,13 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
               <p className="text-slate-600 dark:text-slate-300 leading-relaxed mb-6 whitespace-pre-line text-sm">
                 {t.contactSuccessDesc || '我們已經收到您的訊息，神狗勾客服團隊會盡量在 24 小時內回覆您，謝謝您的支持！'}
               </p>
-              <Link 
-                to="/contact" 
+              <button
+                type="button"
+                onClick={() => setIsSuccess(false)}
                 className="inline-block px-8 py-3 bg-slate-900 dark:bg-indigo-600 text-white rounded-xl font-bold hover:bg-slate-800 dark:hover:bg-indigo-500 transition-colors"
               >
                 {t.contactBackBtn || '返回'}
-              </Link>
+              </button>
             </div>
           ) : (
             <>
@@ -124,24 +130,24 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
                 {t.contactFormDesc || '訊息將直接傳送至我們的客服信箱。我們會在 24 小時內回覆您的郵件！'}
               </p>
               {formError && (
-                <div className="p-3 mb-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold">
+                <div role="alert" className="p-3 mb-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold">
                   {formError}
                 </div>
               )}
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t.contactNameLabel || '您的姓名'}</label>
-                    <input type="text" name="name" required disabled={isSubmitting} className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50 text-sm" placeholder={t.contactNamePlaceholder || '王大明'} />
+                    <label htmlFor="contact-name" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t.contactNameLabel || '您的姓名'}</label>
+                    <input type="text" id="contact-name" name="name" maxLength={100} required disabled={isSubmitting} className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50 text-sm" placeholder={t.contactNamePlaceholder || '王大明'} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t.contactEmailLabel || '聯絡信箱'}</label>
-                    <input type="email" name="email" required disabled={isSubmitting} className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50 text-sm" placeholder={t.contactEmailPlaceholder || 'your@email.com'} />
+                    <label htmlFor="contact-email" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t.contactEmailLabel || '聯絡信箱'}</label>
+                    <input type="email" id="contact-email" name="email" maxLength={254} required disabled={isSubmitting} className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:opacity-50 text-sm" placeholder={t.contactEmailPlaceholder || 'your@email.com'} />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t.contactMsgLabel || '訊息內容'}</label>
-                  <textarea name="message" required disabled={isSubmitting} rows={5} className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none disabled:opacity-50 text-sm" placeholder={t.contactMsgPlaceholder || '請描述您的問題...'}></textarea>
+                  <label htmlFor="contact-message" className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">{t.contactMsgLabel || '訊息內容'}</label>
+                  <textarea id="contact-message" name="message" maxLength={5000} required disabled={isSubmitting} rows={5} className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none disabled:opacity-50 text-sm" placeholder={t.contactMsgPlaceholder || '請描述您的問題...'}></textarea>
                 </div>
                 <button type="submit" disabled={isSubmitting} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer text-sm shadow-sm">
                   {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}

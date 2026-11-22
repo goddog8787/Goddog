@@ -1,3 +1,4 @@
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import React, { useState, useEffect } from 'react';
 import {
   X,
@@ -180,7 +181,8 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
   const grossProfit = recommendedQuotation - Math.round(baseCost);
 
   // Copy Quotation Summary
-  const [copiedQuote, setCopiedQuote] = useState(false);
+  const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback();
+  const copiedQuote = copiedKey === "quote";
   const handleCopyQuote = () => {
     const text = `【3D 列印代工精算報價單】\n` +
       `▪ 模型耗材重量：${modelWeightGrams}g (耗材費 NT$ ${Math.round(materialCost)})\n` +
@@ -188,15 +190,13 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
       `▪ 專業基礎製造成本：NT$ ${Math.round(baseCost)}\n` +
       `▪ 建議正式代印報價：NT$ ${recommendedQuotation} (含技術維護與品質保證)\n` +
       `神狗勾耗材商城 • 頂級創客品質保證`;
-    navigator.clipboard.writeText(text);
-    setCopiedQuote(true);
-    setTimeout(() => setCopiedQuote(false), 2000);
+    void copy(text, 'quote');
   };
 
   // --- Slicer Parameters Preset State ---
   const [slicerPrinter, setSlicerPrinter] = useState<'bambu' | 'creality' | 'flashforge' | 'snapmaker' | 'anycubic' | 'elegoo' | 'prusa' | 'voron' | 'qidi'>('bambu');
   const [slicerMaterial, setSlicerMaterial] = useState<'pla' | 'petg' | 'abs' | 'cf' | 'tpu'>('pla');
-  const [copiedPreset, setCopiedPreset] = useState(false);
+  const copiedPreset = copiedKey === "preset";
 
   const SLICER_PRESETS: Record<string, Record<string, any>> = {
     bambu: {
@@ -276,9 +276,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
       `▪ 最大體積流速：${currentPreset.volFlow}\n` +
       `▪ 回抽距離：${currentPreset.retraction}\n` +
       `▪ 專業備註：${currentPreset.note}`;
-    navigator.clipboard.writeText(text);
-    setCopiedPreset(true);
-    setTimeout(() => setCopiedPreset(false), 2000);
+    void copy(text, 'preset');
   };
 
   if (!isOpen) return null;
@@ -707,7 +705,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                         : 'bg-white hover:bg-slate-100 text-slate-900 shadow-md'
                     }`}
                   >
-                    {copiedQuote ? (
+                    {failedKey === 'quote' ? <span role="status">{errorText}</span> : copiedQuote ? (
                       <>
                         <Check className="w-4 h-4" />
                         <span>已複製代印報價單明細！</span>
@@ -897,7 +895,7 @@ export const FilamentLabModal: React.FC<FilamentLabModalProps> = ({
                           : 'bg-purple-600 hover:bg-purple-500 text-white shadow-md'
                       }`}
                     >
-                      {copiedPreset ? (
+                      {failedKey === 'preset' ? <span role="status">{errorText}</span> : copiedPreset ? (
                         <>
                           <Check className="w-4 h-4" />
                           <span>已複製切片參數！</span>

@@ -1,3 +1,4 @@
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { 
   X, 
@@ -21,7 +22,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview, MemberProfile } from '../../types';
-import { formatPrice, translations, translateProduct } from '../../utils/i18n';
+import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
 import { subscribeToProductReviews } from '../../lib/reviewPersistence';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
@@ -38,7 +39,7 @@ interface ProductDetailModalProps {
   lang: LanguageCode;
   member?: MemberProfile;
   onClose: () => void;
-  onAddToCart: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
+  onAddToCart: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => boolean | void;
   onQuickCheckout: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
   onAskAI?: (product: FilamentProduct) => void;
   onReviewSubmitted?: (updatedProduct: FilamentProduct, review: ProductReview) => void;
@@ -61,13 +62,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const displayProduct = useMemo(() => product ? translateProduct(product, lang) : null, [product, lang]);
 
   const defaultColor: ColorOption = { name: lang === 'en' ? 'Classic Black' : lang === 'ja' ? 'クラシックブラック' : '經典黑', hex: '#111827', stock: 10 };
-  const [selectedColor, setSelectedColor] = useState<ColorOption>(displayProduct?.colors?.[0] || defaultColor);
+  const [selectedColor, setSelectedColor] = useState<ColorOption>(() => product?.colors?.find(color => color.stock > 0) ?? product?.colors?.[0] ?? defaultColor);
   const [selectedDiameter, setSelectedDiameter] = useState<'1.75mm' | '2.85mm'>(displayProduct?.diameter || '1.75mm');
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'specs' | 'slicer' | 'calculator' | 'reviews'>('specs');
   const [isAdded, setIsAdded] = useState(false);
   const [partWeightGrams, setPartWeightGrams] = useState<number>(45);
-  const [copiedParams, setCopiedParams] = useState(false);
+  const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback(lang);
   const [isWriteReviewOpen, setIsWriteReviewOpen] = useState(false);
   const [liveReviews, setLiveReviews] = useState<ProductReview[]>([]);
   const [localProduct, setLocalProduct] = useState<FilamentProduct | null>(displayProduct);
@@ -91,12 +92,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   // Sync color & diameter when displayProduct changes
   useEffect(() => {
     if (displayProduct) {
-      if (displayProduct.colors?.[0]) setSelectedColor(displayProduct.colors[0]);
+      if (product?.colors?.[0]) setSelectedColor(current => product.colors.find(color => color.name === current.name) ?? product.colors.find(color => color.stock > 0) ?? product.colors[0]);
       if (displayProduct.diameter) setSelectedDiameter(displayProduct.diameter);
       setQuantity(1);
       setIsAdded(false);
     }
-  }, [displayProduct]);
+  }, [displayProduct, product]);
 
   // Close on Escape key (only when WriteReviewModal sub-modal isn't open)
   useEffect(() => {
@@ -170,13 +171,11 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
 近端回抽: 0.8mm (35mm/s)
 遠端回抽: 4.5mm (45mm/s)
 相容切片軟體: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`;
-    navigator.clipboard?.writeText?.(text);
-    setCopiedParams(true);
-    setTimeout(() => setCopiedParams(false), 2000);
+    void copy(text, 'params');
   };
 
-  const isFilamentMaterial = displayProduct.material !== 'Accessories' && displayProduct.material !== 'Resin';
-  const colorStock = Math.max(0, selectedColor?.stock ?? displayProduct.stock ?? 0);
+  const isFilamentMaterial = product.material !== 'Accessories' && product.material !== 'Resin';
+  const colorStock = Math.max(0, Math.min(selectedColor.stock, displayProduct.stock));
   const isOutOfStock = colorStock <= 0 || (displayProduct.stock ?? 0) <= 0;
   const effectiveReviewsCount = liveReviews.length > 0 ? liveReviews.length : (displayProduct.reviewsCount || 0);
   const effectiveRating = liveReviews.length > 0
@@ -185,6 +184,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
 
   const handleAdd = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (isOutOfStock) return;
+    if (onAddToCart(product, selectedColor, selectedDiameter, Math.min(colorStock, quantity)) === false) return;
     triggerFlyToCart({
       sourceEl: e.currentTarget,
       imageUrl: displayProduct.imageUrl || product.imageUrl,
@@ -192,14 +192,13 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
       productName: displayProduct.name,
       accentColor: selectedColor?.hex,
     });
-    onAddToCart(displayProduct, selectedColor, selectedDiameter, Math.min(colorStock, quantity));
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 1500);
   };
 
   const handleBuyNow = () => {
     if (isOutOfStock) return;
-    onQuickCheckout(displayProduct, selectedColor, selectedDiameter, Math.min(colorStock, quantity));
+    onQuickCheckout(product, selectedColor, selectedDiameter, Math.min(colorStock, quantity));
   };
 
   return (
@@ -336,14 +335,14 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 <label className="text-xs font-bold text-slate-700 block mb-2">
                   {lang === 'en' ? '1. Color:' : lang === 'ja' ? '1. カラー選択：' : '1. 顏色選擇：'}
                   <span className="text-indigo-600 font-semibold ml-1">
-                    {selectedColor.name}
+                    {translateColorName(selectedColor.name, lang)}
                   </span>
                   <span className="text-slate-400 font-normal ml-2">
-                    ({lang === 'en' ? `In Stock: ${selectedColor.stock}` : lang === 'ja' ? `在庫: ${selectedColor.stock} 巻` : `現貨庫存: ${selectedColor.stock} 卷`})
+                    ({lang === 'en' ? `In Stock: ${colorStock}` : lang === 'ja' ? `在庫: ${colorStock} 巻` : `現貨庫存: ${colorStock} 卷`})
                   </span>
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {displayProduct.colors.map((c) => (
+                  {product.colors.map((c) => (
                     <button
                       key={c.name}
                       type="button"
@@ -361,7 +360,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         className="w-3.5 h-3.5 rounded-full border border-slate-300 shadow-inner"
                         style={{ backgroundColor: c.hex }}
                       />
-                      <span>{c.name.split(' ')[0]}</span>
+                      <span>{translateColorName(c.name, lang).split(' ')[0]}</span>
                     </button>
                   ))}
                 </div>
@@ -516,7 +515,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         onClick={handleCopyParams}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold transition-colors cursor-pointer"
                       >
-                        {copiedParams ? (
+                        {failedKey === 'params' ? <span role="status">{errorText}</span> : copiedKey === 'params' ? (
                           <>
                             <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
                             <span className="text-emerald-700">{lang === 'en' ? 'Profile Copied' : lang === 'ja' ? 'コピー完了' : '已複製切片配置'}</span>
