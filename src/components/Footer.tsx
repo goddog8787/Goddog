@@ -11,8 +11,11 @@ export const Footer: React.FC<FooterProps> = ({ lang: propLang }) => {
   const activeLang: LanguageCode = propLang || (typeof window !== 'undefined' ? (localStorage.getItem('printcore_lang') as LanguageCode) : null) || 'zh-TW';
   const t = translations[activeLang] || translations['zh-TW'];
 
+  const email = t.contactEmailVal;
+  const phone = t.contactHotlineVal;
+
   return (
-    <footer className="bg-slate-900 pt-14 pb-10 lg:pb-12 border-t border-slate-800 text-slate-400 mt-14 sm:mt-16 relative z-10">
+    <footer className="bg-slate-900 pt-10 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-12 border-t border-slate-800 text-slate-400 mt-5 sm:mt-8 relative z-10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-8 lg:gap-10 mb-10">
           
@@ -64,8 +67,14 @@ export const Footer: React.FC<FooterProps> = ({ lang: propLang }) => {
               {t.footerContactInfo || '聯絡資訊'}
             </h3>
             <ul className="space-y-2.5 text-sm">
-              <li className="whitespace-nowrap">{activeLang === 'en' ? `Hotline: ${t.contactHotlineVal || '+886 911331772'}` : activeLang === 'ja' ? `電話: ${t.contactHotlineVal || '+886 911331772'}` : `客服專線：${t.contactHotlineVal || '+886 911331772'}`}</li>
-              <li className="break-all sm:break-normal">{activeLang === 'en' ? `Email: ${t.contactEmailVal || 'babe0615@gmail.com'}` : activeLang === 'ja' ? `メール: ${t.contactEmailVal || 'babe0615@gmail.com'}` : `信箱：${t.contactEmailVal || 'babe0615@gmail.com'}`}</li>
+              <li>
+                <span>{t.contactHotline} </span>
+                <a href={`tel:${phone.replace(/[^+\d]/g, '')}`} className="text-slate-200 hover:text-sky-300 underline-offset-4 hover:underline">{phone}</a>
+              </li>
+              <li className="break-words">
+                <span>{t.contactEmail} </span>
+                <a href={`mailto:${email}`} className="break-all text-slate-200 hover:text-sky-300 underline-offset-4 hover:underline">{email}</a>
+              </li>
               <li>{activeLang === 'en' ? `Hours: ${t.contactHoursVal || 'Mon - Fri 09:00 - 18:00'}` : activeLang === 'ja' ? `営業時間: ${t.contactHoursVal || '月〜金 09:00 - 18:00'}` : `服務時間：${t.contactHoursVal || '週一至週五 09:00 - 18:00'}`}</li>
             </ul>
           </div>

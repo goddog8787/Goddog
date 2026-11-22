@@ -1,3 +1,4 @@
+import { PickupBrandLogo, type PickupBrand } from './PickupBrandLogo';
 import { CHECKOUT_CVS_FREE_THRESHOLD, CHECKOUT_HOME_FREE_THRESHOLD, checkoutPointLimit, checkoutShippingFee, isValidTaiwanTaxId, parseTaiwanAddress } from '../../utils/checkoutDetails';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
@@ -580,6 +581,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const shippingOptions: {
     id: ShippingMethod;
     label: string;
+    brand?: PickupBrand;
     fee: number;
     diffForFree: number;
   }[] = [
@@ -591,23 +593,36 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     },
     {
       id: 'UNIMARTC2C',
+      brand: '7-11',
       label: '超商取貨 7-ELEVEN',
       fee: getMethodFee('UNIMARTC2C'),
       diffForFree: appliedCoupon?.freeShipping || hasFreeShippingItem ? 0 : cvsDiffForFree,
     },
     {
       id: 'FAMIC2C',
+      brand: 'familymart',
       label: '超商取貨 全家便利店',
       fee: getMethodFee('FAMIC2C'),
       diffForFree: appliedCoupon?.freeShipping || hasFreeShippingItem ? 0 : cvsDiffForFree,
     },
     {
       id: 'HILIFEC2C',
+      brand: 'hilife',
       label: '超商取貨 萊爾富',
       fee: getMethodFee('HILIFEC2C'),
       diffForFree: appliedCoupon?.freeShipping || hasFreeShippingItem ? 0 : cvsDiffForFree,
     },
   ];
+
+  if (shippingMethod === 'OKMARTC2C') {
+    shippingOptions.push({
+      id: 'OKMARTC2C',
+      brand: 'okmart',
+      label: '超商取貨 OK 超商',
+      fee: getMethodFee('OKMARTC2C'),
+      diffForFree: appliedCoupon?.freeShipping || hasFreeShippingItem ? 0 : cvsDiffForFree,
+    });
+  }
 
   // Clean Radio Options for Payment (matching the user's screenshot style & wired to NewebPay MPG)
   const paymentRadioOptions: {
@@ -820,18 +835,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </label>
 
-                  {/* 貨物 (Shipping Methods Radio List — zero orphan wrapping) */}
-                  <div className="flex flex-col sm:flex-row sm:items-start gap-2.5 sm:gap-5 pt-3 border-t border-slate-100 dark:border-slate-800/80">
-                    <div className="sm:w-24 shrink-0 sm:pt-0.5">
-                      <span className="text-sm sm:text-base font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        配送方式
-                      </span>
-                    </div>
-
-                    <div className="flex-1 min-w-0 space-y-3">
-                      {shippingOptions.map((opt) => {
+                  <section aria-labelledby="checkout-shipping-heading" className="space-y-2.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+                    <h3 id="checkout-shipping-heading" className="text-sm font-bold text-slate-700 dark:text-slate-300">配送方式</h3>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {shippingOptions.map(opt => {
                         const isSelected = shippingMethod === opt.id;
-                        const feeText = opt.fee === 0 ? 'NT$0（免運）' : `NT$${opt.fee}`;
                         return (
                           <button
                             key={opt.id}
@@ -839,51 +847,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                             aria-pressed={isSelected}
                             disabled={isProcessing}
                             onClick={() => handleShippingMethodChange(opt.id)}
-                            className={`block w-full text-left cursor-pointer group rounded-2xl p-2.5 -mx-1 transition-colors ${
-                              isSelected ? 'bg-indigo-50/70 dark:bg-indigo-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                            className={`grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors cursor-pointer disabled:cursor-wait focus-visible:outline-2 focus-visible:outline-indigo-500 ${
+                              isSelected ? 'border-indigo-500 bg-indigo-50/70 dark:bg-indigo-950/40'
+                                : 'border-slate-200 bg-white hover:border-slate-400 dark:border-slate-700 dark:bg-slate-900'
                             }`}
                           >
-                            <div className="flex items-center gap-2.5">
-                              {/* Radio Circle */}
-                              <div
-                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${
-                                  isSelected
-                                    ? 'border-blue-600 dark:border-indigo-400'
-                                    : 'border-slate-400 dark:border-slate-600 group-hover:border-blue-500'
-                                }`}
-                              >
-                                {isSelected && (
-                                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-indigo-400" />
-                                )}
-                              </div>
-
-                              <div className="flex-1 min-w-0 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-                                <span className="text-sm sm:text-[15px] font-bold text-slate-900 dark:text-slate-100 text-balance">
-                                  {opt.label}
-                                </span>
-                                <span className="text-xs sm:text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap shrink-0 tabular-nums">
-                                  {feeText}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Free Shipping Difference Pill Badge */}
-                            <div className="pl-7 mt-1.5">
-                              {opt.diffForFree > 0 ? (
-                                <span className="inline-flex items-center whitespace-nowrap bg-[#d46b6b] text-white text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-2xs">
-                                  還差 {opt.diffForFree} 元免運
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center whitespace-nowrap bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-md shadow-2xs">
-                                  已享免運優惠
-                                </span>
-                              )}
-                            </div>
+                            {opt.brand ? <PickupBrandLogo brand={opt.brand} /> : (
+                              <span className="flex h-9 w-[4.1rem] items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" aria-hidden="true">
+                                <Truck className="h-4 w-4" />
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="block text-xs font-bold text-slate-900 dark:text-slate-100 text-pretty">{opt.label}</span>
+                              <span className="mt-0.5 block text-[10px] text-slate-600 dark:text-slate-400">
+                                {opt.diffForFree > 0 ? `還差 ${opt.diffForFree} 元免運` : opt.fee === 0 ? '已享免運優惠' : '含離島運費'}
+                              </span>
+                            </span>
+                            <span className="whitespace-nowrap text-xs font-mono font-bold tabular-nums text-indigo-700 dark:text-indigo-300">NT${opt.fee}</span>
                           </button>
                         );
                       })}
                     </div>
-                  </div>
+                  </section>
 
                   {/* 總計 Row */}
                   <div className="flex items-center justify-between sm:justify-start gap-2.5 sm:gap-5 pt-4 border-t border-slate-100 dark:border-slate-800/80">

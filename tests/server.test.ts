@@ -284,6 +284,17 @@ test('a test payment callback updates shared inventory even without a browser re
   }
 });
 
+test('unknown API routes return a JSON 404 instead of the storefront', async () => {
+  await withServer(false, async base => {
+    for (const endpoint of ['/api', '/api/missing-fixture']) {
+      const result = await fetch(base + endpoint);
+      assert.equal(result.status, 404);
+      assert.match(result.headers.get('content-type') ?? '', /application\/json/);
+      assert.equal((await result.json()).error, 'API endpoint not found');
+    }
+  });
+});
+
 test('contact responds with validation and configuration errors without claiming delivery', async () => {
   await withServer(false, async base => {
     const send = (body: unknown) => fetch(base + '/api/contact', {

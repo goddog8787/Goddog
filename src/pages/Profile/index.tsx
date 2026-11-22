@@ -59,7 +59,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [persistedOrders, setPersistedOrders] = useState<{ uid: string; orders: any[] } | null>(null);
   const [printerGarageCount, setPrinterGarageCount] = useState<number>(0);
-  const pendingRefCode = typeof window !== 'undefined' ? localStorage.getItem('printcore_referral_code') : null;
+  let pendingRefCode: string | null = null;
+  try {
+    pendingRefCode = localStorage.getItem('printcore_referral_code');
+  } catch {}
 
   useEffect(() => {
     if (!isLoggedIn || !member?.id) return;
@@ -386,17 +389,22 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             <div className="min-w-0">
               <h2 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight truncate">{member?.name || (lang === 'en' ? 'Guest' : lang === 'ja' ? 'ゲスト' : '訪客')}</h2>
               <p className="text-slate-400 text-xs sm:text-sm mt-0.5 truncate">{member?.email || ""}</p>
-              <div className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border backdrop-blur-sm ${titleColorClass}`}>
-                <TitleIcon className={`w-3.5 h-3.5 ${titleIconClass}`} />
-                <span className={makerTitle === '列印大神' || makerTitle === '3D Print Master' || makerTitle === '3Dプリント達人' ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-200 to-yellow-500 animate-gold-shine drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]' : ''}>
-                  {makerTitle}
-                </span>
+              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border backdrop-blur-sm ${titleColorClass}`}>
+                  <TitleIcon className={`w-3.5 h-3.5 ${titleIconClass}`} />
+                  <span className={makerTitle === '列印大神' || makerTitle === '3D Print Master' || makerTitle === '3Dプリント達人' ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-200 to-yellow-500 animate-gold-shine drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]' : ''}>
+                    {makerTitle}
+                  </span>
+                </div>
+                {member?.tier && (
+                  <span className="rounded-full border border-slate-400/30 bg-white/10 px-3 py-1 text-xs font-bold text-slate-200">{member.tier}</span>
+                )}
               </div>
             </div>
           </div>
 
           {/* Quick Account Actions */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 sm:shrink-0">
             <button
               type="button"
               onClick={() => openModal('settings')}
@@ -490,7 +498,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </button>
             <div className="text-center flex-1 py-2">
               <p className="text-[11px] font-bold text-slate-400 mb-1">{lang === 'en' ? 'Credit Rebate' : lang === 'ja' ? 'ポイント還元' : '紅利折抵金'}</p>
-              <p className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">NT$ {Math.floor((member?.points || 0) * 0.1)}</p>
+              <p className="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono tabular-nums">NT$ {Math.max(0, Math.floor(member?.points || 0))}</p>
+              <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                {lang === 'en' ? 'Up to 10% of the order subtotal' : lang === 'ja' ? '商品小計の10%まで' : '每筆最多折抵商品小計的 10%'}
+              </p>
             </div>
           </div>
 

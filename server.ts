@@ -4665,7 +4665,7 @@ app.post('/api/payment/vip-checkout', requirePaymentConfig, requireUser, (req, r
 });
 
 // 404 for unhandled API requests
-app.all('/api/*', (req, res) => {
+app.all(['/api', '/api/*'], (req, res) => {
   res.status(404).json({ error: 'API endpoint not found', path: req.path });
 });
 
