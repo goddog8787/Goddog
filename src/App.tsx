@@ -709,7 +709,6 @@ export default function App() {
 
   const memberIdRef = useRef(member?.id);
   memberIdRef.current = member?.id;
-  const isLoggedInRef = useRef(false);
 
   const handleOpenProductDetail = useCallback((p: FilamentProduct) => {
     if (location.pathname === '/') {
@@ -796,43 +795,47 @@ export default function App() {
     }
   });
 
-  isLoggedInRef.current = isLoggedIn;
+  const wishlistItemsRef = useRef(wishlistIds);
+  useEffect(() => { wishlistItemsRef.current = wishlistIds; }, [wishlistIds]);
 
   const handleToggleWishlist = useCallback((id: string) => {
-    setWishlistIds((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-      const activeUid = isLoggedInRef.current ? normalizeCustomerId(memberIdRef.current) : null;
-      saveCustomerWishlist(activeUid, next, { explicitClear: next.length === 0 }).catch(console.warn);
-      return next;
-    });
+    const previous = wishlistItemsRef.current;
+    const next = previous.includes(id) ? previous.filter(itemId => itemId !== id) : [...previous, id];
+    wishlistEdits.current++;
+    wishlistItemsRef.current = next;
+    setWishlistIds(next);
+    const activeUid = normalizeCustomerId(auth.currentUser?.uid);
+    void saveCustomerWishlist(activeUid, next, { explicitClear: next.length === 0 });
+    if (activeUid && JSON.stringify(getStoredCustomerWishlistSync(activeUid)) === JSON.stringify(next)) clearGuestWishlistStorage();
+  }, []);
+
+  const comparisonItemsRef = useRef(comparisonIds);
+  useEffect(() => { comparisonItemsRef.current = comparisonIds; }, [comparisonIds]);
+
+  const persistComparisonEdit = useCallback((ids: string[]) => {
+    comparisonEdits.current++;
+    comparisonItemsRef.current = ids;
+    setComparisonIds(ids);
+    void saveCustomerComparison(auth.currentUser?.uid, ids);
   }, []);
 
   const handleToggleCompare = useCallback((id: string) => {
-    setComparisonIds((prev) => {
-      const activeUid = isLoggedInRef.current ? normalizeCustomerId(memberIdRef.current) : null;
-      if (prev.includes(id)) {
-        const next = prev.filter((x) => x !== id);
-        saveCustomerComparison(activeUid, next).catch(console.warn);
-        return next;
-      }
-      if (prev.length >= 4) {
-        setIsCompareModalOpen(true);
-        return prev;
-      }
-      const next = [...prev, id];
-      saveCustomerComparison(activeUid, next).catch(console.warn);
-      return next;
-    });
-  }, []);
+    const previous = comparisonItemsRef.current;
+    if (previous.includes(id)) {
+      persistComparisonEdit(previous.filter(itemId => itemId !== id));
+    } else if (previous.length >= 4) {
+      setIsCompareModalOpen(true);
+    } else {
+      persistComparisonEdit([...previous, id]);
+    }
+  }, [persistComparisonEdit]);
 
   function addAvailableProductToCart(product: FilamentProduct) {
     const color = product.colors?.find(option => cartStockRemaining(cartItemsRef.current, product, option) > 0);
     return color ? handleAddToCart(product, color, product.diameter, 1) : false;
   }
 
-  const handleAddAllWishlistToCart = (savedList: FilamentProduct[]) => {
-    savedList.forEach(addAvailableProductToCart);
-  };
+  const handleAddAllWishlistToCart = (savedList: FilamentProduct[]) => savedList.filter(addAvailableProductToCart);
 
   const handleRewardPoints = (points: number) => {
     setMember((prev) => {
@@ -1246,15 +1249,13 @@ export default function App() {
 
   // Guard against concurrent/duplicate syncUserData invocations for the same customer
   const syncingUserIdRef = React.useRef<string | null>(null);
+  const userSyncRevision = useRef(0);
+  const cartEdits = useRef(0);
+  const wishlistEdits = useRef(0);
+  const comparisonEdits = useRef(0);
 
   const resolveActiveCustomerId = useCallback((): string | null => {
-    if (!isLoggedInRef.current) return null;
-    return (
-      normalizeCustomerId(memberIdRef.current) ||
-      normalizeCustomerId(hydratedUserIdRef.current) ||
-      normalizeCustomerId(auth.currentUser?.uid) ||
-      normalizeCustomerId(getStoredCustomerSession()?.id)
-    );
+    return normalizeCustomerId(auth.currentUser?.uid);
   }, []);
 
   // Synchronize user cart, wishlist, comparison, orders, tracking, and profile from user-scoped cache + Firestore
@@ -1266,21 +1267,19 @@ export default function App() {
     if (syncingUserIdRef.current === cleanUserId) {
       return;
     }
+    if (auth.currentUser?.uid !== cleanUserId) return;
     syncingUserIdRef.current = cleanUserId;
-    hydratedUserIdRef.current = cleanUserId;
+    hydratedUserIdRef.current = null;
+    const revision = ++userSyncRevision.current;
+    const isCurrent = () => userSyncRevision.current === revision && auth.currentUser?.uid === cleanUserId;
 
     setIsSyncingUserData(true);
     try {
-      // Capture and IMMEDIATELY clear any items added while browsing as a guest before login
-      // so they can only ever be merged into the customer's cart ONCE.
       const guestCartBeforeLogin = getStoredCustomerCartSync(null);
-      if (guestCartBeforeLogin.length > 0) {
-        clearGuestCartStorage();
-      }
       const guestWishlistBeforeLogin = getStoredCustomerWishlistSync(null);
-      if (guestWishlistBeforeLogin.length > 0) {
-        clearGuestWishlistStorage();
-      }
+      const cartVersion = cartEdits.current;
+      const wishlistVersion = wishlistEdits.current;
+      const comparisonVersion = comparisonEdits.current;
 
       // Instant synchronous hydration from user-scoped localStorage so UI updates in 0ms
       const cachedCart = getStoredCustomerCartSync(cleanUserId);
@@ -1304,30 +1303,43 @@ export default function App() {
       // IMPORTANT: loadCustomerCart(cleanUserId) already reconciles Firestore and localUserCart by timestamp.
       // NEVER merge cloudOrLocalCart with cachedCart (they are the same user's cart, which would double quantities!).
       // Only merge with guestCartBeforeLogin if the user actually had guest items before logging in.
-      const authoritativeUserCart = await loadCustomerCart(cleanUserId);
-      const finalCart =
-        guestCartBeforeLogin.length > 0
-          ? mergeCartItems(authoritativeUserCart, guestCartBeforeLogin)
-          : authoritativeUserCart;
-      setCartItems(finalCart);
-      if (guestCartBeforeLogin.length > 0 && finalCart.length > 0) {
-        await saveCustomerCart(cleanUserId, finalCart);
+      const pendingCart = loadCustomerCart(cleanUserId);
+      const pendingWishlist = loadCustomerWishlist(cleanUserId);
+      const pendingComparison = loadCustomerComparison(cleanUserId);
+      const pendingOrders = loadCustomerOrders(cleanUserId);
+      const pendingTracking = loadCustomerTrackingNumbers(cleanUserId);
+      const pendingProfile = loadCustomerProfileDoc(cleanUserId, fallbackProfile);
+      const pendingViews = loadCustomerRecentlyViewed(cleanUserId);
+
+      const authoritativeUserCart = await pendingCart;
+      if (!isCurrent()) return;
+      if (cartVersion === cartEdits.current) {
+        const finalCart = mergeCartItems(authoritativeUserCart, guestCartBeforeLogin);
+        setCartItems(finalCart);
+        if (guestCartBeforeLogin.length > 0) {
+          void saveCustomerCart(cleanUserId, finalCart);
+          if (JSON.stringify(getStoredCustomerCartSync(cleanUserId)) === JSON.stringify(finalCart)) clearGuestCartStorage();
+        }
       }
 
-      // 2. Reconcile Cloud & Local Wishlist
-      const cloudOrLocalWishlist = await loadCustomerWishlist(cleanUserId);
-      const finalWishlist = Array.from(new Set([...cloudOrLocalWishlist, ...initialMergedWishlist]));
-      setWishlistIds(finalWishlist);
-      if (finalWishlist.length > 0) {
-        await saveCustomerWishlist(cleanUserId, finalWishlist);
+      const cloudOrLocalWishlist = await pendingWishlist;
+      if (!isCurrent()) return;
+      if (wishlistVersion === wishlistEdits.current) {
+        const finalWishlist = Array.from(new Set([...cloudOrLocalWishlist, ...guestWishlistBeforeLogin]));
+        setWishlistIds(finalWishlist);
+        if (guestWishlistBeforeLogin.length > 0) {
+          void saveCustomerWishlist(cleanUserId, finalWishlist);
+          if (JSON.stringify(getStoredCustomerWishlistSync(cleanUserId)) === JSON.stringify(finalWishlist)) clearGuestWishlistStorage();
+        }
       }
 
-      // 3. Reconcile Cloud & Local Comparison List
-      const cloudOrLocalCompare = await loadCustomerComparison(cleanUserId);
-      setComparisonIds(cloudOrLocalCompare);
+      const cloudOrLocalCompare = await pendingComparison;
+      if (!isCurrent()) return;
+      if (comparisonVersion === comparisonEdits.current) setComparisonIds(cloudOrLocalCompare);
 
       // 4. Reconcile Cloud & Local Orders for this Customer
-      const customerOrders = await loadCustomerOrders(cleanUserId);
+      const customerOrders = await pendingOrders;
+      if (!isCurrent()) return;
       if (customerOrders && customerOrders.length > 0) {
         setOrders((prev) => {
           const map = new Map<string, Order>();
@@ -1341,7 +1353,8 @@ export default function App() {
       }
 
       // 5. Logistics tracking numbers for this Customer
-      const cloudTracking = await loadCustomerTrackingNumbers(cleanUserId);
+      const cloudTracking = await pendingTracking;
+      if (!isCurrent()) return;
       if (cloudTracking && cloudTracking.length > 0) {
         const cleanTrack = cloudTracking.find(
           (t) => t && t !== '77391829310' && !t.includes('77391829310') && !t.startsWith('TEST') && !t.startsWith('MOCK')
@@ -1352,7 +1365,8 @@ export default function App() {
       }
 
       // 6. Reconcile Full Customer Profile (Points, Tier, Coupons, Referrals, Settings)
-      const fullProfile = await loadCustomerProfileDoc(cleanUserId, fallbackProfile);
+      const fullProfile = await pendingProfile;
+      if (!isCurrent()) return;
       const safeProfile = fullProfile || sanitizeCustomerProfile({
         ...INITIAL_MEMBER,
         ...(fallbackProfile || {}),
@@ -1374,7 +1388,8 @@ export default function App() {
 
       // 7. Cloud Recently Viewed (Restore user-isolated browsing history)
       try {
-        const cloudViews = await loadCustomerRecentlyViewed(cleanUserId);
+        const cloudViews = await pendingViews;
+        if (!isCurrent()) return;
         if (cloudViews && Array.isArray(cloudViews)) {
           setRecentlyViewedCount(cloudViews.length);
         }
@@ -1382,32 +1397,35 @@ export default function App() {
         console.warn('Recently viewed cloud sync notice:', e);
       }
 
+      if (!isCurrent()) return;
       setToastNotification({
         type: 'success',
-        message: `☁️ 歡迎回來！已為您同步【${safeProfile.name || fallbackProfile?.name || '會員'}】的專屬購物車、收藏與會員資料！`,
+        message: `歡迎回來，${safeProfile.name || fallbackProfile?.name || '會員'}！已載入您的購物車、收藏與會員資料。`,
       });
     } catch (e) {
       console.warn('Customer cloud data sync fallback:', e);
-      hydratedUserIdRef.current = cleanUserId;
+      if (isCurrent()) hydratedUserIdRef.current = cleanUserId;
     } finally {
-      syncingUserIdRef.current = null;
-      setIsSyncingUserData(false);
+      if (isCurrent()) {
+        syncingUserIdRef.current = null;
+        setIsSyncingUserData(false);
+      }
     }
   };
 
   // Handle customer logout: strictly detach active customer ID BEFORE clearing in-memory UI state so user data is never wiped
   const handleLogout = async () => {
     // 1. Detach hydrated user reference immediately so no effect writes empty state to the user's storage
+    userSyncRevision.current++;
     hydratedUserIdRef.current = null;
     syncingUserIdRef.current = null;
+    setIsSyncingUserData(false);
 
     try {
       await logOut();
     } catch {}
 
     clearStoredCustomerSession();
-    clearGuestCartStorage();
-    clearGuestWishlistStorage();
     try {
       localStorage.removeItem('printcore_member');
       localStorage.removeItem('printcore_active_customer');
@@ -1416,9 +1434,9 @@ export default function App() {
     // 2. Reset UI state to clean guest view (customer's saved cart/wishlist/profile remain safely stored under their UID)
     setIsLoggedIn(false);
     setMember(INITIAL_MEMBER);
-    setCartItems([]);
-    setWishlistIds([]);
-    setComparisonIds([]);
+    setCartItems(getStoredCustomerCartSync(null));
+    setWishlistIds(getStoredCustomerWishlistSync(null));
+    setComparisonIds(getStoredCustomerComparisonSync(null));
     setTrackingNumberInput('');
 
     const guestViews = getStoredRecentlyViewedSync(null);
@@ -1451,8 +1469,10 @@ export default function App() {
           syncUserData(cleanUid, fallbackProfile);
         }
       } else {
+        userSyncRevision.current++;
         hydratedUserIdRef.current = null;
         syncingUserIdRef.current = null;
+        setIsSyncingUserData(false);
         clearStoredCustomerSession();
         setIsLoggedIn(false);
         setMember(INITIAL_MEMBER);
@@ -1481,6 +1501,13 @@ export default function App() {
   const stockNotice = lang === 'en' ? 'Please check the available stock in your cart.'
     : lang === 'ja' ? 'カートの数量と在庫をご確認ください。' : '庫存不足或規格已變更，請確認購物車內的數量。';
 
+  const persistCartEdit = useCallback((items: CartItem[]) => {
+    cartEdits.current++;
+    const activeUid = normalizeCustomerId(auth.currentUser?.uid);
+    void saveCustomerCart(activeUid, items, { explicitClear: items.length === 0 });
+    if (activeUid && JSON.stringify(getStoredCustomerCartSync(activeUid)) === JSON.stringify(items)) clearGuestCartStorage();
+  }, []);
+
   const handleAddToCart = useCallback((
     product: FilamentProduct,
     color: ColorOption,
@@ -1503,11 +1530,11 @@ export default function App() {
       : baseCart.map((item, idx) => idx === existingIdx ? { ...item, quantity: item.quantity + quantity } : item);
     cartItemsRef.current = updated;
     setCartItems(updated);
-    saveCustomerCart(resolveActiveCustomerId(), updated).catch(console.warn);
+    persistCartEdit(updated);
     recordRealAddToCart();
     showCartNotice(lang === 'en' ? 'Added to your cart' : lang === 'ja' ? 'カートに追加しました' : `已將 ${latest.name} 加入購物車！`);
     return true;
-  }, [catalogById, lang, resolveActiveCustomerId, showCartNotice, stockNotice]);
+  }, [catalogById, lang, persistCartEdit, showCartNotice, stockNotice]);
 
   const handleUpdateCartQuantity = (index: number, newQty: number) => {
     const baseCart = cartItemsRef.current;
@@ -1526,7 +1553,7 @@ export default function App() {
     const updated = baseCart.map((entry, idx) => idx === index ? { ...entry, quantity: newQty } : entry);
     cartItemsRef.current = updated;
     setCartItems(updated);
-    saveCustomerCart(resolveActiveCustomerId(), updated).catch(console.warn);
+    persistCartEdit(updated);
   };
 
   const handleUpdateCartColor = (index: number, newColor: ColorOption) => {
@@ -1549,7 +1576,7 @@ export default function App() {
           .filter((_, idx) => idx !== index);
     cartItemsRef.current = updated;
     setCartItems(updated);
-    saveCustomerCart(resolveActiveCustomerId(), updated).catch(console.warn);
+    persistCartEdit(updated);
     return true;
   };
 
@@ -1557,8 +1584,7 @@ export default function App() {
     const updated = cartItemsRef.current.filter((_, idx) => idx !== index);
     cartItemsRef.current = updated;
     setCartItems(updated);
-    const activeUid = resolveActiveCustomerId();
-    saveCustomerCart(activeUid, updated, { explicitClear: updated.length === 0 }).catch(console.warn);
+    persistCartEdit(updated);
   };
 
   const handleProceedCheckout = (pointsUsed: number, couponCode?: string) => {
@@ -2409,8 +2435,8 @@ export default function App() {
             onUpdateColor={handleUpdateCartColor}
             onRemoveItem={handleRemoveCartItem}
             onClearCart={() => {
-              const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
-              saveCustomerCart(activeUid, [], { explicitClear: true }).catch(console.warn);
+              cartItemsRef.current = [];
+              persistCartEdit([]);
               setCartItems([]);
             }}
             onAddQuickItem={(p, color, diameter, qty) => handleAddToCart(p, color, diameter, qty)}
@@ -2488,7 +2514,8 @@ export default function App() {
             onClose={() => setIsAuthOpen(false)}
             lang={lang}
             onLoginSuccess={(user) => {
-              const cleanUid = normalizeCustomerId(user.id) || 'usr_' + Date.now();
+              const cleanUid = normalizeCustomerId(user.id);
+              if (!cleanUid || auth.currentUser?.uid !== cleanUid) return;
               setIsLoggedIn(true);
               syncUserData(cleanUid, user);
             }}
@@ -2538,17 +2565,9 @@ export default function App() {
           products={products}
           comparisonIds={comparisonIds}
           onToggleCompare={handleToggleCompare}
-          onSetComparisonIds={(ids) => {
-            setComparisonIds(ids);
-            const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
-            saveCustomerComparison(activeUid, ids).catch(console.warn);
-          }}
+          onSetComparisonIds={persistComparisonEdit}
           onRemoveComparison={(id) => handleToggleCompare(id)}
-          onClearComparison={() => {
-            setComparisonIds([]);
-            const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
-            saveCustomerComparison(activeUid, []).catch(console.warn);
-          }}
+          onClearComparison={() => persistComparisonEdit([])}
           onAddToCart={(p, c, d, q) => handleAddToCart(p, c, d, q)}
           currency={currency}
           lang={lang}
@@ -2627,9 +2646,7 @@ export default function App() {
             </button>
             <button
               onClick={() => {
-                setComparisonIds([]);
-                const activeUid = isLoggedIn ? normalizeCustomerId(member?.id) : null;
-                saveCustomerComparison(activeUid, []).catch(console.warn);
+                persistComparisonEdit([]);
               }}
               className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               title={lang === 'en' ? 'Clear selection' : lang === 'ja' ? '選択解除' : '清空選取'}

@@ -17,7 +17,7 @@ interface RecentlyViewedSectionProps {
   lang: LanguageCode;
   member?: MemberProfile;
   onSelectProduct: (product: FilamentProduct) => void;
-  onAddToCart: (product: FilamentProduct) => void;
+  onAddToCart: (product: FilamentProduct) => boolean;
   onOpenHistoryModal?: () => void;
 }
 
@@ -67,7 +67,8 @@ export const RecentlyViewedSection: React.FC<RecentlyViewedSectionProps> = ({
 
   const handleAdd = (item: any, e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    const matched = products.find((p) => p.id === item.id) || item;
+    const matched = products.find((p) => p.id === item.id);
+    if (!matched || !onAddToCart(matched)) return;
     triggerFlyToCart({
       sourceEl: e.currentTarget,
       imageUrl: matched.imageUrl || item.imageUrl,
@@ -75,7 +76,6 @@ export const RecentlyViewedSection: React.FC<RecentlyViewedSectionProps> = ({
       productName: matched.name || item.name,
       accentColor: matched.colors?.[0]?.hex,
     });
-    onAddToCart(matched);
     setAddedIds((prev) => ({ ...prev, [item.id]: true }));
     setTimeout(() => {
       setAddedIds((prev) => ({ ...prev, [item.id]: false }));

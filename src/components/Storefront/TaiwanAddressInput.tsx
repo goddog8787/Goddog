@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { parseTaiwanAddress } from '../../utils/checkoutDetails';
+import React, { useState, useEffect, useMemo, useId, useRef } from 'react';
 import { MapPin, Check, Sparkles } from 'lucide-react';
-import { TAIWAN_CITIES, CityInfo, DistrictInfo } from '../../data/taiwanDistricts';
+import { TAIWAN_CITIES, DistrictInfo } from '../../data/taiwanDistricts';
 
 export interface TaiwanAddressInputProps {
   value: string;
@@ -12,28 +13,6 @@ export interface TaiwanAddressInputProps {
   placeholder?: string;
 }
 
-// Helper to decompose an address string into city, district, and street
-export function parseTaiwanAddress(rawAddress: string): { city: string; district: string; street: string } {
-  if (!rawAddress) return { city: '', district: '', street: '' };
-  const trimmed = rawAddress.trim();
-
-  // Try to find matching city
-  for (const c of TAIWAN_CITIES) {
-    if (trimmed.startsWith(c.city)) {
-      const restAfterCity = trimmed.slice(c.city.length);
-      for (const d of c.districts) {
-        if (restAfterCity.startsWith(d.name)) {
-          const street = restAfterCity.slice(d.name.length).trim();
-          return { city: c.city, district: d.name, street };
-        }
-      }
-      return { city: c.city, district: '', street: restAfterCity.trim() };
-    }
-  }
-
-  return { city: '', district: '', street: trimmed };
-}
-
 export const TaiwanAddressInput: React.FC<TaiwanAddressInputProps> = ({
   value,
   onChange,
@@ -43,6 +22,8 @@ export const TaiwanAddressInput: React.FC<TaiwanAddressInputProps> = ({
   className = '',
   placeholder = '請輸入街、巷、弄、門牌號碼與樓層 (例：復興南路一段100號5樓之2)',
 }) => {
+  const id = useId();
+  const lastEmitted = useRef<string | null>(null);
   const parsed = useMemo(() => parseTaiwanAddress(value), [value]);
 
   const [selectedCity, setSelectedCity] = useState<string>(parsed.city);
@@ -51,6 +32,8 @@ export const TaiwanAddressInput: React.FC<TaiwanAddressInputProps> = ({
 
   // Sync internal states when external `value` changes meaningfully from outside
   useEffect(() => {
+    if (lastEmitted.current === value) return;
+    lastEmitted.current = null;
     const p = parseTaiwanAddress(value);
     setSelectedCity(p.city);
     setSelectedDistrict(p.district);
@@ -66,7 +49,8 @@ export const TaiwanAddressInput: React.FC<TaiwanAddressInputProps> = ({
 
   // Trigger change upward
   const triggerAddressChange = (city: string, district: string, street: string) => {
-    const full = `${city}${district}${street}`.trim();
+    const full = `${city}${district}${street}`;
+    lastEmitted.current = full;
     onChange(full);
   };
 
@@ -121,10 +105,11 @@ export const TaiwanAddressInput: React.FC<TaiwanAddressInputProps> = ({
       {/* City and District Dropdowns */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+          <label htmlFor={`${id}-city`} className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
             縣市 (必選)
           </label>
           <select
+            id={`${id}-city`}
             value={selectedCity}
             onChange={handleCityChange}
             className="w-full px-2.5 py-2 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all cursor-pointer"
@@ -139,10 +124,11 @@ export const TaiwanAddressInput: React.FC<TaiwanAddressInputProps> = ({
         </div>
 
         <div>
-          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
+          <label htmlFor={`${id}-district`} className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block mb-1">
             鄉鎮市區 (必選)
           </label>
           <select
+            id={`${id}-district`}
             value={selectedDistrict}
             onChange={handleDistrictChange}
             disabled={!selectedCity || currentDistricts.length === 0}
@@ -166,6 +152,8 @@ export const TaiwanAddressInput: React.FC<TaiwanAddressInputProps> = ({
           路名街巷、門牌號碼、樓層/室
         </label>
         <input
+            id={`${id}-street`}
+            aria-label="街道、門牌與樓層"
           type="text"
           value={streetAddress}
           onChange={handleStreetChange}

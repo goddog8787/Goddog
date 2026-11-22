@@ -1,3 +1,4 @@
+import { CHECKOUT_CVS_FREE_THRESHOLD, CHECKOUT_HOME_FREE_THRESHOLD, checkoutPointLimit, checkoutShippingFee, isValidTaiwanTaxId, parseTaiwanAddress } from '../../utils/checkoutDetails';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, 
@@ -89,13 +90,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [customerPhone, setCustomerPhone] = useState(() => {
     return member?.phone && isValidPhone(member.phone) ? member.phone : '';
   });
-  const [shippingAddress, setShippingAddress] = useState('');
+  const [shippingDrafts, setShippingDrafts] = useState<Partial<Record<ShippingMethod, string>>>({});
+  const shippingAddress = shippingDrafts[shippingMethod] ?? '';
+  const setShippingAddress = (address: string, method: ShippingMethod = shippingMethod) =>
+    setShippingDrafts(drafts => ({ ...drafts, [method]: address }));
   const [formError, setFormError] = useState<string | null>(null);
   const formErrorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (formError && formErrorRef.current) {
-      formErrorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      formErrorRef.current.focus({ preventScroll: true });
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      formErrorRef.current.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'center' });
     }
   }, [formError]);
 
@@ -156,6 +162,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Payment gateway (default to credit_card)
   const [paymentGateway, setPaymentGateway] = useState<PaymentGateway>('credit_card');
   const [isProcessing, setIsProcessing] = useState(false);
+  const paymentPending = useRef(false);
+  useEffect(() => {
+    const restorePaymentButton = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        paymentPending.current = false;
+        setIsProcessing(false);
+      }
+    };
+    window.addEventListener('pageshow', restorePaymentButton);
+    return () => window.removeEventListener('pageshow', restorePaymentButton);
+  }, []);
   const [createdOrder] = useState<Order | null>(null);
   const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
@@ -165,13 +182,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !paymentPending.current && !isCvsModalOpen) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, isCvsModalOpen]);
 
   // Promo Code State
   const [couponCode, setCouponCode] = useState('');
@@ -250,13 +267,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen && shippingMethod === 'HOME' && !shippingAddress.trim()) {
+    if (isOpen && shippingMethod === 'HOME' && shippingDrafts.HOME === undefined) {
       const def = getDefaultSavedAddress();
       if (def) {
         applySavedAddressEntry(def);
       }
     }
-  }, [isOpen, shippingMethod, savedAddresses]);
+  }, [isOpen, shippingMethod, savedAddresses, shippingDrafts.HOME]);
 
   // Price calculations
   const rawSubtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
@@ -311,32 +328,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         label: res.label,
       });
     }
-  }, [isOpen, subtotal, isVip]);
-
-  // Free shipping thresholds matching screenshot style:
-  // Home delivery threshold: NT$ 1,500 (Fee: NT$ 100)
-  // CVS pickup threshold: NT$ 999 (Fee: NT$ 65)
-  const HOME_FREE_THRESHOLD = 1500;
-  const CVS_FREE_THRESHOLD = 999;
+  }, [isOpen, subtotal, isVip, member?.coupons, appliedCoupon]);
 
   const hasFreeShippingItem = cartItems.length > 0 && cartItems.every(i => i.product.customShippingFee === 0);
-  const homeDiffForFree = Math.max(0, HOME_FREE_THRESHOLD - subtotal);
-  const cvsDiffForFree = Math.max(0, CVS_FREE_THRESHOLD - subtotal);
-
-  const getMethodFee = (method: ShippingMethod) => {
-    if (appliedCoupon?.freeShipping || hasFreeShippingItem) return 0;
-    if (method === 'HOME') {
-      const base = subtotal >= HOME_FREE_THRESHOLD ? 0 : 100;
-      return isIslandDelivery ? base + 60 : base;
-    }
-    const base = subtotal >= CVS_FREE_THRESHOLD ? 0 : 65;
-    return isIslandDelivery ? base + 40 : base;
-  };
+  const homeDiffForFree = Math.max(0, CHECKOUT_HOME_FREE_THRESHOLD - subtotal);
+  const cvsDiffForFree = Math.max(0, CHECKOUT_CVS_FREE_THRESHOLD - subtotal);
+  const getMethodFee = (method: ShippingMethod) =>
+    checkoutShippingFee(method, subtotal, Boolean(appliedCoupon?.freeShipping || hasFreeShippingItem), isIslandDelivery);
 
   const shippingFee = getMethodFee(shippingMethod);
   const discount = appliedCoupon ? appliedCoupon.discountAmount : 0;
   const paymentFee = 0;
-  const total = Math.max(0, subtotal + shippingFee - pointsToUse - discount);
+  const redeemedPoints = Math.min(Math.max(0, Math.floor(pointsToUse)), checkoutPointLimit(member?.points, subtotal));
+  const total = Math.max(0, subtotal + shippingFee - redeemedPoints - discount);
   const pointsEarned = Math.floor(total * 0.02 * (isVip ? 1.5 : 1));
 
   const handleApplyCoupon = (codeToApply?: string) => {
@@ -380,37 +384,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return { name: '7-ELEVEN 統一超商', shortName: '7-ELEVEN', mapUrl: 'https://emap.pcsc.com.tw/' };
   }, [shippingMethod]);
 
-  const handleShippingMethodChange = (m: ShippingMethod) => {
-    setShippingMethod(m);
+  const handleShippingMethodChange = (method: ShippingMethod) => {
+    if (method === shippingMethod) return;
+    setShippingMethod(method);
     setShowManualCvsInput(false);
-    if (m === 'HOME') {
-      const def = getDefaultSavedAddress();
-      if (def && def.addr) {
-        applySavedAddressEntry(def);
-      } else {
-        setShippingAddress('');
-      }
-    } else {
-      let brand: '7-11' | 'familymart' | 'hilife' | 'okmart' = '7-11';
-      if (m === 'FAMIC2C') brand = 'familymart';
-      else if (m === 'HILIFEC2C') brand = 'hilife';
-      else if (m === 'OKMARTC2C') brand = 'okmart';
-
-      const brandPrefix = brand === 'familymart' ? '全家' : brand === 'hilife' ? '萊爾富' : brand === 'okmart' ? 'OK' : '7-ELEVEN';
-      if (!shippingAddress.startsWith(brandPrefix)) {
-        setShippingAddress('');
-      }
-      setCvsModalBrand(brand);
-    }
+    setFormError(null);
   };
 
   // Launch real NewebPay gateway form submit (signed strictly by backend server)
-  const triggerNewebPayCheckout = async (methodToUse: PaymentGateway = paymentGateway) => {
+  const triggerNewebPayCheckout = async (normalizedCarrier: string) => {
     if (hasUnavailableItems) {
       setFormError('商品庫存或規格已變更，請返回購物車確認後再試。');
       return;
     }
+    if (paymentPending.current) return;
+    paymentPending.current = true;
     setIsProcessing(true);
+    const methodToUse = paymentGateway;
+    let submitted = false;
     try {
       const generatedOrderId = newCheckoutOrderId();
       const ownerUid = (member?.id && !member.id.startsWith('guest')) ? member.id : (auth.currentUser?.uid || 'guest');
@@ -418,22 +409,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       const pendingOrderInfo = {
         orderId: generatedOrderId,
         userId: ownerUid,
-        customerName,
-        customerEmail,
-        customerPhone,
+        customerName: customerName.trim(),
+        customerEmail: customerEmail.trim(),
+        customerPhone: customerPhone.trim(),
         shippingMethod,
-        shippingAddress,
+        shippingAddress: shippingAddress.trim(),
         cartItems,
         subtotal,
         shippingFee,
         paymentFee,
         discount,
         couponCode: appliedCoupon?.code || '',
-        pointsToUse,
+        pointsToUse: redeemedPoints,
         total,
         paymentGateway: methodToUse,
         invoiceType,
-        invoiceCarrierValue,
+        invoiceCarrierValue: normalizedCarrier,
       };
 
       const checkoutData = await requestCheckout('checkout', {
@@ -441,14 +432,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         docId: `ord-${generatedOrderId}`,
         returnFrom: 'checkout',
         userId: ownerUid,
-        customerName: customerName || member?.name || '顧客',
+        customerName: customerName.trim() || member?.name || '顧客',
         amount: total,
         inventoryLines: cartItems.map(item => ({
           productId: item.product.id,
           color: item.selectedColor.name,
           quantity: item.quantity,
         })),
-        email: customerEmail,
+        email: customerEmail.trim(),
         desc: cartItems.map((item) => `${item.product.name} x${item.quantity}`).join(', '),
         paymentMethod: methodToUse,
         originUrl: window.location.origin,
@@ -464,11 +455,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         id: `ord-${effectiveOrderId}`,
         orderNumber: effectiveOrderId,
         createdAt: new Date().toISOString(),
-        customerName: customerName || member?.name || '顧客',
-        customerEmail: customerEmail || member?.email || '',
-        customerPhone: customerPhone || member?.phone || '',
+        customerName: customerName.trim() || member?.name || '顧客',
+        customerEmail: customerEmail.trim() || member?.email || '',
+        customerPhone: customerPhone.trim() || member?.phone || '',
         shippingMethod,
-        storeOrAddress: shippingAddress || '',
+        storeOrAddress: shippingAddress.trim(),
         items: cartItems.map((c) => ({
           productId: c.product.id,
           name: c.product.name,
@@ -484,7 +475,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         shippingFee,
         discount,
         couponCode: appliedCoupon?.code || '',
-        pointsDeduction: pointsToUse,
+        pointsDeduction: redeemedPoints,
         pointsEarned,
         paymentFee,
         total,
@@ -494,7 +485,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         trackingNumber: '',
         invoiceNumber: `PENDING-${effectiveOrderId.slice(-6)}`,
         invoiceType,
-        invoiceCarrierValue,
+        invoiceCarrierValue: normalizedCarrier,
         userId: ownerUid,
         isVerifiedByNewebPay: false,
       };
@@ -507,6 +498,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }
 
       submitCheckout(checkoutData);
+      submitted = true;
     } catch (err) {
       console.error(err);
       setFormError(
@@ -515,22 +507,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           : '付款服務暫時無法使用，購物車已保留。請稍後再試。'
       );
     } finally {
-      setIsProcessing(false);
+      // Top-level checkout ends with page navigation. The embedded preview can retry in a new tab.
+      if (!submitted || window.self !== window.top) {
+        paymentPending.current = false;
+        setIsProcessing(false);
+      }
     }
-  };
-
-  const isValidTaiwanTaxId = (taxId: string) => {
-    if (!/^\d{8}$/.test(taxId)) return false;
-    const weights = [1, 2, 1, 2, 1, 2, 4, 1];
-    let sum = 0;
-    for (let i = 0; i < 8; i++) {
-      const prod = Number(taxId[i]) * weights[i];
-      sum += Math.floor(prod / 10) + (prod % 10);
-    }
-    return sum % 5 === 0 || (taxId[6] === '7' && (sum + 1) % 5 === 0);
   };
 
   const handleStartPayment = async () => {
+    if (paymentPending.current) return;
     setFormError(null);
 
     const missingFields: string[] = [];
@@ -544,6 +530,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
+    if (shippingMethod === 'HOME') {
+      const { city, district, street } = parseTaiwanAddress(shippingAddress);
+      if (!city || !district || !street) {
+        setFormError('請選擇宅配縣市與鄉鎮市區，並填寫街道門牌。');
+        return;
+      }
+    }
+    if (total < 1) {
+      setFormError('此筆訂單低於藍新付款最低金額 NT$1，請調整折抵後再試。');
+      return;
+    }
     const phoneDigits = customerPhone.replace(/\D/g, '');
     if (phoneDigits.length < 8) {
       setFormError('聯絡電話格式有誤，請輸入至少 8 碼有效電話號碼（例：0912345678）。');
@@ -555,7 +552,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       return;
     }
 
-    const normalizedCarrier = invoiceCarrierValue.trim().toUpperCase();
+    const normalizedCarrier = invoiceType === 'cloud' ? '' : invoiceCarrierValue.trim().toUpperCase();
     if (invoiceType === 'mobile_barcode') {
       if (!/^\/[0-9A-Z.+\-]{7}$/.test(normalizedCarrier)) {
         setFormError('手機條碼載具格式不正確，須為「/」開頭共 8 碼英數或符號（例：/AB8892.）。');
@@ -576,7 +573,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       );
     } catch {}
 
-    await triggerNewebPayCheckout(paymentGateway);
+    await triggerNewebPayCheckout(normalizedCarrier);
   };
 
   // Clean Radio Options for Shipping (matching the user's screenshot style)
@@ -631,7 +628,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   return (
     <div 
       className="fixed inset-0 z-[95] overflow-y-auto bg-slate-950/65 flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
-      onClick={onClose}
+      onClick={() => { if (!paymentPending.current) onClose(); }}
       title="點擊背景空白處可返回主頁面"
     >
       <div 
@@ -675,6 +672,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
           <button
             id="close-checkout-modal-btn"
+            type="button"
+            disabled={isProcessing}
+            aria-label="關閉結帳"
             onClick={onClose}
             className="w-9 h-9 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
@@ -833,10 +833,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         const isSelected = shippingMethod === opt.id;
                         const feeText = opt.fee === 0 ? 'NT$0（免運）' : `NT$${opt.fee}`;
                         return (
-                          <div
+                          <button
                             key={opt.id}
+                            type="button"
+                            aria-pressed={isSelected}
+                            disabled={isProcessing}
                             onClick={() => handleShippingMethodChange(opt.id)}
-                            className={`cursor-pointer group rounded-2xl p-2.5 -mx-1 transition-colors ${
+                            className={`block w-full text-left cursor-pointer group rounded-2xl p-2.5 -mx-1 transition-colors ${
                               isSelected ? 'bg-indigo-50/70 dark:bg-indigo-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                             }`}
                           >
@@ -876,7 +879,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                                 </span>
                               )}
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -1017,11 +1020,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">收件人姓名</label>
+                        <label htmlFor="checkout-name" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">收件人姓名</label>
                         <span className="text-[10px] text-rose-500 font-medium">* 必填</span>
                       </div>
                       <input
                         type="text"
+                        id="checkout-name"
+                        autoComplete="shipping name"
                         value={customerName}
                         onChange={(e) => setCustomerName(e.target.value)}
                         placeholder="請輸入真實姓名"
@@ -1030,11 +1035,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">手機號碼</label>
+                        <label htmlFor="checkout-phone" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">手機號碼</label>
                         <span className="text-[10px] text-rose-500 font-medium">* 必填</span>
                       </div>
                       <input
                         type="tel"
+                        id="checkout-phone"
+                        autoComplete="shipping tel"
                         value={customerPhone}
                         onChange={(e) => setCustomerPhone(e.target.value)}
                         placeholder="例：0912345678"
@@ -1045,11 +1052,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">電子信箱 (接收訂單與發票通知)</label>
+                      <label htmlFor="checkout-email" className="text-[11px] font-bold text-slate-700 dark:text-slate-300">電子信箱 (接收訂單與發票通知)</label>
                       <span className="text-[10px] text-rose-500 font-medium">* 必填</span>
                     </div>
                     <input
                       type="email"
+                        id="checkout-email"
+                        autoComplete="email"
                       value={customerEmail}
                       onChange={(e) => setCustomerEmail(e.target.value)}
                       placeholder="例：user@example.com"
@@ -1336,10 +1345,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         <span className="font-mono tabular-nums">-{formatPrice(appliedCoupon.discountAmount, currency)}</span>
                       </div>
                     )}
-                    {pointsToUse > 0 && (
+                    {redeemedPoints > 0 && (
                       <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400 font-medium">
                         <span>會員積分折抵</span>
-                        <span className="font-mono tabular-nums">-{formatPrice(pointsToUse, currency)}</span>
+                        <span className="font-mono tabular-nums">-{formatPrice(redeemedPoints, currency)}</span>
                       </div>
                     )}
                     <div className="flex justify-between items-center gap-3 text-slate-600 dark:text-slate-400">
@@ -1369,6 +1378,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   {formError && (
                     <div
                       ref={formErrorRef}
+                      tabIndex={-1}
+                      role="alert"
                       className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-start gap-2"
                     >
                       <span className="shrink-0 mt-0.5">⚠️</span>
@@ -1425,7 +1436,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         targetBrand={cvsModalBrand}
         initialMethod={shippingMethod}
         onSelectStore={({ fullFormatted, shippingMethod: chosenMethod }) => {
-          setShippingAddress(fullFormatted);
+          setShippingAddress(fullFormatted, chosenMethod);
           setShippingMethod(chosenMethod);
           setShowManualCvsInput(false);
         }}

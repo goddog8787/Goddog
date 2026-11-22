@@ -1,3 +1,4 @@
+import { waitForCatalogCloudSync } from '../../utils/catalogSyncResult';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart3, 
@@ -213,8 +214,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setProducts(updatedList);
     setEditingProduct(updated);
     setToastMessage(`☁️ 耗材【${updated.name}】正在同步寫入 Firestore 雲端資料庫...`);
-    waitForLastCatalogCloudSync().then(() => {
-      setToastMessage(`✅ 耗材【${updated.name}】已儲存至 Firestore 雲端資料庫（重整網頁永久生效）！`);
+    waitForLastCatalogCloudSync().then(synced => {
+      setToastMessage(synced ? `✅ 耗材【${updated.name}】已儲存至 Firestore 雲端資料庫（重整網頁永久生效）！` : '目前畫面已更新，Firestore 同步尚未確認。');
       setTimeout(() => setToastMessage(null), 4000);
     });
   };
@@ -328,12 +329,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const delta = loadLocalCatalogDelta();
       delta.updatedAt = Date.now();
-      await syncCatalogDeltaToCloud(delta, products);
-      setToastMessage('✅ 已將目前全部商品設定直接寫入網站核心代碼 (allMarketProducts.ts) 與雲端資料庫，永久生效不還原！');
+      const synced = await waitForCatalogCloudSync(syncCatalogDeltaToCloud(delta, products));
+      setToastMessage(synced ? '✅ 商品目錄已同步至 Firestore。' : 'Firestore 同步尚未確認，請稍後重試。');
       setTimeout(() => setToastMessage(null), 5000);
-    } catch {
-      setToastMessage('⚠️ 寫入同步完成，已鎖定本地與雲端目錄');
-      setTimeout(() => setToastMessage(null), 4000);
     } finally {
       setIsCommittingCode(false);
     }
@@ -609,13 +607,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Stock update helper
   const handleSaveStock = (id: string) => {
+    if (!Number.isSafeInteger(stockEditValue) || stockEditValue < 0) {
+      setToastMessage('庫存請輸入零或正整數。');
+      return;
+    }
     const target = products.find((p) => p.id === id);
     if (target) {
       const updatedProd: FilamentProduct = { ...target, stock: Math.max(0, Number(stockEditValue)) };
       const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
       setProducts(updatedList);
-      waitForLastCatalogCloudSync().then(() => {
-        setToastMessage(`✅ 已同步儲存【${target.name}】庫存 (${updatedProd.stock} 卷) 至 Firestore 雲端！`);
+      waitForLastCatalogCloudSync().then(synced => {
+        setToastMessage(synced ? `✅ 已同步儲存【${target.name}】庫存 (${updatedProd.stock} 卷) 至 Firestore 雲端！` : '目前畫面已更新，Firestore 同步尚未確認。');
         setTimeout(() => setToastMessage(null), 3000);
       });
     } else {
@@ -628,6 +630,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Price update helper
   const handleSavePrice = (id: string) => {
+    if (!Number.isSafeInteger(priceEditValue) || priceEditValue < 1) {
+      setToastMessage('售價請輸入大於零的整數。');
+      return;
+    }
     const target = products.find((p) => p.id === id);
     if (target) {
       const nextPrice = Math.max(1, Number(priceEditValue));
@@ -638,8 +644,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
       const updatedList = recordAdminProductUpsert(updatedProd, INITIAL_PRODUCTS);
       setProducts(updatedList);
-      waitForLastCatalogCloudSync().then(() => {
-        setToastMessage(`✅ 已同步儲存【${target.name}】售價 (NT$ ${nextPrice.toLocaleString()}) 至 Firestore 雲端！`);
+      waitForLastCatalogCloudSync().then(synced => {
+        setToastMessage(synced ? `✅ 已同步儲存【${target.name}】售價 (NT$ ${nextPrice.toLocaleString()}) 至 Firestore 雲端！` : '目前畫面已更新，Firestore 同步尚未確認。');
         setTimeout(() => setToastMessage(null), 3000);
       });
     }
@@ -650,6 +656,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCreateProduct = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProdName.trim()) return;
+    if (!Number.isSafeInteger(newProdPrice) || newProdPrice < 1 || !Number.isSafeInteger(newProdStock) || newProdStock < 0) {
+      setToastMessage('售價請輸入正整數，庫存請輸入零或正整數。');
+      return;
+    }
 
     const newProd: FilamentProduct = {
       id: `p-${Date.now()}`,
@@ -681,8 +691,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setProducts(updatedList);
     setIsAddProductOpen(false);
     setNewProdName('');
-    waitForLastCatalogCloudSync().then(() => {
-      setToastMessage(`✅ 新商品【${newProd.name}】已上架並同步寫入 Firestore 雲端資料庫！`);
+    waitForLastCatalogCloudSync().then(synced => {
+      setToastMessage(synced ? `✅ 新商品【${newProd.name}】已上架並同步寫入 Firestore 雲端資料庫！` : '目前畫面已更新，Firestore 同步尚未確認。');
       setTimeout(() => setToastMessage(null), 4000);
     });
   };
@@ -1502,8 +1512,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onClick={() => {
                                 const updatedList = recordAdminProductDelete(p.id, INITIAL_PRODUCTS);
                                 setProducts(updatedList);
-                                waitForLastCatalogCloudSync().then(() => {
-                                  setToastMessage(`🗑️ 已將【${p.name}】從 Firestore 雲端與商城永久下架！`);
+                                waitForLastCatalogCloudSync().then(synced => {
+                                  setToastMessage(synced ? `🗑️ 已將【${p.name}】從 Firestore 雲端與商城永久下架！` : '目前畫面已更新，Firestore 同步尚未確認。');
                                   setTimeout(() => setToastMessage(null), 3500);
                                 });
                               }}
@@ -2471,8 +2481,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             setProducts(updatedList);
             setIsStudioOpen(false);
             setStudioProduct(null);
-            waitForLastCatalogCloudSync().then(() => {
-              setToastMessage(`✅ 已同步儲存【${studioProduct.name}】的商品圖片至 Firestore 雲端！`);
+            waitForLastCatalogCloudSync().then(synced => {
+              setToastMessage(synced ? `✅ 已同步儲存【${studioProduct.name}】的商品圖片至 Firestore 雲端！` : '目前畫面已更新，Firestore 同步尚未確認。');
               setTimeout(() => setToastMessage(null), 4000);
             });
           }}

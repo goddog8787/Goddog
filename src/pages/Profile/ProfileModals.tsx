@@ -1,3 +1,4 @@
+import { isValidTaiwanTaxId } from '../../utils/checkoutDetails';
 import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import { getDocs, getDoc, setDoc, query, collection, where, orderBy, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import {
@@ -3092,17 +3093,6 @@ export const AchievementModal: React.FC<{
     </ModalWrapper>
   );
 };
-const isValidTaiwanTaxIdSetting = (taxId: string) => {
-  if (!/^\d{8}$/.test(taxId)) return false;
-  const weights = [1, 2, 1, 2, 1, 2, 4, 1];
-  let sum = 0;
-  for (let i = 0; i < 8; i++) {
-    const prod = Number(taxId[i]) * weights[i];
-    sum += Math.floor(prod / 10) + (prod % 10);
-  }
-  return sum % 5 === 0 || (taxId[6] === '7' && (sum + 1) % 5 === 0);
-};
-
 export const SettingsModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -3332,7 +3322,7 @@ export const SettingsModal: React.FC<{
         return;
       }
     } else if (invoiceType === 'tax_id') {
-      if (!isValidTaiwanTaxIdSetting(normalizedCarrier)) {
+      if (!isValidTaiwanTaxId(normalizedCarrier)) {
         showToast('公司統一編號格式錯誤，請輸入正確的 8 碼營利事業統一編號。', false);
         return;
       }

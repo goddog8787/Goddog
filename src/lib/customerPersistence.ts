@@ -1,3 +1,4 @@
+import { chooseCustomerListSource, type CustomerListVersion } from '../utils/customerListSync';
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth, generateUserReferralCode, saveUserProfileToFirestore } from './firebase';
 import { CartItem, Order, MemberProfile } from '../types';
@@ -180,8 +181,6 @@ export async function saveCustomerCart(
 
   // 1. Mirror locally for instant UI recovery across page reloads & logins
   try {
-    // Ensure guest cart is always empty when a logged-in user saves their cart
-    localStorage.removeItem(GUEST_CART_KEY);
     localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify(safeCart));
     localStorage.setItem(
       `printcore_user_cart_meta_${cleanUid}`,
@@ -211,107 +210,55 @@ export async function saveCustomerCart(
   }
 }
 
-function repairDoubledCartOnce(cleanUid: string, cart: CartItem[]): { cart: CartItem[]; repaired: boolean } {
-  if (!cleanUid || !Array.isArray(cart) || cart.length === 0) {
-    return { cart, repaired: false };
-  }
-  const fixFlagKey = `printcore_cart_dedup_fix_v1_${cleanUid}`;
+function readListVersion(key: string): CustomerListVersion {
   try {
-    if (localStorage.getItem(fixFlagKey) === '1') {
-      return { cart, repaired: false };
-    }
-    localStorage.setItem(fixFlagKey, '1');
-    // If all items in the stored cart were doubled by the previous self-merge bug (all quantities >= 2 and even)
-    const allEvenAndAtLeastTwo = cart.every((item) => item.quantity >= 2 && item.quantity % 2 === 0);
-    if (allEvenAndAtLeastTwo) {
-      const fixedCart = cart.map((item) => ({
-        ...item,
-        quantity: Math.max(1, Math.floor(item.quantity / 2)),
-      }));
-      return { cart: fixedCart, repaired: true };
-    }
+    return JSON.parse(localStorage.getItem(key) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+function cloudListVersion(data: { updatedAtMs?: number; updatedAt?: string; explicitClear?: boolean }): CustomerListVersion {
+  return {
+    updatedAtMs: Number(data.updatedAtMs) || Date.parse(data.updatedAt ?? '') || 0,
+    explicitClear: data.explicitClear === true,
+  };
+}
+
+function cacheCustomerList(dataKey: string, metaKey: string, items: unknown[], version: CustomerListVersion) {
+  try {
+    localStorage.setItem(dataKey, JSON.stringify(items));
+    localStorage.setItem(metaKey, JSON.stringify(version));
   } catch {}
-  return { cart, repaired: false };
 }
 
 export async function loadCustomerCart(userId: string | null | undefined): Promise<CartItem[]> {
   const cleanUid = normalizeCustomerId(userId);
-  if (!cleanUid) {
-    return getStoredCustomerCartSync(null);
-  }
-
-  let localCart = getStoredCustomerCartSync(cleanUid);
-  let localMeta: { updatedAtMs?: number; explicitClear?: boolean } = {};
+  if (!cleanUid) return getStoredCustomerCartSync(null);
+  const key = `printcore_user_cart_${cleanUid}`;
+  const metaKey = `printcore_user_cart_meta_${cleanUid}`;
   try {
-    const metaRaw = localStorage.getItem(`printcore_user_cart_meta_${cleanUid}`);
-    if (metaRaw) localMeta = JSON.parse(metaRaw);
-  } catch {}
-
-  // Try Firestore and reconcile with local cache so items are never lost or doubled
-  try {
-    const cartRef = doc(db, 'users', cleanUid, 'userData', 'cart');
-    const snap = await getDoc(cartRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data?.data) {
-        const parsed = JSON.parse(data.data);
-        if (isValidCartArray(parsed)) {
-          const cloudMs = Number(data.updatedAtMs) || (data.updatedAt ? new Date(data.updatedAt).getTime() : 0);
-          const localMs = Number(localMeta.updatedAtMs) || 0;
-
-          // Case 1: Cloud has items, local has items -> pick the newer snapshot (NEVER sum quantities of two replicas)
-          if (parsed.length > 0 && localCart.length > 0) {
-            const rawBest = localMs >= cloudMs ? localCart : parsed;
-            const { cart: best, repaired } = repairDoubledCartOnce(cleanUid, rawBest);
-            localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify(best));
-            if (repaired || localMs > cloudMs) {
-              saveCustomerCart(cleanUid, best).catch(() => {});
-            }
-            return best;
-          }
-
-          // Case 2: Cloud has items, local is empty
-          if (parsed.length > 0 && localCart.length === 0) {
-            if (localMeta.explicitClear && localMs > cloudMs) {
-              saveCustomerCart(cleanUid, [], { explicitClear: true }).catch(() => {});
-              return [];
-            }
-            const { cart: best, repaired } = repairDoubledCartOnce(cleanUid, parsed);
-            localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify(best));
-            if (repaired) {
-              saveCustomerCart(cleanUid, best).catch(() => {});
-            }
-            return best;
-          }
-
-          // Case 3: Cloud is empty, but local has items
-          if (parsed.length === 0 && localCart.length > 0) {
-            if (data.explicitClear && cloudMs > localMs) {
-              localStorage.setItem(`printcore_user_cart_${cleanUid}`, JSON.stringify([]));
-              return [];
-            }
-            const { cart: best } = repairDoubledCartOnce(cleanUid, localCart);
-            saveCustomerCart(cleanUid, best).catch(() => {});
-            return best;
-          }
-
-          return parsed;
-        }
+    const snap = await getDoc(doc(db, 'users', cleanUid, 'userData', 'cart'));
+    const data = snap.data();
+    const localCart = getStoredCustomerCartSync(cleanUid);
+    const local = readListVersion(metaKey);
+    const cloudCart = data?.data ? JSON.parse(data.data) : undefined;
+    if (isValidCartArray(cloudCart) && data) {
+      const cloud = cloudListVersion(data);
+      if (chooseCustomerListSource(localCart.length, local, cloudCart.length, cloud) === 'cloud') {
+        cacheCustomerList(key, metaKey, cloudCart, cloud);
+        return cloudCart;
       }
-    } else if (localCart.length > 0) {
-      const { cart: best } = repairDoubledCartOnce(cleanUid, localCart);
-      saveCustomerCart(cleanUid, best).catch(() => {});
-      return best;
+      if ((local.updatedAtMs ?? 0) > (cloud.updatedAtMs ?? 0) || cloudCart.length === 0 && localCart.length > 0 && !cloud.explicitClear) {
+        void saveCustomerCart(cleanUid, localCart, { explicitClear: local.explicitClear });
+      }
+    } else if (localCart.length > 0 || local.explicitClear) {
+      void saveCustomerCart(cleanUid, localCart, { explicitClear: local.explicitClear });
     }
   } catch (error) {
     console.warn('Firestore cart load fallback to local:', error);
   }
-
-  const { cart: repairedLocal, repaired } = repairDoubledCartOnce(cleanUid, localCart);
-  if (repaired) {
-    saveCustomerCart(cleanUid, repairedLocal).catch(() => {});
-  }
-  return repairedLocal;
+  return getStoredCustomerCartSync(cleanUid);
 }
 
 // -------------------------------------------------------------
@@ -395,39 +342,32 @@ export async function saveCustomerWishlist(
 
 export async function loadCustomerWishlist(userId: string | null | undefined): Promise<string[]> {
   const cleanUid = normalizeCustomerId(userId);
-  if (!cleanUid) {
-    return getStoredCustomerWishlistSync(null);
-  }
-
-  const localIds = getStoredCustomerWishlistSync(cleanUid);
-
+  if (!cleanUid) return getStoredCustomerWishlistSync(null);
+  const key = `printcore_user_wishlist_${cleanUid}`;
+  const metaKey = `printcore_user_wishlist_meta_${cleanUid}`;
   try {
-    const wishRef = doc(db, 'users', cleanUid, 'userData', 'wishlist');
-    const snap = await getDoc(wishRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data?.data) {
-        const parsed = JSON.parse(data.data);
-        if (Array.isArray(parsed)) {
-          const cleanCloud = parsed.filter((id) => typeof id === 'string' && id.trim().length > 0);
-          if (cleanCloud.length === 0 && localIds.length > 0 && !data.explicitClear) {
-            saveCustomerWishlist(cleanUid, localIds).catch(() => {});
-            return localIds;
-          }
-          const merged = Array.from(new Set([...cleanCloud, ...localIds]));
-          localStorage.setItem(`printcore_user_wishlist_${cleanUid}`, JSON.stringify(merged));
-          return merged;
-        }
+    const snap = await getDoc(doc(db, 'users', cleanUid, 'userData', 'wishlist'));
+    const data = snap.data();
+    const localIds = getStoredCustomerWishlistSync(cleanUid);
+    const local = readListVersion(metaKey);
+    const parsed = data?.data ? JSON.parse(data.data) : undefined;
+    if (Array.isArray(parsed) && data) {
+      const cloudIds = Array.from(new Set(parsed.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)));
+      const cloud = cloudListVersion(data);
+      if (chooseCustomerListSource(localIds.length, local, cloudIds.length, cloud) === 'cloud') {
+        cacheCustomerList(key, metaKey, cloudIds, cloud);
+        return cloudIds;
       }
-    } else if (localIds.length > 0) {
-      saveCustomerWishlist(cleanUid, localIds).catch(() => {});
-      return localIds;
+      if ((local.updatedAtMs ?? 0) > (cloud.updatedAtMs ?? 0) || cloudIds.length === 0 && localIds.length > 0 && !cloud.explicitClear) {
+        void saveCustomerWishlist(cleanUid, localIds, { explicitClear: local.explicitClear });
+      }
+    } else if (localIds.length > 0 || local.explicitClear) {
+      void saveCustomerWishlist(cleanUid, localIds, { explicitClear: local.explicitClear });
     }
   } catch (error) {
     console.warn('Firestore wishlist load fallback to local:', error);
   }
-
-  return localIds;
+  return getStoredCustomerWishlistSync(cleanUid);
 }
 
 // -------------------------------------------------------------
@@ -465,10 +405,9 @@ export async function saveCustomerComparison(
     return;
   }
 
-  try {
-    localStorage.setItem(`printcore_user_comparison_${cleanUid}`, JSON.stringify(safeIds));
-  } catch {}
-
+  const updatedAtMs = Date.now();
+  const explicitClear = safeIds.length === 0;
+  cacheCustomerList(`printcore_user_comparison_${cleanUid}`, `printcore_user_comparison_meta_${cleanUid}`, safeIds, { updatedAtMs, explicitClear });
   try {
     const compRef = doc(db, 'users', cleanUid, 'userData', 'comparison');
     await setDoc(compRef, {
@@ -476,7 +415,9 @@ export async function saveCustomerComparison(
       userId: cleanUid,
       type: 'comparison',
       data: JSON.stringify(safeIds),
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(updatedAtMs).toISOString(),
+      updatedAtMs,
+      explicitClear,
     });
   } catch {}
 }
@@ -484,24 +425,27 @@ export async function saveCustomerComparison(
 export async function loadCustomerComparison(userId: string | null | undefined): Promise<string[]> {
   const cleanUid = normalizeCustomerId(userId);
   if (!cleanUid) return getStoredCustomerComparisonSync(null);
-
-  const localIds = getStoredCustomerComparisonSync(cleanUid);
+  const key = `printcore_user_comparison_${cleanUid}`;
+  const metaKey = `printcore_user_comparison_meta_${cleanUid}`;
   try {
-    const compRef = doc(db, 'users', cleanUid, 'userData', 'comparison');
-    const snap = await getDoc(compRef);
-    if (snap.exists()) {
-      const d = snap.data();
-      if (d?.data) {
-        const parsed = JSON.parse(d.data);
-        if (Array.isArray(parsed)) {
-          const valid = parsed.filter((id) => typeof id === 'string').slice(0, 4);
-          localStorage.setItem(`printcore_user_comparison_${cleanUid}`, JSON.stringify(valid));
-          return valid;
-        }
+    const snap = await getDoc(doc(db, 'users', cleanUid, 'userData', 'comparison'));
+    const data = snap.data();
+    const localIds = getStoredCustomerComparisonSync(cleanUid);
+    const local = readListVersion(metaKey);
+    const parsed = data?.data ? JSON.parse(data.data) : undefined;
+    if (Array.isArray(parsed) && data) {
+      const cloudIds = Array.from(new Set(parsed.filter((id): id is string => typeof id === 'string'))).slice(0, 4);
+      const cloud = { ...cloudListVersion(data), explicitClear: cloudIds.length === 0 };
+      if (chooseCustomerListSource(localIds.length, local, cloudIds.length, cloud) === 'cloud') {
+        cacheCustomerList(key, metaKey, cloudIds, cloud);
+        return cloudIds;
       }
+      if ((local.updatedAtMs ?? 0) > (cloud.updatedAtMs ?? 0)) void saveCustomerComparison(cleanUid, localIds);
+    } else if (localIds.length > 0 || local.explicitClear) {
+      void saveCustomerComparison(cleanUid, localIds);
     }
   } catch {}
-  return localIds;
+  return getStoredCustomerComparisonSync(cleanUid);
 }
 
 // -------------------------------------------------------------
