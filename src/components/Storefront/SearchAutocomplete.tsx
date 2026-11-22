@@ -13,7 +13,7 @@ import {
 import { FilamentProduct } from '../../types';
 import { INITIAL_PRODUCTS } from '../../data/mockData';
 import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
-import { prepareProductSearch, evaluateProductDeepSearch, expandAssociativeKeywords } from '../../utils/productSearch';
+import { normalizeProductSearch, prepareProductSearch, evaluateProductDeepSearch, expandAssociativeKeywords } from '../../utils/productSearch';
 
 export interface SearchAutocompleteProps {
   searchQuery: string;
@@ -200,7 +200,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
     return () => window.removeEventListener('keydown', handleGlobalShortcut);
   }, [id]);
 
-  const trimmedQuery = isOpen ? searchQuery.trim().toLowerCase() : '';
+  const trimmedQuery = isOpen ? normalizeProductSearch(searchQuery) : '';
   const expandedTokens = useMemo(() => expandAssociativeKeywords(trimmedQuery), [trimmedQuery]);
 
   // Compute Matched Materials (including deep associative keywords)
@@ -479,7 +479,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           id={dropdownId}
           role="listbox"
           aria-label={placeholder}
-          className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 z-50 overflow-hidden animate-in fade-in zoom-in-98 duration-150 max-h-[75vh] sm:max-h-[480px] overflow-y-auto [&_[aria-selected=true]]:outline-2 [&_[aria-selected=true]]:outline-offset-[-2px] [&_[aria-selected=true]]:outline-indigo-500"
+          className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 z-50 overflow-hidden store-search-panel max-h-[75vh] sm:max-h-[480px] overflow-y-auto [&_[aria-selected=true]]:outline-2 [&_[aria-selected=true]]:outline-offset-[-2px] [&_[aria-selected=true]]:outline-indigo-500"
         >
           {/* STATE 1: Empty Query - Show Hot Trending Searches */}
           {!trimmedQuery && (

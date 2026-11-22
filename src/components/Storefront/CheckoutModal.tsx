@@ -629,8 +629,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     id: PaymentGateway;
     label: string;
   }[] = [
-    { id: 'webatm', label: '銀行轉帳' },
     { id: 'credit_card', label: '信用卡(一次付清)' },
+    { id: 'webatm', label: '銀行轉帳' },
     { id: 'atm', label: 'ATM' },
     { id: 'barcode', label: '超商條碼' },
     { id: 'applepay', label: 'Apple Pay' },
@@ -642,12 +642,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[95] overflow-y-auto bg-slate-950/65 flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[95] overflow-y-auto bg-slate-950/65 flex items-center justify-center p-0 sm:p-5 store-panel-backdrop cursor-pointer select-none"
       onClick={() => { if (!paymentPending.current) onClose(); }}
       title="點擊背景空白處可返回主頁面"
     >
       <div 
-        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full h-full sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 dark:border-slate-800 flex flex-col relative cursor-default select-text pb-16 sm:pb-0"
+        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full h-full sm:h-auto sm:max-h-[92vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 dark:border-slate-800 flex flex-col relative cursor-default select-text store-panel pb-16 sm:pb-0"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="store-checkout-heading"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Top Header */}
@@ -658,7 +661,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-nowrap">
-                <h2 className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-none whitespace-nowrap">
+                <h2 id="store-checkout-heading" className="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-none whitespace-nowrap">
                   {createdOrder
                     ? lang === 'en'
                       ? 'Payment Authorized'
@@ -700,7 +703,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         {/* If Order is Created Success View */}
         {createdOrder ? (
           <div className="p-4 sm:p-6 flex flex-col items-center text-center space-y-6">
-            <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/10 animate-bounce">
+            <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/10 store-panel">
               <CheckCircle2 className="w-12 h-12" />
             </div>
 
@@ -1088,46 +1091,42 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="bg-white dark:bg-slate-900/90 rounded-3xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 shadow-2xs">
                   <div className="flex flex-col sm:flex-row sm:items-start gap-2.5 sm:gap-5">
                     <div className="sm:w-24 shrink-0 sm:pt-1 flex sm:flex-col items-center sm:items-start justify-between sm:justify-start gap-2">
-                      <span className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                      <h3 id="store-payment-heading" className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                         付款方式
-                      </span>
+                      </h3>
                       <span className="inline-block text-[10px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full font-bold sm:mt-1 whitespace-nowrap">
                         藍新金流
                       </span>
                     </div>
 
-                    <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div role="radiogroup" aria-labelledby="store-payment-heading" className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {paymentRadioOptions.map((pm) => {
                         const isSelected = paymentGateway === pm.id;
                         return (
-                          <div
+                          <label
                             key={pm.id}
-                            onClick={() => {
-                              setPaymentGateway(pm.id);
-                              if (formError) setFormError(null);
-                            }}
-                            className={`flex items-center gap-2.5 cursor-pointer group px-3 py-2.5 rounded-2xl border transition-all ${
+                            className={`flex items-center gap-2.5 cursor-pointer group px-3 py-2.5 rounded-2xl border transition-colors store-action ${
                               isSelected
                                 ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 dark:border-indigo-400'
                                 : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                             }`}
                           >
-                            <div
-                              className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center transition-colors shrink-0 ${
-                                isSelected
-                                  ? 'border-blue-600 dark:border-indigo-400'
-                                  : 'border-slate-400 dark:border-slate-600 group-hover:border-blue-500'
-                              }`}
-                            >
-                              {isSelected && (
-                                <div className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-blue-600 dark:bg-indigo-400" />
-                              )}
-                            </div>
+                            <input
+                              type="radio"
+                              name="store-payment-method"
+                              checked={isSelected}
+                              disabled={isProcessing}
+                              onChange={() => {
+                                setPaymentGateway(pm.id);
+                                setFormError(null);
+                              }}
+                              className="h-4 w-4 shrink-0 accent-indigo-600"
+                            />
 
                             <span className="text-sm font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                               {pm.label}
                             </span>
-                          </div>
+                          </label>
                         );
                       })}
                     </div>
@@ -1372,17 +1371,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </div>
                   )}
 
+                  <div role="status" className="sr-only">{isProcessing ? '正在連線藍新金流加密授權' : ''}</div>
                   <button
                     id="start-payment-gateway-btn"
+                    aria-busy={isProcessing}
                     onClick={handleStartPayment}
                     disabled={isProcessing}
-                    className="btn-tactile-primary w-full py-3.5 px-4 sm:px-5 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20"
+                    className="btn-tactile-primary store-action w-full py-3.5 px-4 sm:px-5 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 dark:from-indigo-600 dark:via-indigo-700 dark:to-indigo-800 hover:from-indigo-600 hover:to-blue-600 text-white shadow-indigo-900/20"
                   >
                     {isProcessing ? (
-                      <div className="flex items-center gap-2">
+                      <span className="flex items-center gap-2" aria-hidden="true">
                         <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin motion-reduce:animate-none shrink-0"></span>
                         <span className="text-center text-balance leading-snug">正在連線藍新金流加密授權...</span>
-                      </div>
+                      </span>
                     ) : (
                       <>
                         <Lock className="w-4 h-4 text-emerald-400 shrink-0" />

@@ -120,8 +120,12 @@ export function expandAssociativeKeywords(token: string): string[] {
   return Array.from(expanded);
 }
 
+export function normalizeProductSearch(query: string): string {
+  return (query || '').normalize('NFKC').trim().toLowerCase();
+}
+
 export function prepareProductSearch(rawQuery: string) {
-  const query = (rawQuery || '').trim().toLowerCase();
+  const query = normalizeProductSearch(rawQuery);
   if (!query) return [];
   return query.split(/\s+/).map(token => ({ token, associativeTerms: expandAssociativeKeywords(token) }));
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShoppingCart } from 'lucide-react';
@@ -24,6 +24,7 @@ interface FlyToCartFlight {
   endX: number;
   endY: number;
   rotateMid: number;
+  duration: number;
   rotateEnd: number;
   imageUrl: string;
   accentColor?: string;
@@ -94,6 +95,7 @@ export function triggerFlyToCart({
     endX,
     endY,
     rotateMid: direction * 6,
+    duration: Math.min(.48, Math.max(.32, .28 + Math.hypot(dx, dy) / 3000)),
     rotateEnd: direction * 12,
     imageUrl: resolvedImageUrl,
     accentColor,
@@ -105,7 +107,13 @@ export function triggerFlyToCart({
 export const FlyToCartOverlay: React.FC = () => {
   const [flights, setFlights] = useState<FlyToCartFlight[]>([]);
 
+  const cleanupTimers = useRef(new Map<string, number>());
+
   const removeFlight = useCallback((id: string, emitLanded: boolean) => {
+    const timer = cleanupTimers.current.get(id);
+    if (timer === undefined) return;
+    window.clearTimeout(timer);
+    cleanupTimers.current.delete(id);
     setFlights((prev) => prev.filter((f) => f.id !== id));
     if (emitLanded && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(FLY_TO_CART_LANDED_EVENT));
@@ -113,6 +121,7 @@ export const FlyToCartOverlay: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const timers = cleanupTimers.current;
     const handleTrigger = (e: Event) => {
       const customEvent = e as CustomEvent<FlyToCartFlight>;
       if (!customEvent.detail) return;
@@ -120,13 +129,15 @@ export const FlyToCartOverlay: React.FC = () => {
       setFlights((prev) => [...prev.slice(-4), flight]);
 
       // Safety cleanup in case animation callback doesn't fire (e.g. tab backgrounded)
-      window.setTimeout(() => {
-        removeFlight(flight.id, false);
-      }, 950);
+      timers.set(flight.id, window.setTimeout(() => removeFlight(flight.id, false), 950));
     };
 
     window.addEventListener(FLY_TO_CART_EVENT, handleTrigger);
-    return () => window.removeEventListener(FLY_TO_CART_EVENT, handleTrigger);
+    return () => {
+      window.removeEventListener(FLY_TO_CART_EVENT, handleTrigger);
+      timers.forEach(timer => window.clearTimeout(timer));
+      timers.clear();
+    };
   }, [removeFlight]);
 
   if (typeof document === 'undefined') return null;
@@ -140,59 +151,60 @@ export const FlyToCartOverlay: React.FC = () => {
       className="fixed inset-0 pointer-events-none z-[120] overflow-hidden"
     >
       <AnimatePresence>
-        {flights.map((flight) => (
-          <motion.div
-            key={flight.id}
-            initial={{
-              x: flight.startX - HALF,
-              y: flight.startY - HALF,
-              scale: 0.85,
-              opacity: 0.96,
-              rotate: 0,
-            }}
-            animate={{
-              x: [
-                flight.startX - HALF,
-                flight.midX - HALF,
-                flight.endX - HALF,
-              ],
-              y: [
-                flight.startY - HALF,
-                flight.midY - HALF,
-                flight.endY - HALF,
-              ],
-              scale: [0.88, 1.06, 0.34],
-              opacity: [0.95, 0.98, 0.2],
-              rotate: [0, flight.rotateMid, flight.rotateEnd],
-            }}
-            exit={{ opacity: 0, scale: 0.2 }}
-            transition={{
-              duration: 0.56,
-              ease: [0.22, 1, 0.36, 1],
-              times: [0, 0.45, 1],
-            }}
-            onAnimationComplete={() => removeFlight(flight.id, true)}
-            style={{ width: ITEM_SIZE, height: ITEM_SIZE }}
-            className="fixed top-0 left-0 rounded-xl bg-white dark:bg-slate-900 border-2 border-indigo-500/85 shadow-lg shadow-indigo-500/25 flex items-center justify-center overflow-visible will-change-transform"
-          >
-            {flight.imageUrl ? (
-              <img
-                src={flight.imageUrl}
-                alt=""
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover rounded-[10px]"
-              />
-            ) : (
-              <ShoppingCart className="w-4 h-4 text-indigo-600" />
-            )}
-            <span
-              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs border border-white dark:border-slate-900"
-              style={flight.accentColor ? { backgroundColor: flight.accentColor } : undefined}
+        {flights.map((flight) => {
+          const controlX = 2 * flight.midX - (flight.startX + flight.endX) / 2;
+          const controlY = Math.max(-HALF, 2 * flight.midY - (flight.startY + flight.endY) / 2);
+          const poses = [0, .25, .5, .75, 1];
+          const curve = (start: number, control: number, end: number) =>
+            poses.map(t => (1 - t) ** 2 * start + 2 * (1 - t) * t * control + t ** 2 * end - HALF);
+          return (
+            <motion.div
+              key={flight.id}
+              initial={{
+                x: flight.startX - HALF,
+                y: flight.startY - HALF,
+                scale: 0.85,
+                opacity: 0.96,
+                rotate: 0,
+                rotateY: 0,
+              }}
+              animate={{
+                x: curve(flight.startX, controlX, flight.endX),
+                y: curve(flight.startY, controlY, flight.endY),
+                scale: [0.85, 1.1, 0.98, 0.72, 0.34],
+                opacity: [0.95, 1, 1, 0.8, 0.25],
+                rotate: [0, -flight.rotateMid / 2, flight.rotateMid, flight.rotateMid * 1.5, flight.rotateEnd],
+                rotateY: [0, -flight.rotateMid, flight.rotateMid * 2, flight.rotateMid, 0],
+              }}
+              exit={{ opacity: 0, scale: 0.2 }}
+              transition={{
+                duration: flight.duration,
+                ease: [[.42, 0, .58, 1], 'linear', 'linear', [.16, 1, .3, 1]],
+                times: poses,
+              }}
+              onAnimationComplete={() => removeFlight(flight.id, true)}
+              style={{ width: ITEM_SIZE, height: ITEM_SIZE, transformPerspective: 420 }}
+              className="fixed top-0 left-0 rounded-xl bg-white dark:bg-slate-900 border-2 border-indigo-500/85 shadow-lg shadow-indigo-500/25 flex items-center justify-center overflow-visible will-change-transform"
             >
-              <ShoppingCart className="w-2.5 h-2.5" />
-            </span>
-          </motion.div>
-        ))}
+              {flight.imageUrl ? (
+                <img
+                  src={flight.imageUrl}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover rounded-[10px]"
+                />
+              ) : (
+                <ShoppingCart className="w-4 h-4 text-indigo-600" />
+              )}
+              <span
+                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-xs border border-white dark:border-slate-900"
+                style={flight.accentColor ? { backgroundColor: flight.accentColor } : undefined}
+              >
+                <ShoppingCart className="w-2.5 h-2.5" />
+              </span>
+            </motion.div>
+          );
+        })}
       </AnimatePresence>
     </div>,
     document.body
