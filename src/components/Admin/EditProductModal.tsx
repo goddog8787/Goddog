@@ -131,6 +131,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
   const [newColorHex, setNewColorHex] = useState('#000000');
   const [newColorStock, setNewColorStock] = useState(10);
   const [isSavingToCloud, setIsSavingToCloud] = useState(false);
+  const [validationError, setValidationError] = useState('');
 
   useEffect(() => {
     if (product) {
@@ -168,7 +169,16 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
 
   // Color actions
   const handleAddColor = () => {
-    if (!newColorName.trim()) return;
+    const name = newColorName.trim();
+    if (!name || colors.some(color => color.name.trim().toLowerCase() === name.toLowerCase())) {
+      setValidationError('請輸入未重複的顏色名稱。');
+      return;
+    }
+    if (!Number.isSafeInteger(newColorStock) || newColorStock < 0) {
+      setValidationError('顏色庫存請輸入零或正整數。');
+      return;
+    }
+    setValidationError('');
     const updated = [
       ...colors,
       { name: newColorName.trim(), hex: newColorHex, stock: Number(newColorStock) || 0 }
@@ -182,6 +192,11 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
   };
 
   const handleRemoveColor = (idx: number) => {
+    if (colors.length <= 1) {
+      setValidationError('請至少保留一個可供選擇的顏色或規格。');
+      return;
+    }
+    setValidationError('');
     const updated = colors.filter((_, i) => i !== idx);
     setColors(updated);
     const total = updated.reduce((sum, c) => sum + c.stock, 0);
@@ -189,8 +204,12 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
   };
 
   const handleUpdateColorStock = (idx: number, newQty: number) => {
-    const updated = [...colors];
-    updated[idx].stock = Math.max(0, newQty);
+    if (!Number.isSafeInteger(newQty) || newQty < 0) {
+      setValidationError('顏色庫存請輸入零或正整數。');
+      return;
+    }
+    setValidationError('');
+    const updated = colors.map((color, index) => index === idx ? { ...color, stock: newQty } : color);
     setColors(updated);
     const total = updated.reduce((sum, c) => sum + c.stock, 0);
     setStock(total);
@@ -266,7 +285,13 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || isSavingToCloud) return;
+    if (isSavingToCloud) return;
+    if (!name.trim() || !Number.isSafeInteger(price) || price < 1 ||
+        !Number.isSafeInteger(stock) || stock < 0 || !colors.length) {
+      setValidationError('請確認品名、正整數售價、整數庫存，並至少設定一個顏色或規格。');
+      return;
+    }
+    setValidationError('');
 
     const updatedProduct = buildUpdatedProductFromForm();
 
@@ -342,6 +367,7 @@ export const EditProductModal: React.FC<EditProductModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
+          {validationError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 font-semibold text-rose-700">{validationError}</p>}
           {/* TAB 1: BASIC INFO */}
           {activeTab === 'basic' && (
             <div className="space-y-4">

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Heart,
@@ -17,8 +17,8 @@ interface WishlistDrawerProps {
   wishlistIds: string[];
   products: FilamentProduct[];
   onRemoveFromWishlist: (id: string) => void;
-  onAddToCart: (product: FilamentProduct) => void;
-  onAddAllToCart: (products: FilamentProduct[]) => void;
+  onAddToCart: (product: FilamentProduct) => boolean;
+  onAddAllToCart: (products: FilamentProduct[]) => FilamentProduct[];
   currency: CurrencyCode;
   lang: LanguageCode;
 }
@@ -34,7 +34,19 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
   currency,
   lang,
 }) => {
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeWithEscape);
+    return () => window.removeEventListener('keydown', closeWithEscape);
+  }, [isOpen, onClose]);
   if (!isOpen) return null;
+
+  const unavailableMessage = lang === 'en' ? 'This item is unavailable or its stock is already in your cart.'
+    : lang === 'ja' ? '在庫がないか、在庫分がカートに入っています。' : '商品缺貨或購物車已達庫存上限，已保留收藏。';
 
   const savedProducts = products.filter((p) => wishlistIds.includes(p.id));
 
@@ -44,7 +56,10 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
-      <div 
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wishlist-drawer-title"
         className="w-full max-w-md bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col justify-between relative animate-slide-in-right cursor-default select-text"
         onClick={(e) => e.stopPropagation()}
       >
@@ -55,7 +70,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
               <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
+              <h2 id="wishlist-drawer-title" className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                 {lang === 'en' ? 'My Wishlist / Saved Filaments' : lang === 'ja' ? 'お気に入り・保存済み' : '我的願望清單 / 收藏庫'}
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
@@ -69,6 +84,8 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
           </div>
 
           <button
+            type="button"
+            aria-label={lang === 'en' ? 'Close wishlist' : lang === 'ja' ? 'お気に入りを閉じる' : '關閉收藏'}
             onClick={onClose}
             className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer shrink-0"
           >
@@ -139,6 +156,11 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
 
                       <button
                         onClick={(e) => {
+                          if (!onAddToCart(p)) {
+                            setNotice(unavailableMessage);
+                            return;
+                          }
+                          setNotice('');
                           triggerFlyToCart({
                             sourceEl: e.currentTarget,
                             imageUrl: p.imageUrl,
@@ -146,7 +168,6 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                             productName: displayName,
                             accentColor: p.colors?.[0]?.hex,
                           });
-                          onAddToCart(p);
                           onRemoveFromWishlist(p.id);
                         }}
                         className="py-1 px-2.5 rounded-lg bg-slate-900 dark:bg-indigo-600 hover:bg-indigo-600 text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
@@ -165,17 +186,25 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
         {/* Footer Actions */}
         {savedProducts.length > 0 && (
           <div className="px-4 py-3.5 sm:px-5 sm:py-4 pb-24 lg:pb-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 space-y-2 shrink-0">
+            {notice && <p role="status" className="text-xs text-slate-700 dark:text-slate-200">{notice}</p>}
             <button
               onClick={(e) => {
-                triggerFlyToCart({
+                const added = onAddAllToCart(savedProducts);
+                const first = added[0];
+                if (first) triggerFlyToCart({
                   sourceEl: e.currentTarget,
-                  imageUrl: savedProducts[0]?.imageUrl,
-                  material: savedProducts[0]?.material,
-                  productName: savedProducts[0]?.name,
-                  accentColor: savedProducts[0]?.colors?.[0]?.hex,
+                  imageUrl: first.imageUrl,
+                  material: first.material,
+                  productName: first.name,
+                  accentColor: first.colors?.[0]?.hex,
                 });
-                onAddAllToCart(savedProducts);
-                onClose();
+                if (added.length === savedProducts.length) {
+                  onClose();
+                } else {
+                  setNotice(lang === 'en' ? `Added ${added.length} of ${savedProducts.length}. Unavailable items are still saved.`
+                    : lang === 'ja' ? `${savedProducts.length} 件中 ${added.length} 件を追加。在庫切れの商品は保存済みです。`
+                    : `已加入 ${added.length}／${savedProducts.length} 款，無法加入的商品仍保留在收藏。`);
+                }
               }}
               className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
             >

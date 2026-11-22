@@ -1,3 +1,4 @@
+import { CHECKOUT_CVS_FREE_THRESHOLD, checkoutPointLimit, checkoutShippingFee } from '../../utils/checkoutDetails';
 import { cartStockRemaining } from '../../utils/cartStock';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -70,7 +71,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const hasUnavailableItems = unavailableLines.some(Boolean);
   const vipDiscount = isVip ? Math.floor(rawSubtotal * 0.03) : 0;
   const subtotal = rawSubtotal - vipDiscount; // actual subtotal after VIP discount
-  const freeShippingThreshold = 999;
+  const freeShippingThreshold = CHECKOUT_CVS_FREE_THRESHOLD;
 
   const hasFreeShippingItem = cartItems.length > 0 && cartItems.every(i => i.product.customShippingFee === 0);
   const isFreeShipping = subtotal >= freeShippingThreshold || hasFreeShippingItem;
@@ -78,12 +79,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const freeShippingProgress = isFreeShipping ? 100 : Math.min(100, Math.round((subtotal / freeShippingThreshold) * 100));
 
   // Points redemption logic: 1 point = NT$1 off, up to member's points or 10% of subtotal
-  const maxRedeemablePoints = Math.min((member?.points || 0), Math.floor(subtotal * 0.1));
+  const maxRedeemablePoints = checkoutPointLimit(member?.points, subtotal);
   const [usePoints, setUsePoints] = useState(false);
   const pointsUsed = usePoints ? maxRedeemablePoints : 0;
   const couponDiscount = appliedCoupon ? appliedCoupon.discount : 0;
-  const shippingFee = isFreeShipping || Boolean(appliedCoupon?.freeShipping) ? 0 : 60;
-  const finalTotal = Math.max(0, subtotal - pointsUsed - couponDiscount) + shippingFee;
+  const shippingFee = checkoutShippingFee('UNIMARTC2C', subtotal, isFreeShipping || Boolean(appliedCoupon?.freeShipping));
+  const finalTotal = Math.max(0, subtotal + shippingFee - pointsUsed - couponDiscount);
   const totalSavings = vipDiscount + pointsUsed + couponDiscount;
 
   const handleApplyCoupon = (codeToApply?: string) => {
@@ -554,7 +555,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   <div className="flex justify-between text-slate-600">
                     <span>{lang === 'en' ? 'Shipping' : lang === 'ja' ? '送料' : '物流運費'}</span>
                     <span className="font-mono font-medium text-emerald-600">
-                      {shippingFee === 0 ? (lang === 'en' ? 'Free Shipping $0' : lang === 'ja' ? '送料無料 $0' : '全館免運 NT$0') : 'NT$60'}
+                      {shippingFee === 0 ? (lang === 'en' ? 'Free Shipping $0' : lang === 'ja' ? '送料無料 $0' : '全館免運 NT$0') : formatPrice(shippingFee, currency)}
                     </span>
                   </div>
                 </div>
@@ -586,7 +587,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     </span>
                   )}
                   <span>
-                    {shippingFee === 0 ? (lang === 'en' ? 'Free Shipping' : lang === 'ja' ? '送料無料' : '免運費') : (lang === 'en' ? 'Incl. Shipping $60' : lang === 'ja' ? '送料込 $60' : '含運 NT$60')}
+                    {shippingFee === 0 ? (lang === 'en' ? 'Free Shipping' : lang === 'ja' ? '送料無料' : '免運費') : (lang === 'en' ? `Incl. pickup shipping ${formatPrice(shippingFee, currency)}` : lang === 'ja' ? `コンビニ送料込 ${formatPrice(shippingFee, currency)}` : `含超商取貨運費 ${formatPrice(shippingFee, currency)}`)}
                   </span>
                 </div>
               </div>

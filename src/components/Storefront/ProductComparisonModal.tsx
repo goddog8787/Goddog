@@ -45,7 +45,7 @@ interface ProductComparisonModalProps {
   onRemoveComparison?: (id: string) => void;
   onClearAll?: () => void;
   onClearComparison?: () => void;
-  onAddToCart: (product: FilamentProduct, color?: any, diameter?: any, quantity?: number) => void;
+  onAddToCart: (product: FilamentProduct, color?: any, diameter?: any, quantity?: number) => boolean | void;
   currency: CurrencyCode;
   lang?: LanguageCode;
 }
@@ -377,6 +377,7 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
     if ((rawProduct.stock ?? 0) <= 0 || (defaultColor.stock ?? rawProduct.stock ?? 0) <= 0) {
       return;
     }
+    if (onAddToCart(rawProduct, defaultColor, rawProduct.diameter || '1.75mm', 1) === false) return;
     triggerFlyToCart({
       sourceEl: e?.currentTarget,
       imageUrl: rawProduct.imageUrl,
@@ -384,7 +385,6 @@ export const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
       productName: rawProduct.name,
       accentColor: defaultColor.hex,
     });
-    onAddToCart(rawProduct, defaultColor, rawProduct.diameter || '1.75mm', 1);
   };
 
   const activeLang: LanguageCode = (lang as LanguageCode) || ((typeof window !== 'undefined' ? localStorage.getItem('printcore_lang') : null) as LanguageCode) || 'zh-TW';

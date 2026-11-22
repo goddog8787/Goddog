@@ -1,3 +1,4 @@
+import { waitForCatalogCloudSync } from '../utils/catalogSyncResult';
 import {
   collection,
   doc,
@@ -292,10 +293,10 @@ export async function syncCatalogDeltaToCloud(
   fullProducts?: FilamentProduct[],
   changedProduct?: FilamentProduct,
   deletedProductId?: string
-): Promise<void> {
+): Promise<boolean> {
   await auth.authStateReady();
   const user = auth.currentUser;
-  if (!user?.emailVerified || !['babe0615@gmail.com', 'goddog@gmail.com'].includes(user.email || '')) return;
+  if (!user?.emailVerified || !['babe0615@gmail.com', 'goddog@gmail.com'].includes(user.email || '')) return false;
 
   const cleanDelta = sanitizeForFirestore({
     ...delta,
@@ -340,7 +341,11 @@ export async function syncCatalogDeltaToCloud(
     }).catch(() => {});
   } catch {}
 
-  const writePromises: Promise<any>[] = [];
+  const writePromises: Promise<boolean>[] = [];
+  const queueWrite = (pendingWrite: Promise<void>) => {
+    writePromises.push(pendingWrite.then(() => true, () => false));
+  };
+  let indexPrepared = true;
 
   // 2. Write directly to Firestore `products/{docId}` AND `settings/catalog_item_{docId}`
   if (deletedProductId) {
@@ -348,19 +353,19 @@ export async function syncCatalogDeltaToCloud(
     const itemDocId = toSafeFirestoreDocId(deletedProductId);
     const delTime = cleanDelta.deletedTimestamps?.[deletedProductId] || Date.now();
 
-    writePromises.push(
+    queueWrite(
       setDoc(doc(db, 'products', prodDocId), {
         id: deletedProductId,
         _isDeleted: true,
         _updatedAt: delTime,
-      }).catch((e) => console.warn('Firestore products delete marker error:', e))
+      })
     );
-    writePromises.push(
+    queueWrite(
       setDoc(doc(db, 'settings', itemDocId), {
         id: deletedProductId,
         deleted: true,
         updatedAt: delTime,
-      }).catch((e) => console.warn('Firestore settings item delete marker error:', e))
+      })
     );
   }
 
@@ -370,21 +375,21 @@ export async function syncCatalogDeltaToCloud(
     const itemTime = cleanDelta.itemTimestamps?.[safeChangedProduct.id] || Date.now();
     const isCustom = (cleanDelta.customProducts || []).some((p) => p.id === safeChangedProduct!.id);
 
-    writePromises.push(
+    queueWrite(
       setDoc(doc(db, 'products', prodDocId), {
         ...safeChangedProduct,
         id: safeChangedProduct.id,
         _isDeleted: false,
         _isCustom: isCustom,
         _updatedAt: itemTime,
-      }).catch((e) => console.warn('Firestore products write error:', e))
+      })
     );
-    writePromises.push(
+    queueWrite(
       setDoc(doc(db, 'settings', itemDocId), {
         product: safeChangedProduct,
         deleted: false,
         updatedAt: itemTime,
-      }).catch((e) => console.warn('Firestore settings item write error:', e))
+      })
     );
   } else if (!deletedProductId) {
     // Bulk sync all edited/custom products
@@ -403,21 +408,21 @@ export async function syncCatalogDeltaToCloud(
         const itemTime = cleanDelta.itemTimestamps?.[cleanProd.id] || cleanDelta.updatedAt || Date.now();
         const isCustom = (cleanDelta.customProducts || []).some((p) => p.id === cleanProd.id);
 
-        writePromises.push(
+        queueWrite(
           setDoc(doc(db, 'products', prodDocId), {
             ...cleanProd,
             id: cleanProd.id,
             _isDeleted: false,
             _isCustom: isCustom,
             _updatedAt: itemTime,
-          }).catch(() => {})
+          })
         );
-        writePromises.push(
+        queueWrite(
           setDoc(doc(db, 'settings', itemDocId), {
             product: cleanProd,
             deleted: false,
             updatedAt: itemTime,
-          }).catch(() => {})
+          })
         );
       }
     }
@@ -443,7 +448,7 @@ export async function syncCatalogDeltaToCloud(
       return copy;
     });
 
-    writePromises.push(
+    queueWrite(
       setDoc(doc(db, 'settings', 'product_catalog'), {
         customProducts: lightCustomList,
         editedProductsMap: lightEditedMap,
@@ -452,19 +457,23 @@ export async function syncCatalogDeltaToCloud(
         deletedTimestamps: cleanDelta.deletedTimestamps || {},
         catalogItemIds,
         updatedAt: cleanDelta.updatedAt || Date.now(),
-      }).catch((e) => console.warn('Firestore master product_catalog sync warning:', e))
+      })
     );
   } catch (e) {
+    indexPrepared = false;
     console.warn('Firestore master product_catalog build warning:', e);
   }
 
-  await Promise.all(writePromises);
+  const results = await Promise.all(writePromises);
+  const failedWrites = results.filter(result => !result).length;
+  if (failedWrites) console.warn('Firestore catalog writes failed:', failedWrites);
+  return indexPrepared && failedWrites === 0;
 }
 
-let lastCloudSyncPromise: Promise<void> = Promise.resolve();
+let lastCloudSyncPromise: Promise<boolean> = Promise.resolve(false);
 
-export function waitForLastCatalogCloudSync(): Promise<void> {
-  return lastCloudSyncPromise;
+export function waitForLastCatalogCloudSync(): Promise<boolean> {
+  return waitForCatalogCloudSync(lastCloudSyncPromise);
 }
 
 /**
@@ -517,6 +526,7 @@ export function recordAdminProductUpsert(
 
   lastCloudSyncPromise = syncCatalogDeltaToCloud(delta, updatedList, cleanProduct).catch((e) => {
     console.warn('Cloud catalog upsert sync error:', e);
+    return false;
   });
   return updatedList;
 }
@@ -556,6 +566,7 @@ export function recordAdminProductDelete(
 
   lastCloudSyncPromise = syncCatalogDeltaToCloud(delta, updatedList, undefined, productId).catch((e) => {
     console.warn('Cloud catalog delete sync error:', e);
+    return false;
   });
   return updatedList;
 }

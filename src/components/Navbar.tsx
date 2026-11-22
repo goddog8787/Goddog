@@ -602,7 +602,7 @@ const NavbarInner: React.FC<NavbarProps> = ({
               <button
                 id="btn-open-wishlist"
                 onClick={onOpenWishlist}
-                className="relative hidden xs:flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-all duration-150 active:scale-95 cursor-pointer shrink-0"
+                className="relative hidden sm:flex items-center justify-center w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/60 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-all duration-150 active:scale-95 cursor-pointer shrink-0"
                 title={t.wishlist || "我的願望清單 / 收藏庫"}
               >
                 <Heart className={`w-4 h-4 ${wishlistCount > 0 ? 'fill-rose-500 text-rose-500' : ''}`} />
