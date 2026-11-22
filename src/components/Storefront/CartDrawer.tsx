@@ -151,12 +151,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-[85] overflow-hidden bg-slate-950/65 flex justify-end cursor-pointer select-none"
+      className="fixed inset-0 z-[85] store-panel-backdrop overflow-hidden bg-slate-950/65 flex justify-end cursor-pointer select-none"
       onClick={onClose}
       title="點擊背景空白處可關閉購物車"
     >
-      <div 
-        className="relative w-full max-w-md bg-white h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between animate-slide-in-right cursor-default select-text overflow-hidden"
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="store-cart-heading"
+        className="relative w-full max-w-md bg-white h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between store-cart-panel cursor-default select-text overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header (Slim & Crisp) */}
@@ -166,7 +169,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <ShoppingBag className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-bold text-slate-900 text-sm sm:text-base leading-tight">{t.cart}</h2>
+              <h2 id="store-cart-heading" className="font-bold text-slate-900 text-sm sm:text-base leading-tight">{t.cart}</h2>
               <p className="text-[11px] text-slate-500">
                 {lang === 'en' ? `Total ${cartItems.reduce((acc, i) => acc + i.quantity, 0)} items` : lang === 'ja' ? `合計 ${cartItems.reduce((acc, i) => acc + i.quantity, 0)} 点` : `共 ${cartItems.reduce((acc, i) => acc + i.quantity, 0)} 件商品`}
               </p>
@@ -319,8 +322,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                             <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden shadow-2xs">
                               <button
                                 type="button"
-                                onClick={() => onUpdateQuantity(idx, Math.max(1, item.quantity - 1))}
-                                className="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
+                                aria-label={lang === 'zh-TW' ? '減少數量' : lang === 'ja' ? '数量を減らす' : 'Decrease quantity'}
+                                disabled={item.quantity <= 1}
+                                onClick={() => onUpdateQuantity(idx, item.quantity - 1)}
+                                className="min-w-9 min-h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
@@ -331,8 +336,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                                 type="button"
                                 disabled={atStockCap}
                                 onClick={() => onUpdateQuantity(idx, Math.min(maxStock, item.quantity + 1))}
+                                aria-label={lang === 'zh-TW' ? '增加數量' : lang === 'ja' ? '数量を増やす' : 'Increase quantity'}
                                 title={atStockCap ? `已達現貨上限 (${maxStock})` : '增加數量'}
-                                className="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="min-w-9 min-h-10 flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
@@ -592,7 +598,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   onClose();
                   onProceedCheckout(pointsUsed, appliedCoupon?.code);
                 }}
-                className="btn-tactile-primary flex-1 max-w-[210px] py-2.5 sm:py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn-tactile-primary store-action flex-1 max-w-[210px] py-2.5 sm:py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>{lang === 'en' ? 'Checkout' : lang === 'ja' ? 'ご購入手続き' : '前往結帳'}</span>
                 <ArrowRight className="w-4 h-4" />

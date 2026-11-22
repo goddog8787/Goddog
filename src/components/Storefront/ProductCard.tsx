@@ -292,7 +292,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
             type="button"
             onClick={handleOpenColorSheet}
             disabled={liveProduct.stock <= 0}
-            className={`btn-tactile-primary group/cart h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
+            className={`btn-tactile-primary store-action group/cart h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
               liveProduct.stock <= 0
                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                 : isAddedAnimation
@@ -466,7 +466,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                   type="button"
                   disabled={pickedStock < 1}
                   onClick={handleConfirmAddFromSheet}
-                  className="btn-tactile-primary flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  className="btn-tactile-primary store-action flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >
                   <ShoppingCart className="w-4 h-4 shrink-0" />
                   <span>

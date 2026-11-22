@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue, Suspense } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { 
   Navbar 
 } from './components/Navbar';
@@ -1499,6 +1499,7 @@ export default function App() {
   const t = translations[lang];
 
   // Cart operations
+  const reduceStoreMotion = useReducedMotion();
   const [toastMsg, setToastMsg] = useState<{ id: number, text: string } | null>(null);
   const cartItemsRef = React.useRef<CartItem[]>(cartItems);
   useEffect(() => {
@@ -2419,9 +2420,10 @@ export default function App() {
           <div className="fixed top-16 sm:top-20 lg:top-28 left-1/2 -translate-x-1/2 z-[110] pointer-events-none w-[calc(100%-2rem)] max-w-sm flex justify-center">
             <motion.div
               key={toastMsg.id}
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15, transition: { duration: 0.15 } }}
+              initial={reduceStoreMotion ? false : { opacity: 0, y: -8, scale: .98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={reduceStoreMotion ? { opacity: 0, transition: { duration: 0 } } : { opacity: 0, y: -5, transition: { duration: .12 } }}
+              transition={{ duration: reduceStoreMotion ? 0 : .16, ease: [.2, .78, .26, 1] }}
               role="status"
               onClick={() => setToastMsg(null)}
               className="pointer-events-auto bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-slate-700 cursor-pointer"

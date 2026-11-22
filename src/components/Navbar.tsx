@@ -129,20 +129,12 @@ const NavbarInner: React.FC<NavbarProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const [isCartPulsing, setIsCartPulsing] = useState(false);
+  const [cartArrival, setCartArrival] = useState(0);
 
   useEffect(() => {
-    let pulseTimer: number | undefined;
-    const handleLanded = () => {
-      setIsCartPulsing(true);
-      if (pulseTimer) window.clearTimeout(pulseTimer);
-      pulseTimer = window.setTimeout(() => setIsCartPulsing(false), 320);
-    };
+    const handleLanded = () => setCartArrival(value => value + 1);
     window.addEventListener(FLY_TO_CART_LANDED_EVENT, handleLanded);
-    return () => {
-      window.removeEventListener(FLY_TO_CART_LANDED_EVENT, handleLanded);
-      if (pulseTimer) window.clearTimeout(pulseTimer);
-    };
+    return () => window.removeEventListener(FLY_TO_CART_LANDED_EVENT, handleLanded);
   }, []);
 
   const location = useLocation();
@@ -669,7 +661,7 @@ const NavbarInner: React.FC<NavbarProps> = ({
               id="btn-open-cart"
               type="button"
               onClick={effectiveCartOpen}
-              className="btn-cart-tactile relative flex items-center justify-center w-9 h-9 sm:w-[90px] sm:h-9 px-0 sm:px-3 rounded-xl bg-slate-900 dark:bg-sky-500 text-white hover:bg-slate-800 dark:hover:bg-sky-400 shadow-xs cursor-pointer shrink-0 overflow-visible"
+              className="btn-cart-tactile relative flex items-center justify-center w-11 h-11 sm:w-[90px] px-0 sm:px-3 rounded-xl bg-slate-900 dark:bg-sky-500 text-white hover:bg-slate-800 dark:hover:bg-sky-400 shadow-xs cursor-pointer shrink-0 overflow-visible"
               aria-label={t.cart || "購物車"}
               title={t.cart || "購物車"}
             >
@@ -677,8 +669,8 @@ const NavbarInner: React.FC<NavbarProps> = ({
               <span className="text-xs font-bold hidden sm:inline ml-1.5 whitespace-nowrap">{t.cart || "購物車"}</span>
               {cartCount > 0 && (
                 <span
-                  data-cart-pulse={isCartPulsing}
-                  className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums leading-none"
+                  key={cartArrival}
+                  className={`${cartArrival ? "store-cart-count" : ""} absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-extrabold h-4.5 min-w-4.5 px-1 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm pointer-events-none tabular-nums leading-none`}
                 >
                   {cartCount > 99 ? '99+' : cartCount}
                 </span>

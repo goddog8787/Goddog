@@ -202,12 +202,12 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
 
   return (
     <div 
-      className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/65 flex items-center justify-center p-0 sm:p-5 animate-fade-in cursor-pointer select-none"
+      className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/65 flex items-center justify-center p-0 sm:p-5 store-panel-backdrop cursor-pointer select-none"
       onClick={onClose}
       title={lang === 'en' ? 'Click background to close' : lang === 'ja' ? '背景クリックで閉じる' : '點擊背景空白處可返回主頁面'}
     >
       <div 
-        className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 flex flex-col relative cursor-default select-text"
+        className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 flex flex-col relative cursor-default select-text store-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-detail-title"
@@ -675,7 +675,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 type="button"
                 disabled={isOutOfStock}
                 onClick={handleAdd}
-                className={`btn-tactile-primary w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                className={`btn-tactile-primary store-action w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
                   isOutOfStock
                     ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     : isAdded
@@ -703,7 +703,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 type="button"
                 disabled={isOutOfStock}
                 onClick={handleBuyNow}
-                className={`btn-tactile-primary w-full py-3 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                className={`btn-tactile-primary store-action w-full py-3 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
                   isOutOfStock
                     ? 'bg-slate-300 cursor-not-allowed'
                     : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 shadow-md shadow-indigo-500/20 cursor-pointer'
