@@ -39,8 +39,8 @@ export const ArticleInteractiveAnimation: React.FC<ArticleInteractiveAnimationPr
     const handleMessage = (event: MessageEvent) => {
       if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
       const data = event.data;
-      if (data && data.type === 'goddog-sim-height' && typeof data.height === 'number') {
-        const clamped = Math.max(330, Math.min(720, Math.ceil(data.height)));
+      if (data && data.type === 'goddog-sim-height' && Number.isFinite(data.height) && data.height > 0) {
+        const clamped = Math.max(1, Math.ceil(data.height));
         setFrameHeight(clamped);
       }
     };
@@ -124,6 +124,7 @@ export const ArticleInteractiveAnimation: React.FC<ArticleInteractiveAnimationPr
 
           <button
             type="button"
+            aria-expanded={showSource}
             onClick={() => setShowSource((prev) => !prev)}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
               showSource
@@ -152,7 +153,7 @@ export const ArticleInteractiveAnimation: React.FC<ArticleInteractiveAnimationPr
           title={animation.title}
           loading="lazy"
           style={frameHeight ? { height: `${frameHeight}px` } : undefined}
-          className={`w-full border-0 block bg-[#0b1120] transition-[height] duration-150 ${
+          className={`w-full border-0 block bg-[#0b1120]  ${
             frameHeight ? '' : 'h-[440px] sm:h-[430px] md:h-[450px]'
           }`}
         />

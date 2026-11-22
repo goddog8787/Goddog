@@ -222,7 +222,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
   if (!isUserLoggedIn) {
     return (
-      <div className="max-w-xl mx-auto min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-center px-4 py-12 sm:px-6">
+      <div className="max-w-xl mx-auto px-2 py-5 sm:px-6 sm:py-8">
         <AnimatePresence>
           {toastMsg && (
             <motion.div
@@ -237,7 +237,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
           )}
         </AnimatePresence>
 
-        <div className="w-full bg-white dark:bg-slate-900 rounded-[32px] p-6 sm:p-8 shadow-2xl shadow-indigo-500/5 border border-slate-200/80 dark:border-slate-800 text-center relative overflow-hidden">
+        <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-7 shadow-sm shadow-indigo-500/5 border border-slate-200/80 dark:border-slate-800 text-center relative overflow-hidden">
           <div className="absolute -top-16 -right-16 w-44 h-44 bg-gradient-to-br from-amber-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
           <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-gradient-to-tr from-sky-400/20 to-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
 
@@ -256,8 +256,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             </div>
           )}
 
-          <div className="relative mx-auto w-20 h-20 mb-5 rounded-3xl bg-gradient-to-br from-amber-400/20 via-orange-400/10 to-indigo-500/20 border border-amber-400/30 flex items-center justify-center shadow-inner">
-            <Gift className="w-10 h-10 text-amber-500 dark:text-amber-400 animate-bounce" />
+          <div className="relative mx-auto w-14 h-14 mb-3 rounded-3xl bg-gradient-to-br from-amber-400/20 via-orange-400/10 to-indigo-500/20 border border-amber-400/30 flex items-center justify-center shadow-inner">
+            <Gift className="w-7 h-7 text-amber-500 dark:text-amber-400" />
           </div>
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-bold mb-3">
@@ -375,20 +375,20 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       </AnimatePresence>
 
       {/* Header Profile Section */}
-      <div className="bg-slate-900 px-6 sm:px-8 lg:px-10 pt-8 sm:pt-10 pb-20 sm:pb-24 rounded-3xl text-white relative overflow-hidden shadow-xl shadow-slate-900/20 border border-slate-800">
+      <div className="bg-slate-900 p-5 sm:p-7 rounded-3xl text-white relative overflow-hidden shadow-xl shadow-slate-900/20 border border-slate-800">
         <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-48 h-48 bg-sky-500/20 rounded-full blur-3xl pointer-events-none"></div>
         
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
-          <div className="flex items-center gap-5">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-tr from-indigo-500 to-sky-400 rounded-full p-1 shadow-lg shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-4 relative z-10">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-tr from-indigo-500 to-sky-400 rounded-full p-1 shadow-lg shrink-0">
               <div className="w-full h-full bg-slate-900 rounded-full border-2 border-slate-900 flex items-center justify-center overflow-hidden">
                 <User className="w-7 h-7 sm:w-8 sm:h-8 text-indigo-300" />
               </div>
             </div>
             <div className="min-w-0">
-              <h2 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight truncate">{member?.name || (lang === 'en' ? 'Guest' : lang === 'ja' ? 'ゲスト' : '訪客')}</h2>
-              <p className="text-slate-400 text-xs sm:text-sm mt-0.5 truncate">{member?.email || ""}</p>
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight [overflow-wrap:anywhere]">{member?.name || (lang === 'en' ? 'Guest' : lang === 'ja' ? 'ゲスト' : '訪客')}</h2>
+              <p className="text-slate-400 text-xs sm:text-sm mt-0.5 [overflow-wrap:anywhere]">{member?.email || ""}</p>
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
                 <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border backdrop-blur-sm ${titleColorClass}`}>
                   <TitleIcon className={`w-3.5 h-3.5 ${titleIconClass}`} />
@@ -431,8 +431,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         </div>
       </div>
 
-      {/* Main Content Area - Responsive 2-Column Desktop Grid overlapping header */}
-      <div className="px-2 sm:px-6 -mt-12 sm:-mt-14 relative z-20 grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-start">
+      {/* Main Content Area - Responsive 2-Column Desktop Grid */}
+      <div className="mt-4 sm:mt-5 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-5 items-start">
         
         {/* Left Column (5/12 on Desktop): VIP, Wallet & Printer Garage */}
         <div className="lg:col-span-5 space-y-5">
