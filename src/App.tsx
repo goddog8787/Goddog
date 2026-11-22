@@ -139,7 +139,7 @@ import {
   SlidersHorizontal,
   Truck
 } from 'lucide-react';
-import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 const PrivacyPolicy = React.lazy(() => import('./pages/Legal/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = React.lazy(() => import('./pages/Legal/TermsOfService').then(m => ({ default: m.TermsOfService })));
 const RefundPolicy = React.lazy(() => import('./pages/Legal/RefundPolicy').then(m => ({ default: m.RefundPolicy })));
@@ -239,12 +239,19 @@ function resolveMaterialFamilyId(rawMaterial: string): string {
   return 'All';
 }
 
-function ScrollToTop() {
-  const { pathname } = useLocation();
+function RouteScroll() {
+  const { pathname, hash } = useLocation();
 
   useEffect(() => {
+    if (hash) {
+      const anchor = document.getElementById(hash.slice(1));
+      if (anchor) {
+        anchor.scrollIntoView({ block: 'start', behavior: 'instant' });
+        return;
+      }
+    }
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [pathname]);
+  }, [pathname, hash]);
 
   return null;
 }
@@ -253,18 +260,23 @@ function ReferralHandler() {
   const { code } = useParams();
   const navigate = useNavigate();
   useEffect(() => {
-    if (code) {
-      localStorage.setItem('printcore_referral_code', code.trim().toUpperCase());
-    }
-    // Automatically log out so they can register/sign-in as the referred user with the code
-    const clearSession = async () => {
+    let active = true;
+    void (async () => {
+      let validInvite = false;
       try {
-        await logOut();
-        clearStoredCustomerSession();
-      } catch (e) {}
-      navigate('/profile?referral_invited=1', { replace: true });
-    };
-    clearSession();
+        await auth.authStateReady();
+        if (!active) return;
+        const normalized = code?.trim();
+        if (!auth.currentUser && normalized && /^[A-Za-z0-9_-]{1,128}$/.test(normalized)) {
+          localStorage.setItem('printcore_referral_code', normalized.toUpperCase());
+          validInvite = true;
+        }
+      } catch {
+        // The profile page remains reachable when browser storage or auth is unavailable.
+      }
+      if (active) navigate(validInvite ? '/profile?referral_invited=1' : '/profile', { replace: true });
+    })();
+    return () => { active = false; };
   }, [code, navigate]);
   return null;
 }
@@ -274,7 +286,7 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
   
-  const activeTab = location.pathname.includes('/admin') 
+  const activeTab = (location.pathname === '/admin' || location.pathname.startsWith('/admin/'))
     ? 'admin' 
     : 'store';
 
@@ -1793,9 +1805,25 @@ export default function App() {
     setIsTrackingOpen(true);
   }, [currentCustomerOrders]);
   const handleOpenMember = useCallback(() => {
-    setActiveTab('store');
-    navigate('/profile');
-  }, [setActiveTab, navigate]);
+    if (location.pathname === '/profile') window.dispatchEvent(new Event('resetProfileModal'));
+    else navigate('/profile');
+  }, [location.pathname, navigate]);
+  const handleSearchCatalog = useCallback((query: string) => {
+    setSearchQuery(query);
+    setSelectedMaterial('All');
+    const hash = '#storefront-product-grid';
+    if (location.pathname === '/' && location.hash === hash) {
+      document.getElementById('storefront-product-grid')?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    } else {
+      navigate({ pathname: '/', hash });
+    }
+  }, [location.pathname, location.hash, navigate]);
+  const handleHeaderProduct = useCallback((product: FilamentProduct) => {
+    if (location.pathname === '/') handleOpenProductDetail(product);
+    else navigate({ pathname: '/', search: new URLSearchParams({ product: product.id }).toString() }, {
+      state: { openedProduct: true },
+    });
+  }, [location.pathname, handleOpenProductDetail, navigate]);
   const handleOpenAuth = useCallback(() => setIsAuthOpen(true), []);
   const handleOpenFilamentLab = useCallback(() => setIsFilamentLabOpen(true), []);
   const handleOpenCompare = useCallback(() => setIsCompareModalOpen(true), []);
@@ -1805,7 +1833,10 @@ export default function App() {
 
   return (
     <div key={lang} className="min-h-screen bg-slate-100/60 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans flex flex-col selection:bg-indigo-500 selection:text-white transition-colors duration-200">
-      <ScrollToTop />
+      <RouteScroll />
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[150] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-slate-900">
+        {lang === 'en' ? 'Skip to content' : lang === 'ja' ? 'メインコンテンツへ移動' : '跳到主要內容'}
+      </a>
       {/* Universal Top Navigation with Unified Real-time Marquee */}
       <Navbar
         announcement={announcement}
@@ -1823,6 +1854,8 @@ export default function App() {
         onOpenSupport={handleOpenSupport}
         onOpenTracking={handleOpenTracking}
         openMemberModal={handleOpenMember}
+        isOwnerAdmin={isOwnerAdmin}
+        onSearchCatalog={handleSearchCatalog}
         onOpenAuth={handleOpenAuth}
         onOpenFilamentLab={handleOpenFilamentLab}
         onOpenCompare={handleOpenCompare}
@@ -1831,7 +1864,7 @@ export default function App() {
         wishlistCount={wishlistIds.length}
         onOpenHistory={handleOpenHistory}
         historyCount={recentlyViewedCount}
-        onSelectProduct={handleOpenProductDetail}
+        onSelectProduct={handleHeaderProduct}
         onOpenRecycle={handleOpenRecycle}
         isLoggedIn={isLoggedIn}
         member={member}
@@ -1841,7 +1874,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3 sm:py-8 pb-32 sm:pb-36 lg:pb-14 overflow-x-hidden">
+      <main id="main-content" tabIndex={-1} className="flex-1 w-full max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 py-3 sm:py-8 overflow-x-hidden">
         <Suspense
           fallback={
             <div className="py-24 flex items-center justify-center">
@@ -1861,7 +1894,7 @@ export default function App() {
           <Route path="/guide" element={<MaterialGuidePage products={products} onSelectProduct={handleOpenProductDetail} onFilterCategory={(mat) => { setSelectedMaterial(resolveMaterialFamilyId(mat)); navigate('/'); }} lang={lang} />} />
           <Route path="/store" element={<Navigate to="/" replace />} />
           <Route path="/r/:code" element={<ReferralHandler />} />
-          <Route path="/profile" element={<><SEO title={lang === 'en' ? 'Member Center - GodDog 3D' : lang === 'ja' ? 'マイページ - 神狗勾 3D' : '會員中心 - 神狗勾 3D'} description={lang === 'en' ? 'GodDog 3D Maker Member Center' : lang === 'ja' ? '神狗勾3Dフィラメント公式 会員マイページ' : '神狗勾耗材商城會員中心'} url="/profile" /><ProfilePage 
+          <Route path="/profile" element={<><SEO title={t.personalProfile} noIndex description={lang === 'en' ? 'GodDog 3D Maker Member Center' : lang === 'ja' ? '神狗勾3Dフィラメント公式 会員マイページ' : '神狗勾耗材商城會員中心'} url="/profile" /><ProfilePage
             member={member} 
             orders={currentCustomerOrders} 
             setOrders={setOrders} 
@@ -1902,7 +1935,15 @@ export default function App() {
           /></>} />
           <Route path="/subscription" element={<><SEO title={lang === 'en' ? 'Subscription Plans - GodDog 3D' : lang === 'ja' ? '定期便・サブスク管理 - 神狗勾 3D' : '我的訂閱管理 - 神狗勾 3D'} description={lang === 'en' ? 'Manage your 3D printing maker VIP subscription, check remaining billing cycles, G-coin points and plans.' : lang === 'ja' ? '3DプリントメーカーVIP定期便プランの管理、残存期間、G-Coin残高、プラン更新設定。' : '管理您的 3D 列印創客 VIP 訂閱方案、查詢剩餘週期、點數餘額與續約設定。'} url="/subscription" /><SubscriptionPage member={member} setMember={setMember} onLoginClick={() => setIsAuthOpen(true)} lang={lang} /></>} />
           <Route path="/my-subscription" element={<Navigate to="/subscription" replace />} />
-          <Route path="*" element={<><SEO title={lang === 'en' ? 'Home - GodDog 3D Filaments' : lang === 'ja' ? 'ホーム - 神狗勾 3D フィラメント' : '首頁 - 神狗勾耗材旗艦館'} description={lang === 'en' ? 'GodDog 3D is Taiwan leading 3D printing filament store, offering high-speed PLA, PETG, TPU, and Carbon Fiber.' : lang === 'ja' ? '神狗勾 3Dは最高峰の3Dプリント用フィラメント専門店。高速PLA、PETG、TPU、カーボン配合線材を豊富にお届け。' : '神狗勾耗材商城為台灣頂尖 3D 列印耗材專營商店，專為創客與專業人士提供高品質的高速 PLA、PETG 等線材。'} url="/" product={viewingProduct} products={products} />
+          <Route path="*" element={location.pathname !== '/' && activeTab !== 'admin' ? (
+            <section className="mx-auto my-10 max-w-lg rounded-2xl border border-slate-200 bg-white p-6 text-center dark:border-slate-800 dark:bg-slate-900 sm:my-16 sm:p-10">
+              <SEO title={lang === 'en' ? 'Page not found' : lang === 'ja' ? 'ページが見つかりません' : '找不到這個頁面'} noIndex />
+              <h1 className="text-xl font-bold">{lang === 'en' ? 'Page not found' : lang === 'ja' ? 'ページが見つかりません' : '找不到這個頁面'}</h1>
+              <Link to="/" className="mt-5 inline-flex rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">
+                {lang === 'en' ? 'Back to store' : lang === 'ja' ? 'ストアに戻る' : '返回商城'}
+              </Link>
+            </section>
+          ) : <><SEO title={lang === 'en' ? 'Home - GodDog 3D Filaments' : lang === 'ja' ? 'ホーム - 神狗勾 3D フィラメント' : '首頁 - 神狗勾耗材旗艦館'} description={lang === 'en' ? 'GodDog 3D is Taiwan leading 3D printing filament store, offering high-speed PLA, PETG, TPU, and Carbon Fiber.' : lang === 'ja' ? '神狗勾 3Dは最高峰の3Dプリント用フィラメント専門店。高速PLA、PETG、TPU、カーボン配合線材を豊富にお届け。' : '神狗勾耗材商城為台灣頂尖 3D 列印耗材專營商店，專為創客與專業人士提供高品質的高速 PLA、PETG 等線材。'} url="/" noIndex={activeTab === 'admin'} product={viewingProduct} products={products} />
         {activeTab === 'store' ? (
           /* ================================================================= */
           /* CUSTOMER STOREFRONT VIEW                                          */
@@ -1968,7 +2009,7 @@ export default function App() {
                     id="hero-scroll-catalog-btn"
                     onClick={() => {
                       const el = document.getElementById('storefront-product-grid');
-                      el?.scrollIntoView({ behavior: 'smooth' });
+                      el?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
                     }}
                     className="btn-tactile-primary group flex-1 sm:flex-initial justify-center px-5 py-2.5 sm:py-3 rounded-xl bg-slate-900 dark:bg-white hover:bg-slate-800 dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer whitespace-nowrap shadow-xs"
                   >
@@ -2226,7 +2267,7 @@ export default function App() {
             </div>
 
             {/* Product Grid (Instant reconciliation without AnimatePresence exit-block or per-card motion wrappers) */}
-            <div id="storefront-product-grid">
+            <div id="storefront-product-grid" className="scroll-mt-20 lg:scroll-mt-32">
               {filteredAndSortedProducts.length === 0 ? (
                 <div
                   key="empty-products-state"
@@ -2661,6 +2702,7 @@ export default function App() {
       {!isCheckoutOpen && !isCartOpen && (
         <nav
           id="mobile-bottom-nav-bar"
+          aria-label={lang === 'en' ? 'Main navigation' : lang === 'ja' ? 'メインナビゲーション' : '主導覽'}
           className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700/90 py-1 px-1.5 shadow-2xl flex items-center justify-around pb-[max(0.5rem,env(safe-area-inset-bottom))] safe-area-bottom"
         >
           {/* Tab 1: Store Catalog */}
@@ -2669,9 +2711,8 @@ export default function App() {
               setIsFilamentLabOpen(false);
               setIsWishlistOpen(false);
               setIsAIAdvisorOpen(false);
-              if (location.pathname !== '/') navigate('/');
-              setActiveTab('store');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+              if (location.pathname !== '/' || location.search || location.hash) navigate('/');
+              else window.scrollTo({ top: 0, behavior: 'instant' });
             }}
             className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-colors cursor-pointer min-w-[48px] active:scale-95 ${
               location.pathname === '/' && !isFilamentLabOpen && !isWishlistOpen ? 'text-indigo-600 font-bold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
@@ -2740,15 +2781,14 @@ export default function App() {
 
           {/* Tab 5: Profile */}
           <button
+            id="mobile-profile-entry"
+            type="button"
+            aria-current={location.pathname === '/profile' ? 'page' : undefined}
             onClick={() => {
               setIsFilamentLabOpen(false);
               setIsWishlistOpen(false);
               setIsAIAdvisorOpen(false);
-              if (location.pathname === '/profile') {
-                window.dispatchEvent(new Event('resetProfileModal'));
-              } else {
-                navigate('/profile');
-              }
+              handleOpenMember();
             }}
             className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-colors cursor-pointer min-w-[48px] relative active:scale-95 ${
               location.pathname === '/profile' && !isFilamentLabOpen && !isWishlistOpen ? 'text-indigo-600 font-bold' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:text-slate-200'
@@ -2756,7 +2796,7 @@ export default function App() {
           >
             <User className="w-5 h-5" />
             <span className="text-[10px] mt-0.5 whitespace-nowrap">
-              {lang === 'en' ? 'Account' : lang === 'ja' ? 'マイページ' : '我的'}
+              {t.personalProfile}
             </span>
           </button>
         </nav>

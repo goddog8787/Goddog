@@ -1,3 +1,4 @@
+import { PICKUP_BRANDS, PickupBrandLogo, type PickupBrand } from './PickupBrandLogo';
 import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
@@ -138,6 +139,15 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
     });
   }, [selectedBrand, selectedRegion, selectedCity, selectedDistrict, searchKeyword, refreshTrigger]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const getShippingMethod = (brand: string): ShippingMethod => {
@@ -250,7 +260,10 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-5 bg-slate-950/70 dark:bg-slate-950/85 animate-in fade-in duration-200">
       <div
-        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col h-[92vh] sm:h-[86vh] overflow-hidden text-slate-900 dark:text-slate-100"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pickup-selector-title"
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col h-[94dvh] sm:h-[86dvh] overflow-hidden text-slate-900 dark:text-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 1. Clean Non-Wrapping Modal Header */}
@@ -261,7 +274,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-black text-slate-900 dark:text-slate-100 text-sm sm:text-base whitespace-nowrap">
+                <h3 id="pickup-selector-title" className="font-black text-slate-900 dark:text-slate-100 text-sm sm:text-base">
                   選擇取件超商門市
                 </h3>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 inline-flex items-center gap-1 whitespace-nowrap">
@@ -291,7 +304,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('browse')}
-              className={`py-1.5 px-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              className={`py-1.5 px-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer text-balance ${
                 activeTab === 'browse'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -303,7 +316,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('manual')}
-              className={`py-1.5 px-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+              className={`py-1.5 px-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer text-balance ${
                 activeTab === 'manual'
                   ? 'bg-indigo-600 text-white shadow-xs'
                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
@@ -314,86 +327,30 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
             </button>
           </div>
 
-          {/* 4 CVS Brand Selector Cards: Uniform Height & Single-Line Labels */}
-          <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
-            {/* 7-11 */}
-            <button
-              type="button"
-              onClick={() => setSelectedBrand('7-11')}
-              className={`py-2 px-1.5 sm:px-2.5 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${
-                selectedBrand === '7-11'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-emerald-900 dark:text-emerald-200 ring-1 ring-emerald-500/50 shadow-2xs'
-                  : 'bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
-              }`}
-            >
-              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-[#008000] text-white font-black text-[10px] sm:text-xs flex items-center justify-center shrink-0">
-                7
-              </div>
-              <span className="text-[11px] sm:text-xs font-extrabold whitespace-nowrap">
-                7-ELEVEN
-              </span>
-            </button>
-
-            {/* FamilyMart */}
-            <button
-              type="button"
-              onClick={() => setSelectedBrand('familymart')}
-              className={`py-2 px-1.5 sm:px-2.5 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${
-                selectedBrand === 'familymart'
-                  ? 'bg-sky-50 dark:bg-sky-950/50 border-sky-500 text-sky-900 dark:text-sky-200 ring-1 ring-sky-500/50 shadow-2xs'
-                  : 'bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
-              }`}
-            >
-              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-[#00A1E9] text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                全家
-              </div>
-              <span className="text-[11px] sm:text-xs font-extrabold whitespace-nowrap">
-                全家超商
-              </span>
-            </button>
-
-            {/* Hi-Life */}
-            <button
-              type="button"
-              onClick={() => setSelectedBrand('hilife')}
-              className={`py-2 px-1.5 sm:px-2.5 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${
-                selectedBrand === 'hilife'
-                  ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-500 text-rose-900 dark:text-rose-200 ring-1 ring-rose-500/50 shadow-2xs'
-                  : 'bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
-              }`}
-            >
-              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-rose-600 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                萊
-              </div>
-              <span className="text-[11px] sm:text-xs font-extrabold whitespace-nowrap">
-                萊爾富
-              </span>
-            </button>
-
-            {/* OK Mart */}
-            <button
-              type="button"
-              onClick={() => setSelectedBrand('okmart')}
-              className={`py-2 px-1.5 sm:px-2.5 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 ${
-                selectedBrand === 'okmart'
-                  ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-500 text-amber-900 dark:text-amber-200 ring-1 ring-amber-500/50 shadow-2xs'
-                  : 'bg-white dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
-              }`}
-            >
-              <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-md bg-red-700 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                OK
-              </div>
-              <span className="text-[11px] sm:text-xs font-extrabold whitespace-nowrap">
-                OK 超商
-              </span>
-            </button>
+          <div role="group" aria-label="超商品牌" className="grid grid-cols-2 gap-1.5 min-[360px]:grid-cols-4">
+            {(Object.keys(PICKUP_BRANDS) as PickupBrand[]).map(brand => (
+              <button
+                key={brand}
+                type="button"
+                onClick={() => setSelectedBrand(brand)}
+                aria-pressed={selectedBrand === brand}
+                className={`min-w-0 rounded-xl border px-1 py-1.5 text-center transition-colors cursor-pointer flex flex-col items-center justify-center gap-1 focus-visible:outline-2 focus-visible:outline-indigo-500 ${
+                  selectedBrand === brand
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-950 ring-1 ring-indigo-500/40 dark:bg-indigo-950/60 dark:text-indigo-100'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300'
+                }`}
+              >
+                <PickupBrandLogo brand={brand} />
+                <span className="text-[11px] font-bold leading-tight break-words">{PICKUP_BRANDS[brand].name}</span>
+              </button>
+            ))}
           </div>
 
           {/* Region + City/District + Search Controls (Only in Browse mode) */}
           {activeTab === 'browse' && (
             <div className="space-y-2 pt-0.5">
               {/* 6 Region Buttons in a full-width 6-column grid so nothing is clipped */}
-              <div className="grid grid-cols-6 gap-1">
+              <div className="grid grid-cols-3 gap-1 sm:grid-cols-6">
                 {TAIWAN_REGIONS.map((reg) => {
                   const shortLabel = reg === '全部地區' ? '全部地區' : reg;
                   return (

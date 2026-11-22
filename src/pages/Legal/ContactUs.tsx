@@ -78,7 +78,7 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 dark:text-white text-sm mb-0.5">{t.contactHotline || '客服專線'}</h3>
-                <p className="text-slate-600 dark:text-slate-300 font-mono text-sm tabular-nums">{t.contactHotlineVal || '+886 911331772'}</p>
+                <a href={`tel:${t.contactHotlineVal.replace(/[^+\d]/g, '')}`} className="text-slate-700 dark:text-slate-200 font-mono text-sm tabular-nums underline-offset-4 hover:underline">{t.contactHotlineVal}</a>
               </div>
             </div>
             
@@ -88,7 +88,7 @@ export const ContactUs: React.FC<ContactUsProps> = ({ lang: propLang }) => {
               </div>
               <div>
                 <h3 className="font-bold text-slate-900 dark:text-white text-sm mb-0.5">{t.contactEmail || '電子郵件'}</h3>
-                <p className="text-slate-600 dark:text-slate-300 text-sm break-all">{t.contactEmailVal || 'babe0615@gmail.com'}</p>
+                <a href={`mailto:${t.contactEmailVal}`} className="text-slate-700 dark:text-slate-200 text-sm break-all underline-offset-4 hover:underline">{t.contactEmailVal}</a>
               </div>
             </div>
             

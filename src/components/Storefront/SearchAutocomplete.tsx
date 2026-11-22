@@ -20,6 +20,7 @@ export interface SearchAutocompleteProps {
   setSearchQuery: (query: string) => void;
   products?: FilamentProduct[];
   placeholder?: string;
+  onSubmitQuery?: (query: string) => void;
   onSelectProduct?: (product: FilamentProduct) => void;
   onSelectMaterial?: (material: string) => void;
   className?: string;
@@ -156,6 +157,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   setSearchQuery,
   products = INITIAL_PRODUCTS,
   placeholder = '搜尋 PLA+、碳纖維、PETG 或品牌型號',
+  onSubmitQuery,
   onSelectProduct,
   onSelectMaterial,
   className = '',
@@ -283,26 +285,36 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
     setIsOpen(false);
   };
 
+  const submitQuery = (query: string) => {
+    const trimmed = query.trim();
+    finishSelection();
+    if (trimmed) onSubmitQuery?.(trimmed);
+  };
+
   const handleSelectMaterial = (mat: MaterialMeta) => {
     setSearchQuery(mat.key);
     onSelectMaterial?.(mat.key);
-    finishSelection();
+    submitQuery(mat.key);
   };
 
   const handleSelectBrand = (brand: BrandMeta) => {
     setSearchQuery(brand.name);
-    finishSelection();
+    submitQuery(brand.name);
   };
 
   const handleSelectProduct = (prod: FilamentProduct) => {
     setSearchQuery(prod.name);
-    onSelectProduct?.(prod);
-    finishSelection();
+    if (onSelectProduct) {
+      onSelectProduct(prod);
+      finishSelection();
+    } else {
+      submitQuery(prod.name);
+    }
   };
 
   const handleSelectTag = (query: string) => {
     setSearchQuery(query);
-    finishSelection();
+    submitQuery(query);
   };
 
   const hasMatches = matchedMaterials.length > 0 || matchedBrands.length > 0 || matchedProducts.length > 0;
@@ -313,7 +325,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
     ...matchedMaterials.map(mat => ({ key: `mat-${mat.key}`, select: () => handleSelectMaterial(mat) })),
     ...matchedBrands.map(brand => ({ key: `brand-${brand.name}`, select: () => handleSelectBrand(brand) })),
     ...matchedProducts.map(({ product }) => ({ key: `prod-${product.id}`, select: () => handleSelectProduct(product) })),
-    { key: 'all', select: finishSelection },
+    { key: 'all', select: () => submitQuery(searchQuery) },
   ] : FALLBACK_SEARCH_TAGS.map(query => ({ key: `fallback-${query}`, select: () => handleSelectTag(query) }));
   const selectedIndex = suggestions.findIndex(option => option.key === activeKey);
   const activeId = isOpen && selectedIndex >= 0 ? `${dropdownId}-option-${selectedIndex}` : undefined;
@@ -352,11 +364,11 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
         ? (selectedIndex === last ? 0 : selectedIndex + 1)
         : (selectedIndex <= 0 ? last : selectedIndex - 1);
       setActiveKey(suggestions[nextIndex]?.key ?? null);
-    } else if (e.key === 'Enter' && isOpen) {
+    } else if (e.key === 'Enter' && (isOpen || onSubmitQuery)) {
       e.preventDefault();
       const selected = suggestions[selectedIndex];
       if (selected) selected.select();
-      else finishSelection();
+      else submitQuery(searchQuery);
     }
   };
 
@@ -712,7 +724,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
                 <button
                   type="button"
                   {...optionProps('all')}
-                  onClick={finishSelection}
+                  onClick={() => submitQuery(searchQuery)}
                   className="w-full py-2 px-3 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between transition-colors cursor-pointer"
                 >
                   <span className="flex items-center gap-1.5 min-w-0">

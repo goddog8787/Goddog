@@ -4,6 +4,7 @@ import { buildProductSEOKeywords } from '../utils/productSearch';
 
 interface SEOProps {
   title?: string;
+  noIndex?: boolean;
   description?: string;
   keywords?: string;
   url?: string;
@@ -124,6 +125,7 @@ function buildSingleProductJsonLd(
 
 export const SEO: React.FC<SEOProps> = React.memo(({
   title,
+  noIndex = false,
   description,
   keywords,
   url,
@@ -272,6 +274,8 @@ export const SEO: React.FC<SEOProps> = React.memo(({
       setMetaTag('property', 'og:url', resolvedCanonical);
 
       setMetaTag('name', 'description', finalDesc);
+      if (noIndex) setMetaTag('name', 'robots', 'noindex, follow');
+      else document.querySelector('meta[name="robots"]')?.remove();
       if (finalKeywords) {
         setMetaTag('name', 'keywords', finalKeywords);
       }
@@ -307,6 +311,7 @@ export const SEO: React.FC<SEOProps> = React.memo(({
     };
   }, [
     fullTitle,
+    noIndex,
     finalDesc,
     finalKeywords,
     resolvedCanonical,

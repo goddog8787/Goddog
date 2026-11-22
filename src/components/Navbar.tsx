@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Moon,
   Sun,
@@ -6,10 +6,8 @@ import {
   Sparkles, 
   Truck, 
   Layers, 
-  Award, 
   Settings, 
   Globe, 
-  Coins, 
   Menu, 
   X, 
   Package, 
@@ -18,7 +16,7 @@ import {
   ChevronDown,
   ChevronRight,
   Code2,
-  UserCheck,
+  UserRound,
   LogIn,
   Scale,
   Heart,
@@ -33,7 +31,7 @@ import {
   Info,
   Clock
 } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { LanguageCode, CurrencyCode, MemberProfile, FilamentProduct, StoreAnnouncementConfig } from '../types';
 import { TRANSLATIONS, formatCurrency } from '../i18n';
 import { SearchAutocomplete } from './Storefront/SearchAutocomplete';
@@ -67,7 +65,9 @@ interface NavbarProps {
   onOpenRecycle?: () => void;
   isLoggedIn?: boolean;
   member: MemberProfile;
+  isOwnerAdmin?: boolean;
   openMemberModal?: () => void;
+  onSearchCatalog: (query: string) => void;
   searchQuery?: string;
   setSearchQuery?: (q: string) => void;
   products?: FilamentProduct[];
@@ -99,7 +99,9 @@ const NavbarInner: React.FC<NavbarProps> = ({
   onOpenRecycle,
   isLoggedIn = false,
   member,
+  isOwnerAdmin = false,
   openMemberModal,
+  onSearchCatalog,
   searchQuery,
   setSearchQuery,
   products,
@@ -108,6 +110,12 @@ const NavbarInner: React.FC<NavbarProps> = ({
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+  const languagePickerRef = useRef<HTMLDivElement>(null);
+  const mobileMenuButton = useRef<HTMLButtonElement>(null);
+  const languageButton = useRef<HTMLButtonElement>(null);
+  const [logoFailed, setLogoFailed] = useState(false);
+  const [searchDraft, setSearchDraft] = useState(searchQuery ?? '');
   const [isScrolled, setIsScrolled] = useState(false);
   const t = TRANSLATIONS[lang];
 
@@ -140,25 +148,61 @@ const NavbarInner: React.FC<NavbarProps> = ({
   const location = useLocation();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    setSearchDraft(searchQuery ?? '');
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setLangDropdownOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen && !langDropdownOpen) return;
+
+    const handleOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (!headerRef.current?.contains(event.target)) setMobileMenuOpen(false);
+      if (!languagePickerRef.current?.contains(event.target)) setLangDropdownOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (langDropdownOpen) {
+        setLangDropdownOpen(false);
+        languageButton.current?.focus();
+      } else if (mobileMenuOpen) {
+        setMobileMenuOpen(false);
+        mobileMenuButton.current?.focus();
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutside);
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutside);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [langDropdownOpen, mobileMenuOpen]);
+
   const effectiveCartOpen = onOpenCart || openCart || (() => {});
-  const effectiveMemberOpen =
-    openMemberModal ||
-    (() => {
-      setActiveTab?.('store');
-      navigate('/profile');
-    });
+  const effectiveMemberOpen = openMemberModal || (() => navigate('/profile'));
   const effectiveActiveTab = activeTab || 'store';
-  const isOwnerAdmin = Boolean(
-    isLoggedIn &&
-    member?.email &&
-    member.email.trim().toLowerCase() === 'babe0615@gmail.com'
-  );
+
+  const handleSearchSubmit = (query: string) => {
+    setMobileMenuOpen(false);
+    onSearchCatalog(query);
+  };
+
+  const selectSearchProduct = (product: FilamentProduct) => {
+    setMobileMenuOpen(false);
+    onSelectProduct?.(product);
+  };
 
   const handleNavClick = (id: string) => {
     if (id === 'store') {
-      if (location.pathname !== '/') navigate('/');
-      setActiveTab?.('store');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (location.pathname !== '/' || location.search || location.hash) navigate('/');
+      else window.scrollTo({ top: 0, behavior: 'instant' });
     } else if (id === 'blog') {
       navigate('/blog');
     } else if (id === 'guide') {
@@ -362,19 +406,10 @@ const NavbarInner: React.FC<NavbarProps> = ({
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             {t.sslEncrypted || '藍新 SSL 安全加密'}
           </span>
-          <span className="text-slate-700">|</span>
-          <button 
-            id="nav-quick-member-link"
-            onClick={effectiveMemberOpen}
-            className="hover:text-sky-300 transition-colors flex items-center gap-1 cursor-pointer whitespace-nowrap"
-          >
-            <Coins className="w-3.5 h-3.5 text-amber-400" />
-            <span>{(member?.points || 0)} {t.navPointsSuffix || '積分'}</span>
-          </button>
         </div>
       </div>
 
-      <header className={`sticky top-0 z-40 transition-[background-color,box-shadow,border-color] duration-150 ${
+      <header ref={headerRef} className={`sticky top-0 z-40 transition-[background-color,box-shadow,border-color] duration-150 ${
         isScrolled 
           ? 'bg-white/98 dark:bg-slate-900/98 shadow-md shadow-slate-900/5 border-b border-slate-200/80 dark:border-slate-800' 
           : 'bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800'
@@ -382,25 +417,19 @@ const NavbarInner: React.FC<NavbarProps> = ({
       {/* Main Header Bar - Proportioned for Mobile & Spacious Desktop (No crowded inline nav squeezing search) */}
       <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
-          {/* Brand Logo */}
-          <div 
-            className="flex items-center gap-2 sm:gap-2.5 cursor-pointer min-w-0 flex-1 lg:flex-initial shrink-0" 
-            onClick={() => handleNavClick('store')}
-            title={lang === 'en' ? 'Back to Home' : lang === 'ja' ? 'ホームに戻る' : '返回首頁'}
+          <Link
+            to="/"
+            className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 lg:flex-initial shrink-0 rounded-lg focus-visible:outline-2 focus-visible:outline-indigo-500"
+            aria-label={lang === 'en' ? 'Store home' : lang === 'ja' ? 'ストアホーム' : '商城首頁'}
+            onClick={() => {
+              if (location.pathname === '/' && !location.search && !location.hash) window.scrollTo({ top: 0, behavior: 'instant' });
+            }}
             data-no-auto-translate="true"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden shadow-sm shadow-sky-500/20 shrink-0 border border-slate-200 dark:border-slate-700 bg-slate-900 flex items-center justify-center">
-              <img 
-                src="/wolf-logo.jpg" 
-                alt={t.brandName || "神狗勾耗材商城 Logo"} 
-                className="w-full h-full object-cover"
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  // Fallback if user hasn't uploaded the image yet
-                  (e.target as HTMLImageElement).style.display = 'none';
-                  (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="text-white font-black text-sm sm:text-xl">3D</div>';
-                }}
-              />
+              {logoFailed ? <span className="text-white font-black text-sm" aria-hidden="true">3D</span> : (
+                <img src="/wolf-logo.jpg" alt="" className="w-full h-full object-cover" onError={() => setLogoFailed(true)} />
+              )}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 whitespace-nowrap">
@@ -412,21 +441,17 @@ const NavbarInner: React.FC<NavbarProps> = ({
                 </span>
               </div>
             </div>
-          </div>
+          </Link>
 
           {/* Spacious Desktop Header Search Autocomplete (Centered with ample room, never squeezed) */}
           {setSearchQuery && (
             <div className="hidden lg:block flex-1 max-w-md xl:max-w-lg mx-2 xl:mx-6 min-w-[240px]">
               <SearchAutocomplete
                 id="header-nav-search"
-                searchQuery={searchQuery || ''}
-                setSearchQuery={(q) => {
-                  setSearchQuery(q);
-                  if (effectiveActiveTab !== 'store') {
-                    handleNavClick('store');
-                  }
-                }}
-                onSelectProduct={onSelectProduct}
+                searchQuery={searchDraft}
+                setSearchQuery={setSearchDraft}
+                onSubmitQuery={handleSearchSubmit}
+                onSelectProduct={onSelectProduct ? selectSearchProduct : undefined}
                 products={products}
                 size="sm"
                 placeholder={t.searchPlaceholderNav || "搜尋線材 (PLA, PETG, TPU)..."}
@@ -437,9 +462,14 @@ const NavbarInner: React.FC<NavbarProps> = ({
           {/* Right Action Area - Clean & Proportional for Mobile & Desktop */}
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {/* Language & Currency Switcher */}
-            <div className="relative shrink-0">
+            <div ref={languagePickerRef} className="relative shrink-0">
               <button
                 id="btn-lang-dropdown"
+                ref={languageButton}
+                type="button"
+                aria-label={t.langCurrency}
+                aria-expanded={langDropdownOpen}
+                aria-controls={langDropdownOpen ? 'header-language-options' : undefined}
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
                 className="flex items-center gap-1 h-8.5 sm:h-9 text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 px-2 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer whitespace-nowrap border border-slate-200/70 dark:border-slate-700"
                 title={t.langCurrency || "切換語言與幣別"}
@@ -452,7 +482,8 @@ const NavbarInner: React.FC<NavbarProps> = ({
               </button>
 
               {langDropdownOpen && (
-                <div 
+                <div
+                  id="header-language-options"
                   className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-2 z-50 animate-in fade-in zoom-in-95 duration-150"
                   onClick={() => setLangDropdownOpen(false)}
                 >
@@ -539,19 +570,21 @@ const NavbarInner: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* Member Points / Login Button */}
+            {/* Profile / Sign-in */}
             {isLoggedIn ? (
               <button
                 id="btn-member-profile"
+                type="button"
                 onClick={effectiveMemberOpen}
-                className="hidden md:flex items-center gap-1.5 h-9 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 border border-amber-200 dark:border-amber-800/80 px-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                title={lang === 'en' ? 'Member Center' : lang === 'ja' ? 'マイページへ' : '前往會員中心'}
+                aria-current={location.pathname === '/profile' ? 'page' : undefined}
+                className={`hidden md:flex items-center gap-1.5 h-9 border px-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-indigo-500 ${
+                  location.pathname === '/profile'
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-950/50 dark:border-indigo-800 dark:text-indigo-200'
+                    : 'bg-slate-100 border-slate-200 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-700'
+                }`}
               >
-                <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                <span className="bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded font-bold leading-none">
-                  {(member?.tier || "Silver")}
-                </span>
-                <span className="font-mono tabular-nums">{(member?.points || 0)}{t.navPointsSuffix || 'pt'}</span>
+                <UserRound className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>{t.personalProfile}</span>
               </button>
             ) : (
               <button
@@ -655,6 +688,10 @@ const NavbarInner: React.FC<NavbarProps> = ({
             {/* Mobile Menu Toggle (三條橫線 - Always visible & prominent on the far right) */}
             <button
               id="btn-mobile-menu"
+              ref={mobileMenuButton}
+              type="button"
+              aria-expanded={mobileMenuOpen}
+              aria-controls={mobileMenuOpen ? 'mobile-header-menu' : undefined}
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className={`lg:hidden w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all cursor-pointer shrink-0 border active:scale-95 ${
                 mobileMenuOpen 
@@ -749,24 +786,16 @@ const NavbarInner: React.FC<NavbarProps> = ({
 
       {/* Mobile Menu Dropdown Drawer */}
       {mobileMenuOpen && (
-        <div className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pt-3 pb-5 space-y-2.5 shadow-2xl max-h-[85vh] overflow-y-auto">
+        <div id="mobile-header-menu" className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pt-3 pb-5 space-y-2.5 shadow-2xl max-h-[calc(100dvh-3.5rem)] overflow-y-auto">
           {/* Mobile Search Autocomplete */}
           {setSearchQuery && (
             <div>
               <SearchAutocomplete
                 id="mobile-header-search"
-                searchQuery={searchQuery || ''}
-                setSearchQuery={(q) => {
-                  setSearchQuery(q);
-                  if (effectiveActiveTab !== 'store') {
-                    handleNavClick('store');
-                  }
-                  setMobileMenuOpen(false);
-                }}
-                onSelectProduct={(p) => {
-                  onSelectProduct?.(p);
-                  setMobileMenuOpen(false);
-                }}
+                searchQuery={searchDraft}
+                setSearchQuery={setSearchDraft}
+                onSubmitQuery={handleSearchSubmit}
+                onSelectProduct={onSelectProduct ? selectSearchProduct : undefined}
                 products={products}
                 size="sm"
                 placeholder={lang === 'en' ? 'Search filaments, brands, or models...' : lang === 'ja' ? 'フィラメント材質・ブランド・型番を検索...' : '搜尋線材材質、品牌或型號...'}
@@ -1042,13 +1071,7 @@ const NavbarInner: React.FC<NavbarProps> = ({
           <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
             {isLoggedIn ? (
               <>
-                <span className="text-slate-700 dark:text-slate-300 font-bold truncate">
-                  {lang === 'en'
-                    ? `Member: ${member?.name || 'Maker'} (${member?.tier || 'Silver'} · ${member?.points || 0} pts)`
-                    : lang === 'ja'
-                    ? `会員：${member?.name || 'メイカー'} (${member?.tier || 'Silver'} · ${member?.points || 0} pt)`
-                    : `會員：${member?.name || '創客會員'} (${member?.tier || 'Silver'} · ${member?.points || 0} 點)`}
-                </span>
+                <span className="text-slate-700 dark:text-slate-300 font-bold truncate">{member?.name}</span>
                 <button
                   onClick={() => {
                     effectiveMemberOpen();
@@ -1056,7 +1079,7 @@ const NavbarInner: React.FC<NavbarProps> = ({
                   }}
                   className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer shrink-0 ml-2"
                 >
-                  {lang === 'en' ? 'Account →' : lang === 'ja' ? 'マイページ →' : '會員中心 →'}
+                  {t.personalProfile}
                 </button>
               </>
             ) : (
