@@ -138,6 +138,7 @@ export function getSafeProductImageUrl(url?: string, material?: string, name?: s
   if (!url || typeof url !== 'string' || url.trim() === '') {
     return getMaterialFallbackImage(material, name);
   }
+  url = url.trim();
   if (url.startsWith('data:image/')) {
     return url;
   }
