@@ -1,3 +1,4 @@
+import { cartStockRemaining } from '../../utils/cartStock';
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { 
@@ -27,7 +28,9 @@ interface CartDrawerProps {
   onClose: () => void;
   cartItems: CartItem[];
   onUpdateQuantity: (index: number, newQty: number) => void;
-  onUpdateColor?: (index: number, newColor: ColorOption) => void;
+  catalog: Map<string, FilamentProduct>;
+  unavailableLines: boolean[];
+  onUpdateColor?: (index: number, newColor: ColorOption) => boolean;
   onRemoveItem: (index: number) => void;
   onProceedCheckout: (pointsUsed: number, couponCode?: string) => void;
   onClearCart?: () => void;
@@ -43,6 +46,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   cartItems,
   onUpdateQuantity,
   onUpdateColor,
+  catalog,
+  unavailableLines,
   onRemoveItem,
   onProceedCheckout,
   onClearCart,
@@ -62,6 +67,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const rawSubtotal = cartItems.reduce((acc, item) => acc + item.product.price * item.quantity, 0);
   const isVip = isMemberVipActive(member);
+  const hasUnavailableItems = unavailableLines.some(Boolean);
   const vipDiscount = isVip ? Math.floor(rawSubtotal * 0.03) : 0;
   const subtotal = rawSubtotal - vipDiscount; // actual subtotal after VIP discount
   const freeShippingThreshold = 999;
@@ -129,32 +135,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       if (res.freeShipping) parts.push('免運費');
       setCouponMsg(`已套用「${appliedCoupon.code}」${parts.length > 0 ? `（${parts.join(' + ')}）` : ''}`);
     }
-  }, [subtotal, isVip, cartItems.length]);
+  }, [subtotal, isVip, cartItems.length, member?.coupons, appliedCoupon]);
 
-  // Quick booster sample accessories for free shipping threshold
-  const quickAddOns = [
-    {
-      id: 'quick-sample-pla',
-      name: 'High-Speed PLA 隨機試色體驗包 (50g)',
-      price: 69,
-      color: { name: '隨機精選', hex: '#6366f1' },
-      diameter: '1.75mm' as const,
-    },
-    {
-      id: 'quick-desiccant-5',
-      name: '長效變色矽膠除濕防潮包 (50g x 5入)',
-      price: 89,
-      color: { name: '深藍變粉', hex: '#3b82f6' },
-      diameter: '1.75mm' as const,
-    },
-    {
-      id: 'quick-nozzle-set',
-      name: '抗磨耐熱硬化鋼噴嘴 (0.4mm 備用)',
-      price: 149,
-      color: { name: '硬化鋼金屬', hex: '#64748b' },
-      diameter: '1.75mm' as const,
-    }
-  ];
+  const quickAddOns = Array.from(catalog.values())
+    .filter(product => product.material === 'Accessories' && product.price > 0)
+    .flatMap(product => {
+      const color = product.colors?.find(option => cartStockRemaining(cartItems, product, option) > 0);
+      return color ? [{ product, color }] : [];
+    })
+    .sort((a, b) => Math.abs(a.product.price - needForFreeShipping) - Math.abs(b.product.price - needForFreeShipping))
+    .slice(0, 3);
 
   if (!isOpen || typeof document === 'undefined') return null;
 
@@ -286,6 +276,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         <h4 className="font-bold text-slate-900 text-xs text-balance line-clamp-2 leading-snug">
                           {translateProduct(item.product, lang).name.replace(/莫蘭迪\s*/g, '')}
                         </h4>
+                        {unavailableLines[idx] && (
+                          <p className="mt-1 text-[11px] font-medium text-rose-700">
+                            {lang === 'en' ? 'Adjust the quantity or choose another color.' : lang === 'ja' ? '数量またはカラーを変更してください。' : '請調整數量或顏色，已下架商品可移除。'}
+                          </p>
+                        )}
                         <div className="flex items-center flex-wrap gap-1.5 mt-1.5">
                           {item.product.colors && item.product.colors.length > 1 && onUpdateColor ? (
                             <button
@@ -324,7 +319,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                       <div className="flex items-center justify-between mt-2">
                         {(() => {
-                          const maxStock = Math.max(1, item.selectedColor?.stock ?? item.product?.stock ?? 99);
+                          const maxStock = unavailableLines[idx] ? item.quantity : cartStockRemaining(cartItems, item.product, item.selectedColor, idx);
                           const atStockCap = item.quantity >= maxStock;
                           return (
                             <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden shadow-2xs">
@@ -371,7 +366,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </div>
 
               {/* Quick Free Shipping Add-on Recommendation */}
-              {needForFreeShipping > 0 && onAddQuickItem && (
+              {needForFreeShipping > 0 && quickAddOns.length > 0 && onAddQuickItem && (
                 <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100/90 space-y-2">
                   <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950">
                     <span className="flex items-center gap-1">
@@ -383,45 +378,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     </span>
                   </div>
                   <div className="space-y-1.5">
-                    {quickAddOns.map(addon => (
+                    {quickAddOns.map(({ product, color }) => (
                       <div 
-                        key={addon.id}
+                        key={product.id}
                         className="p-2 bg-white rounded-xl border border-indigo-100 flex items-center justify-between gap-2 text-xs shadow-2xs"
                       >
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-800 text-[11px] break-words">{addon.name}</p>
+                          <p className="font-bold text-slate-800 text-[11px] break-words">{translateProduct(product, lang).name}</p>
                           <span className="text-[10px] font-mono font-bold text-indigo-600">
-                            {formatPrice(addon.price, currency)}
+                            {formatPrice(product.price, currency)}
                           </span>
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            const addonProduct: FilamentProduct = {
-                              id: addon.id,
-                              brand: '神狗勾',
-                              name: addon.name,
-                              material: 'Accessories',
-                              diameter: addon.diameter,
-                              weight: '50g',
-                              price: addon.price,
-                              originalPrice: addon.price + 50,
-                              stock: 99,
-                              sku: addon.id.toUpperCase(),
-                              spoolType: 'Refill 裸裝補充包',
-                              nozzleTemp: 'N/A',
-                              bedTemp: 'N/A',
-                              maxSpeed: 'N/A',
-                              rating: 5.0,
-                              reviewsCount: 0,
-                              colors: [{ ...addon.color, stock: 99 }],
-                              features: ['便攜防潮', '即開即印'],
-                              imageUrl: '',
-                              customShippingFee: 0,
-                              description: '快速湊單高 CP 值優質周邊',
-                            };
-                            onAddQuickItem(addonProduct, { ...addon.color, stock: 99 }, addon.diameter, 1);
-                          }}
+                          onClick={() => onAddQuickItem(product, color, product.diameter, 1)}
                           className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg shrink-0 flex items-center gap-0.5 transition-colors cursor-pointer shadow-2xs"
                         >
                           <Plus className="w-3 h-3" />
@@ -623,11 +593,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
               <button
                 id="proceed-to-checkout-btn"
+                disabled={hasUnavailableItems}
                 onClick={() => {
                   onClose();
                   onProceedCheckout(pointsUsed, appliedCoupon?.code);
                 }}
-                className="btn-tactile-primary flex-1 max-w-[210px] py-2.5 sm:py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10 transition-all cursor-pointer"
+                className="btn-tactile-primary flex-1 max-w-[210px] py-2.5 sm:py-3 px-4 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/10 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>{lang === 'en' ? 'Checkout' : lang === 'ja' ? 'ご購入手続き' : '前往結帳'}</span>
                 <ArrowRight className="w-4 h-4" />
@@ -683,10 +654,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       key={colorOption.name}
                       type="button"
                       onClick={() => {
-                        if (onUpdateColor) {
-                          onUpdateColor(editingColorItemIdx, colorOption);
-                        }
-                        setEditingColorItemIdx(null);
+                        if (onUpdateColor?.(editingColorItemIdx, colorOption)) setEditingColorItemIdx(null);
                       }}
                       className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-colors cursor-pointer ${
                         isCurrent

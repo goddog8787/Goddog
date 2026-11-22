@@ -1,3 +1,4 @@
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, 
@@ -125,7 +126,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
 
   const [activeViewingProduct, setActiveViewingProduct] = useState<FilamentProduct | null>(viewingProduct || null);
   const [checkedSteps, setCheckedSteps] = useState<Record<string, boolean>>({});
-  const [copiedParamId, setCopiedParamId] = useState<string | null>(null);
+  const { copy, copiedKey: copiedParamId, failedKey, errorText } = useClipboardFeedback(lang);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeChatUserId = normalizeCustomerId(member?.id);
@@ -224,9 +225,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
         : lang === 'ja'
         ? `【神狗勾 3D 推奨スライサー設定】\n• ノズル/ベッド温度: ${adj.temperature || '未指定'}\n• 造形速度: ${adj.speed || '未指定'}\n• リトラクション: ${adj.retraction || '未指定'}\n• 冷却ファン: ${adj.cooling || '未指定'}`
         : `【神狗勾 3D 切片推薦參數】\n• 噴嘴/熱床溫度: ${adj.temperature || '未指定'}\n• 列印速度: ${adj.speed || '未指定'}\n• 回抽設定: ${adj.retraction || '未指定'}\n• 冷卻風扇: ${adj.cooling || '未指定'}`;
-    navigator.clipboard?.writeText(text);
-    setCopiedParamId(id);
-    setTimeout(() => setCopiedParamId(null), 2000);
+    void copy(text, id);
   };
 
   // Reset conversation memory
@@ -887,7 +886,7 @@ export const CustomerSupportModal: React.FC<CustomerSupportModalProps> = ({
                                   onClick={() => handleCopyParams(m.id || `${idx}`, m.solution)}
                                   className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-bold px-2 py-1 rounded-lg bg-indigo-50 border border-indigo-200 cursor-pointer transition-colors"
                                 >
-                                  {copiedParamId === (m.id || `${idx}`) ? (
+                                  {failedKey === (m.id || `${idx}`) ? <span role="status">{errorText}</span> : copiedParamId === (m.id || `${idx}`) ? (
                                     <>
                                       <Check className="w-3 h-3 text-emerald-600" />
                                       <span className="text-emerald-700">

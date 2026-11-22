@@ -1,3 +1,4 @@
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, 
@@ -132,7 +133,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
   const [customNote, setCustomNote] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [recommendation, setRecommendation] = useState<any | null>(null);
-  const [copiedSlicer, setCopiedSlicer] = useState(false);
+  const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback(lang);
 
   const recordSlicerUsageForAchievement = () => {
     try {
@@ -914,7 +915,7 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const text = `【${currentPrinter.name}】${liveMatch.materialInfo.fullName} 推薦切片參數：
 - 耗材材質: ${liveMatch.materialInfo.fullName}
 - 噴嘴擠出溫度: ${liveMatch.materialInfo.nozzleTemp}
@@ -928,14 +929,11 @@ export const AIAdvisorModal: React.FC<AIAdvisorModalProps> = ({
 - 機箱環境: ${liveMatch.materialInfo.enclosureNeeded}
 - 建議噴嘴: ${nozzleSize}
 - 機型支援: ${currentPrinter.name} (噴嘴上限: ${currentPrinter.maxTempNozzle}°C, 熱床上限: ${currentPrinter.maxTempBed}°C)`;
-                      navigator.clipboard.writeText(text);
-                      recordSlicerUsageForAchievement();
-                      setCopiedSlicer(true);
-                      setTimeout(() => setCopiedSlicer(false), 2000);
+                      if (await copy(text, 'slicer')) recordSlicerUsageForAchievement();
                     }}
                     className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    {copiedSlicer ? (
+                    {failedKey === 'slicer' ? <span role="status">{errorText}</span> : copiedKey === 'slicer' ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                         <span className="text-emerald-400 font-bold">已複製參數</span>

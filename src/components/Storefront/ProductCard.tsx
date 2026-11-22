@@ -17,7 +17,7 @@ interface ProductCardProps {
   product: FilamentProduct;
   currency: CurrencyCode;
   lang: LanguageCode;
-  onAddToCart: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity?: number) => void;
+  onAddToCart: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity?: number) => boolean | void;
   onViewDetail: (product: FilamentProduct) => void;
   isWishlisted?: boolean;
   onToggleWishlist?: (productId: string) => void;
@@ -46,13 +46,14 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
 
   const availableColors: ColorOption[] = useMemo(() => {
     const fallbackName = lang === 'en' ? 'Standard Spec' : lang === 'ja' ? '標準仕様' : '標準規格';
-    return liveProduct.colors && liveProduct.colors.length > 0
-      ? liveProduct.colors
+    return product.colors && product.colors.length > 0
+      ? product.colors
       : [{ name: fallbackName, hex: '#1e293b', stock: 10 }];
-  }, [liveProduct.colors, lang]);
+  }, [product.colors, lang]);
 
   const [pickedColor, setPickedColor] = useState<ColorOption>(availableColors[0]);
   const [pickedQty, setPickedQty] = useState<number>(1);
+  const pickedStock = Math.min(liveProduct.stock, pickedColor.stock);
   const [isColorSheetOpen, setIsColorSheetOpen] = useState(false);
   const selectedDiameter = liveProduct.diameter;
   const [isAddedAnimation, setIsAddedAnimation] = useState(false);
@@ -126,13 +127,14 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
   // 點擊購物車按鈕：開啟下半部從下往上彈出的顏色與數量選擇小彈窗
   const handleOpenColorSheet = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setPickedColor(availableColors[0]);
+    setPickedColor(availableColors.find(color => color.stock > 0) ?? availableColors[0]);
     setPickedQty(1);
     setIsColorSheetOpen(true);
   };
 
   const handleConfirmAddFromSheet = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
+    if (onAddToCart(product, pickedColor, selectedDiameter, pickedQty) === false) return;
     triggerFlyToCart({
       sourceEl: sheetThumbRef.current || e.currentTarget,
       imageUrl: activeImageUrl,
@@ -141,7 +143,6 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
       accentColor: pickedColor?.hex,
     });
     saveCustomerRecentlyViewed(auth.currentUser?.uid, liveProduct).catch(() => {});
-    onAddToCart(liveProduct, pickedColor, selectedDiameter, pickedQty);
     setIsColorSheetOpen(false);
     setIsAddedAnimation(true);
     setTimeout(() => setIsAddedAnimation(false), 1200);
@@ -452,12 +453,17 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                       <button
                         key={color.name}
                         type="button"
-                        onClick={() => setPickedColor(color)}
+                        aria-pressed={isSelected}
+                        disabled={color.stock <= 0}
+                        onClick={() => {
+                          setPickedColor(color);
+                          setPickedQty(q => Math.min(q, liveProduct.stock, color.stock));
+                        }}
                         className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all cursor-pointer ${
                           isSelected
                             ? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-200 ring-1 ring-indigo-600 shadow-2xs'
                             : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300'
-                        }`}
+                        } disabled:opacity-45 disabled:cursor-not-allowed`}
                       >
                         <span
                           className="w-4 h-4 rounded-full border border-slate-300 shrink-0 shadow-2xs"
@@ -490,7 +496,9 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                   </span>
                   <button
                     type="button"
-                    onClick={() => setPickedQty((q) => q + 1)}
+                    aria-label={lang === 'en' ? 'Increase quantity' : lang === 'ja' ? '数量を増やす' : '增加數量'}
+                    disabled={pickedQty >= pickedStock}
+                    onClick={() => setPickedQty(q => Math.min(pickedStock, q + 1))}
                     className="w-9 h-10 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -499,6 +507,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
 
                 <button
                   type="button"
+                  disabled={pickedStock < 1}
                   onClick={handleConfirmAddFromSheet}
                   className="btn-tactile-primary flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
                 >

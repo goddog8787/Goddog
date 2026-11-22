@@ -1,3 +1,4 @@
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Store,
@@ -97,7 +98,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
   const [parsedPreview, setParsedPreview] = useState<Partial<CvsStoreItem> | null>(null);
 
   // Copied store code feedback
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const { copy, copiedKey: copiedCode, failedKey, errorText } = useClipboardFeedback();
 
   // Available cities filtered by region
   const filteredCities = useMemo(() => {
@@ -243,9 +244,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
 
   const copyStoreCode = (code: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2000);
+    void copy(code);
   };
 
   return (
@@ -670,7 +669,7 @@ export const CvsStoreSelectorModal: React.FC<CvsStoreSelectorModalProps> = ({
                           title="複製店號"
                         >
                           <span>店號 {store.storeCode}</span>
-                          {copiedCode === store.storeCode ? (
+                          {failedKey === store.storeCode ? <span role="status">{errorText}</span> : copiedCode === store.storeCode ? (
                             <CheckCheck className="w-2.5 h-2.5 text-emerald-600" />
                           ) : (
                             <Copy className="w-2.5 h-2.5 text-slate-400" />

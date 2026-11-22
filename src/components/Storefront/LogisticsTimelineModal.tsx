@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { getStoreApiBase } from '../../lib/backendUrl';
+import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -278,106 +280,81 @@ export const LogisticsTimelineModal: React.FC<LogisticsTimelineModalProps> = ({
   lang = 'zh-TW',
 }) => {
   const [isLoading, setIsLoading] = useState(false);
+  const activeRequest = useRef<AbortController | null>(null);
   const [trackingData, setTrackingData] = useState<any>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback(lang);
 
-  const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
+  const handleCopy = (text: string, key: string) => { void copy(text, key); };
 
   const fetchTracking = useCallback(async () => {
     if (!order && !propTrackingNumber) return;
 
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const timer = setTimeout(() => controller.abort(), 8000);
     setIsLoading(true);
+    setTrackingData(null);
     setErrorMsg(null);
 
     const effectiveOrderNumber = order?.orderNumber || order?.id || '';
     const effectiveTracking = order?.trackingNumber || propTrackingNumber || '';
+    const apiBase = getStoreApiBase();
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2500);
-      const response = await fetch('/api/logistics/track-order', {
+      const response = order ? await fetch(`${apiBase}/api/logistics/track-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          orderId: order?.id || effectiveOrderNumber,
           orderNumber: effectiveOrderNumber,
           trackingNumber: effectiveTracking,
-          shippingMethod: order?.shippingMethod,
-          storeOrAddress: order?.storeOrAddress || order?.shippingAddress,
-          orderStatus: order?.orderStatus || order?.status,
-          paymentStatus: order?.paymentStatus,
-          paymentGateway: order?.paymentGateway || order?.paymentMethod,
-          isVerifiedByNewebPay: order?.isVerifiedByNewebPay,
-          createdAt: order?.createdAt,
-          payTime: order?.payTime || order?.paidAt,
-          shippedAt: order?.shippedAt,
-          arrivedAt: order?.arrivedAt,
-          deliveredAt: order?.deliveredAt || order?.completedAt,
-          cancelledAt: order?.cancelledAt,
-          afterSalesRequestedAt: order?.afterSalesRequestedAt,
-          afterSalesReason: order?.afterSalesReason,
-          trackingEvents: order?.trackingEvents,
-          customerName: order?.customerName,
-          tradeNo: order?.tradeNo,
-          amt: order?.totalAmount || order?.total || order?.subtotal,
+          shippingMethod: order.shippingMethod,
+          storeOrAddress: order.storeOrAddress || order.shippingAddress,
+          orderStatus: order.orderStatus || order.status,
+          paymentStatus: order.paymentStatus,
+          paymentGateway: order.paymentGateway || order.paymentMethod,
+          isVerifiedByNewebPay: order.isVerifiedByNewebPay,
+          createdAt: order.createdAt,
+          payTime: order.payTime || order.paidAt,
+          shippedAt: order.shippedAt,
+          arrivedAt: order.arrivedAt,
+          deliveredAt: order.deliveredAt || order.completedAt,
+          cancelledAt: order.cancelledAt,
+          afterSalesRequestedAt: order.afterSalesRequestedAt,
+          afterSalesReason: order.afterSalesReason,
+          trackingEvents: order.trackingEvents,
+          tradeNo: order.tradeNo,
         }),
-      }).finally(() => clearTimeout(timer));
+      }) : await fetch(`${apiBase}/api/logistics/track/${encodeURIComponent(effectiveTracking)}`, { signal: controller.signal });
 
-      const contentType = response.headers.get('content-type') || '';
-      if (response.ok && contentType.includes('application/json')) {
-        const data = await response.json();
-        if (data?.success && data?.tracking) {
-          setTrackingData(data.tracking);
-          return;
-        }
-      }
-
-      if (!order && effectiveTracking) {
-        const fbCtrl = new AbortController();
-        const fbTimer = setTimeout(() => fbCtrl.abort(), 2000);
-        const fallbackRes = await fetch(
-          `/api/logistics/track/${encodeURIComponent(effectiveTracking)}`,
-          { signal: fbCtrl.signal }
-        ).finally(() => clearTimeout(fbTimer));
-        const fbType = fallbackRes.headers.get('content-type') || '';
-        if (fallbackRes.ok && fbType.includes('application/json')) {
-          const fallbackData = await fallbackRes.json();
-          if (fallbackData?.success && fallbackData?.tracking) {
-            setTrackingData(fallbackData.tracking);
-            return;
-          }
-        }
-      }
-
-      if (order) {
+      const data = await response.json();
+      if (activeRequest.current !== controller) return;
+      if (response.ok && data?.success && data.tracking) {
+        setTrackingData(data.tracking);
+      } else if (order) {
         setTrackingData(buildClientFallbackTracking(order, effectiveTracking));
       } else {
-        setErrorMsg('目前查無該託運單號的出貨紀錄，請確認單號或直接至物流官網查詢。');
+        setErrorMsg(data?.message || '目前查無該託運單號的出貨紀錄，請確認單號或直接至物流官網查詢。');
       }
     } catch {
-      if (order) {
-        setTrackingData(buildClientFallbackTracking(order, effectiveTracking));
-      } else {
-        setErrorMsg('目前無法查詢該單號，請稍後重試。');
-      }
+      if (activeRequest.current !== controller) return;
+      if (order) setTrackingData(buildClientFallbackTracking(order, effectiveTracking));
+      else setErrorMsg('目前無法查詢該單號，請稍後重試。');
     } finally {
-      setIsLoading(false);
+      clearTimeout(timer);
+      if (activeRequest.current === controller) setIsLoading(false);
     }
   }, [order, propTrackingNumber]);
 
   useEffect(() => {
-    if (isOpen) {
-      fetchTracking();
-    } else {
-      setTrackingData(null);
-      setErrorMsg(null);
-    }
+    if (isOpen) void fetchTracking();
+    return () => {
+      const request = activeRequest.current;
+      activeRequest.current = null;
+      request?.abort();
+    };
   }, [isOpen, fetchTracking]);
 
   const modalNode = (
@@ -525,7 +502,7 @@ export const LogisticsTimelineModal: React.FC<LogisticsTimelineModalProps> = ({
                               className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-slate-700 transition-colors cursor-pointer shrink-0 ml-1"
                               title="複製訂單編號"
                             >
-                              {copiedKey === 'order' ? (
+                              {failedKey === 'order' ? <span role="status">{errorText}</span> : copiedKey === 'order' ? (
                                 <span className="text-[9px] text-emerald-600 font-bold">已複製</span>
                               ) : (
                                 <Copy className="w-3 h-3" />
@@ -558,7 +535,7 @@ export const LogisticsTimelineModal: React.FC<LogisticsTimelineModalProps> = ({
                                 className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-400 hover:text-slate-700 transition-colors cursor-pointer shrink-0 ml-1"
                                 title="複製託運單號"
                               >
-                                {copiedKey === 'tracking' ? (
+                                {failedKey === 'tracking' ? <span role="status">{errorText}</span> : copiedKey === 'tracking' ? (
                                   <span className="text-[9px] text-emerald-600 font-bold">已複製</span>
                                 ) : (
                                   <Copy className="w-3 h-3" />

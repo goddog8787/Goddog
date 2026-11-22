@@ -47,6 +47,7 @@ import {
   recordRealAddToCart, 
   recordRealCheckoutStart 
 } from './lib/realAnalytics';
+import { cartStockRemaining, isCartLineAvailable, refreshCartItems, resolveCartColor } from './utils/cartStock';
 import { getStoreApiBase } from './lib/backendUrl';
 import { isMockOrder } from './lib/orderVerification';
 import { 
@@ -431,24 +432,6 @@ export default function App() {
         if (!prev) return null;
         return productsById.get(prev.id) || prev;
       });
-      setCartItems((prevCart) => {
-        if (!Array.isArray(prevCart) || prevCart.length === 0) return prevCart;
-        let changed = false;
-        const nextCart = prevCart.map((item) => {
-          const latestProd = productsById.get(item.product?.id);
-          if (
-            latestProd &&
-            (latestProd.price !== item.product.price ||
-              latestProd.name !== item.product.name ||
-              latestProd.imageUrl !== item.product.imageUrl)
-          ) {
-            changed = true;
-            return { ...item, product: latestProd };
-          }
-          return item;
-        });
-        return changed ? nextCart : prevCart;
-      });
     });
     return () => unsubCatalog();
   }, []);
@@ -690,7 +673,7 @@ export default function App() {
   const toggleDarkMode = useCallback(() => setIsDarkMode((prev) => !prev), []);
 
   // Cart State: Synchronously initialize from active customer's isolated storage so items never vanish on refresh/re-login
-  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+  const [savedCartItems, setCartItems] = useState<CartItem[]>(() => {
     try {
       const session = getStoredCustomerSession();
       const cleanSessionId = session && session.isLoggedIn ? normalizeCustomerId(session.id) : null;
@@ -700,6 +683,12 @@ export default function App() {
     }
   });
 
+
+  const catalogById = useMemo(() => new Map(products.map(product => [product.id, product])), [products]);
+  const cartItems = useMemo(() => refreshCartItems(savedCartItems, catalogById), [savedCartItems, catalogById]);
+  const unavailableCartLines = useMemo(() => cartItems.map((_, index) =>
+    !isCartLineAvailable(cartItems, index, catalogById)
+  ), [cartItems, catalogById]);
 
   // Product Filter and Search in Storefront
   const [searchQuery, setSearchQuery] = useState('');
@@ -837,10 +826,8 @@ export default function App() {
   }, []);
 
   function addAvailableProductToCart(product: FilamentProduct) {
-    const color = product.colors?.find(option => option.stock === undefined || option.stock > 0);
-    if (product.stock <= 0 || !color) return false;
-    handleAddToCart(product, color, product.diameter, 1);
-    return true;
+    const color = product.colors?.find(option => cartStockRemaining(cartItemsRef.current, product, option) > 0);
+    return color ? handleAddToCart(product, color, product.diameter, 1) : false;
   }
 
   const handleAddAllWishlistToCart = (savedList: FilamentProduct[]) => {
@@ -1486,6 +1473,14 @@ export default function App() {
     cartItemsRef.current = cartItems;
   }, [cartItems]);
 
+  const showCartNotice = useCallback((text: string) => {
+    const id = performance.now();
+    setToastMsg({ id, text });
+    setTimeout(() => setToastMsg(prev => prev?.id === id ? null : prev), 3000);
+  }, []);
+  const stockNotice = lang === 'en' ? 'Please check the available stock in your cart.'
+    : lang === 'ja' ? 'カートの数量と在庫をご確認ください。' : '庫存不足或規格已變更，請確認購物車內的數量。';
+
   const handleAddToCart = useCallback((
     product: FilamentProduct,
     color: ColorOption,
@@ -1493,83 +1488,69 @@ export default function App() {
     quantity: number = 1
   ) => {
     const baseCart = cartItemsRef.current;
-    const existingIdx = baseCart.findIndex(
-      (item) =>
-        item.product.id === product.id &&
-        item.selectedColor.name === color.name &&
-        item.selectedDiameter === diameter
-    );
-
-    let updated: CartItem[];
-    if (existingIdx > -1) {
-      updated = baseCart.map((item, idx) =>
-        idx === existingIdx ? { ...item, quantity: item.quantity + quantity } : item
-      );
-    } else {
-      updated = [...baseCart, { product, selectedColor: color, selectedDiameter: diameter, quantity }];
+    const latest = catalogById.get(product.id);
+    const selectedColor = latest && resolveCartColor(latest, color.name);
+    if (!latest || !selectedColor || !Number.isSafeInteger(quantity) || quantity < 1 ||
+        quantity > cartStockRemaining(baseCart, latest, selectedColor)) {
+      showCartNotice(stockNotice);
+      return false;
     }
-
+    const existingIdx = baseCart.findIndex(item =>
+      item.product.id === latest.id && item.selectedColor.name === selectedColor.name && item.selectedDiameter === diameter
+    );
+    const updated = existingIdx < 0
+      ? [...baseCart, { product: latest, selectedColor, selectedDiameter: diameter, quantity }]
+      : baseCart.map((item, idx) => idx === existingIdx ? { ...item, quantity: item.quantity + quantity } : item);
     cartItemsRef.current = updated;
     setCartItems(updated);
-    const activeUid = resolveActiveCustomerId();
-    saveCustomerCart(activeUid, updated).catch(console.warn);
-    
-    // Telemetry: record genuine add-to-cart metric
+    saveCustomerCart(resolveActiveCustomerId(), updated).catch(console.warn);
     recordRealAddToCart();
-
-    // Show Toast Notification
-    const toastId = Date.now();
-    setToastMsg({ id: toastId, text: `已將 ${product.name} 加入購物車！` });
-    setTimeout(() => {
-      setToastMsg((prev) => (prev?.id === toastId ? null : prev));
-    }, 3000);
-  }, [resolveActiveCustomerId]);
+    showCartNotice(lang === 'en' ? 'Added to your cart' : lang === 'ja' ? 'カートに追加しました' : `已將 ${latest.name} 加入購物車！`);
+    return true;
+  }, [catalogById, lang, resolveActiveCustomerId, showCartNotice, stockNotice]);
 
   const handleUpdateCartQuantity = (index: number, newQty: number) => {
+    const baseCart = cartItemsRef.current;
+    const item = baseCart[index];
+    if (!item || !Number.isSafeInteger(newQty)) return;
     if (newQty <= 0) {
       handleRemoveCartItem(index);
       return;
     }
-    const updated = cartItemsRef.current.map((item, idx) =>
-      idx === index ? { ...item, quantity: newQty } : item
-    );
+    if (newQty > item.quantity && !isCartLineAvailable(
+      baseCart.map((entry, idx) => idx === index ? { ...entry, quantity: newQty } : entry), index, catalogById
+    )) {
+      showCartNotice(stockNotice);
+      return;
+    }
+    const updated = baseCart.map((entry, idx) => idx === index ? { ...entry, quantity: newQty } : entry);
     cartItemsRef.current = updated;
     setCartItems(updated);
-    const activeUid = resolveActiveCustomerId();
-    saveCustomerCart(activeUid, updated).catch(console.warn);
+    saveCustomerCart(resolveActiveCustomerId(), updated).catch(console.warn);
   };
 
   const handleUpdateCartColor = (index: number, newColor: ColorOption) => {
     const baseCart = cartItemsRef.current;
-    const targetItem = baseCart[index];
-    if (!targetItem) return;
-
-    // 檢查購物車內是否已有同商品、同新顏色、同線徑的項目，若有則自動合併數量
-    const duplicateIdx = baseCart.findIndex(
-      (item, idx) =>
-        idx !== index &&
-        item.product.id === targetItem.product.id &&
-        item.selectedColor.name === newColor.name &&
-        item.selectedDiameter === targetItem.selectedDiameter
-    );
-
-    let updated: CartItem[];
-    if (duplicateIdx > -1) {
-      updated = baseCart
-        .map((item, idx) =>
-          idx === duplicateIdx ? { ...item, quantity: item.quantity + targetItem.quantity } : item
-        )
-        .filter((_, idx) => idx !== index);
-    } else {
-      updated = baseCart.map((item, idx) =>
-        idx === index ? { ...item, selectedColor: newColor } : item
-      );
+    const item = baseCart[index];
+    const product = item && catalogById.get(item.product.id);
+    const color = product && resolveCartColor(product, newColor.name);
+    if (!item || !product || !color || item.quantity > cartStockRemaining(baseCart, product, color, index)) {
+      showCartNotice(stockNotice);
+      return false;
     }
-
+    if (item.selectedColor.name === color.name) return true;
+    const duplicateIdx = baseCart.findIndex((entry, idx) =>
+      idx !== index && entry.product.id === product.id && entry.selectedColor.name === color.name &&
+      entry.selectedDiameter === item.selectedDiameter
+    );
+    const updated = duplicateIdx === -1
+      ? baseCart.map((entry, idx) => idx === index ? { ...entry, selectedColor: color } : entry)
+      : baseCart.map((entry, idx) => idx === duplicateIdx ? { ...entry, quantity: entry.quantity + item.quantity } : entry)
+          .filter((_, idx) => idx !== index);
     cartItemsRef.current = updated;
     setCartItems(updated);
-    const activeUid = resolveActiveCustomerId();
-    saveCustomerCart(activeUid, updated).catch(console.warn);
+    saveCustomerCart(resolveActiveCustomerId(), updated).catch(console.warn);
+    return true;
   };
 
   const handleRemoveCartItem = (index: number) => {
@@ -1593,7 +1574,12 @@ export default function App() {
     diameter: '1.75mm' | '2.85mm',
     quantity: number
   ) => {
-    handleAddToCart(product, color, diameter, quantity);
+    if (!handleAddToCart(product, color, diameter, quantity)) return;
+    if (cartItemsRef.current.some((_, index) => !isCartLineAvailable(cartItemsRef.current, index, catalogById))) {
+      closeProductDetail();
+      setIsCartOpen(true);
+      return;
+    }
     closeProductDetail();
     setCheckoutPointsToUse(0);
     setCheckoutCouponCode('');
@@ -2369,6 +2355,7 @@ export default function App() {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15, transition: { duration: 0.15 } }}
+              role="status"
               onClick={() => setToastMsg(null)}
               className="pointer-events-auto bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-slate-700 cursor-pointer"
             >
@@ -2416,6 +2403,8 @@ export default function App() {
             isOpen={isCartOpen}
             onClose={() => setIsCartOpen(false)}
             cartItems={cartItems}
+            catalog={catalogById}
+            unavailableLines={unavailableCartLines}
             onUpdateQuantity={handleUpdateCartQuantity}
             onUpdateColor={handleUpdateCartColor}
             onRemoveItem={handleRemoveCartItem}
@@ -2435,6 +2424,7 @@ export default function App() {
         {isCheckoutOpen && (
           <CheckoutModal
             isOpen={isCheckoutOpen}
+            hasUnavailableItems={unavailableCartLines.some(Boolean)}
             onClose={() => setIsCheckoutOpen(false)}
             cartItems={cartItems}
             currency={currency}
