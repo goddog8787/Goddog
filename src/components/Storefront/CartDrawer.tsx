@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { CartItem, ColorOption, CurrencyCode, LanguageCode, MemberProfile, FilamentProduct } from '../../types';
 import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
-import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { ProductPhoto } from './ProductPhoto';
 import { validateCoupon } from '../../utils/couponManager';
 import { isMemberVipActive } from '../../lib/customerPersistence';
 
@@ -262,14 +262,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     className="p-3 bg-white hover:bg-slate-50/80 rounded-2xl border border-slate-200/90 shadow-2xs flex gap-3 transition-colors"
                   >
                     <div className="w-16 h-16 rounded-xl bg-white border border-slate-200/80 overflow-hidden shrink-0">
-                      <img
-                        src={getSafeProductImageUrl(item.product.imageUrl, item.product.material, item.product.name)}
-                        alt={item.product.name}
-                        loading="lazy"
-                        decoding="async"
-                        className="w-full h-full object-cover"
-                        onError={(e) => handleProductImageError(e, item.product.material, item.product.name)}
-                      />
+                      <ProductPhoto url={item.product.imageUrl} name={item.product.name} material={item.product.material} alt={item.product.name} className="h-full w-full" imageClassName="object-cover" />
                     </div>
 
                     <div className="flex-1 min-w-0 flex flex-col justify-between">

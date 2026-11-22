@@ -1,12 +1,12 @@
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { ShoppingCart, Check, Eye, Heart, Scale, Package, X, Plus, Minus } from 'lucide-react';
+import { ShoppingCart, Check, Eye, Heart, Scale, X, Plus, Minus } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview } from '../../types';
 import { formatPrice, translations, translateProduct, translateColorName, useCatalogI18nVersion } from '../../utils/i18n';
-import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { getSafeProductImageUrl } from '../../utils/productImage';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
-import { useIntersectionObserver } from '../../hooks/useIntersectionObserver';
+import { ProductPhoto } from './ProductPhoto';
 import { triggerFlyToCart } from './FlyToCartOverlay';
 
 const WriteReviewModal = React.lazy(() =>
@@ -58,18 +58,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
   const selectedDiameter = liveProduct.diameter;
   const [isAddedAnimation, setIsAddedAnimation] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [isImageLoaded, setIsImageLoaded] = useState(false);
-  const sheetThumbRef = React.useRef<HTMLImageElement>(null);
-
-  // Viewport-only image rendering: avoids decoding offscreen images or skipped cards during rapid mobile scroll
-  const { ref: cardRef, shouldRender: isCardImageVisible } = useIntersectionObserver<HTMLDivElement>({
-    enabled: !priority,
-    rootMargin: '120px 0px',
-    threshold: 0.01,
-    scrollSettleMs: 70,
-    freezeOnceVisible: false,
-  });
-  const canRenderCardImage = priority || isCardImageVisible;
+  const sheetThumbRef = React.useRef<HTMLDivElement>(null);
 
   // 清理品牌顯示：完整且精煉的品牌名稱，絕不出現「...」截斷
   const cleanBrand = useMemo(() => {
@@ -152,10 +141,6 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
     return getSafeProductImageUrl(liveProduct.imageUrl, product.material, product.name);
   }, [liveProduct.imageUrl, product.material, product.name]);
 
-  useEffect(() => {
-    setIsImageLoaded(false);
-  }, [activeImageUrl, canRenderCardImage]);
-
   const stockLabel = useMemo(() => {
     if (liveProduct.stock <= 0) {
       return lang === 'en' ? 'Restocking' : lang === 'ja' ? '入荷待ち' : '補貨中';
@@ -168,7 +153,6 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
 
   return (
     <div
-      ref={cardRef}
       id={`product-card-${product.id}`}
       onClick={() => onViewDetail(liveProduct)}
       className="group h-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/5 transition-all duration-200 flex flex-col overflow-hidden cursor-pointer relative"
@@ -250,36 +234,17 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
             )}
           </div>
 
-          {/* 商品圖片本體（僅在可視區域內掛載與解碼，滑出視窗即釋放記憶體） */}
-          {activeImageUrl && activeImageUrl.trim() !== '' ? (
-            canRenderCardImage ? (
-              <img
-                src={activeImageUrl}
-                alt={cleanTitle}
-                referrerPolicy="no-referrer"
-                className={`w-full h-full rounded-[16px] object-cover object-center group-hover:scale-103 transition-all duration-300 ${
-                  priority || isImageLoaded ? 'opacity-100' : 'opacity-0'
-                }`}
-                loading={priority ? 'eager' : 'lazy'}
-                fetchPriority={priority ? 'high' : 'low'}
-                decoding="async"
-                onLoad={() => setIsImageLoaded(true)}
-                onError={(e) => {
-                  handleProductImageError(e, product.material, product.name);
-                  setIsImageLoaded(true);
-                }}
-              />
-            ) : (
-              <div
-                aria-hidden="true"
-                className="w-full h-full rounded-[16px] bg-slate-100 dark:bg-slate-800/60"
-              />
-            )
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-400">
-              <Package className="w-10 h-10" />
-            </div>
-          )}
+          <ProductPhoto
+            url={liveProduct.imageUrl}
+            name={product.name}
+            alt={cleanTitle}
+            material={product.material}
+            lang={lang}
+            priority={priority}
+            showFallbackNote
+            className="h-full w-full overflow-hidden rounded-[16px]"
+            imageClassName="object-cover object-center motion-safe:transition-transform motion-safe:group-hover:scale-103"
+          />
         </div>
       </div>
 
@@ -305,7 +270,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
 
           {/* 第 2 列：商品標題（去重品牌前綴、平衡斷行、穩定雙行高度） */}
           <h3 className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-snug text-balance line-clamp-2 min-h-[2.6em] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-            <a href={`/?product=${encodeURIComponent(product.id)}`} onClick={(event) => {
+            <a className="rounded-sm focus-visible:outline-2 focus-visible:outline-indigo-500" href={`/?product=${encodeURIComponent(product.id)}`} onClick={(event) => {
               event.stopPropagation();
               if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
               event.preventDefault();
@@ -378,19 +343,11 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
               {/* 商品摘要頭部 */}
               <div className="px-4 py-3.5 sm:px-5 sm:py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
-                  {activeImageUrl ? (
-                    <img
-                      ref={sheetThumbRef}
-                      src={activeImageUrl}
-                      alt={cleanTitle}
-                      className="w-14 h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-50"
-                      onError={(e) => handleProductImageError(e, product.material, product.name)}
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
-                      <Package className="w-6 h-6" />
-                    </div>
-                  )}
+                  <div ref={sheetThumbRef} className="w-14 h-14 shrink-0">
+                    <ProductPhoto url={liveProduct.imageUrl} name={product.name} alt="" material={product.material}
+                      className="h-full w-full overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700"
+                      imageClassName="object-cover" />
+                  </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded whitespace-nowrap">

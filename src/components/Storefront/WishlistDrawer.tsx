@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { FilamentProduct, CurrencyCode, LanguageCode } from '../../types';
 import { formatPrice, translateProductName, translateMaterial } from '../../utils/i18n';
-import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { ProductPhoto } from './ProductPhoto';
 import { triggerFlyToCart } from './FlyToCartOverlay';
 
 interface WishlistDrawerProps {
@@ -121,14 +121,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                   className="p-3 bg-white dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-indigo-200 transition-all flex gap-3 group shadow-xs"
                 >
                   <div className="w-16 h-16 rounded-xl bg-white dark:bg-slate-800 overflow-hidden shrink-0 border border-slate-200/80 dark:border-slate-700">
-                    <img 
-                      src={getSafeProductImageUrl(p.imageUrl, p.material, p.name)} 
-                      alt={displayName} 
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover"
-                      onError={(e) => handleProductImageError(e, p.material, p.name)}
-                    />
+                    <ProductPhoto url={p.imageUrl} name={p.name} material={p.material} alt={displayName} className="h-full w-full" imageClassName="object-cover" />
                   </div>
 
                   <div className="flex-1 min-w-0 flex flex-col justify-between">

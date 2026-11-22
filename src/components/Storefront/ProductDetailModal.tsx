@@ -13,7 +13,6 @@ import {
   Check, 
   Zap,
   ArrowRight,
-  Package,
   Bot,
   Calculator,
   Copy,
@@ -26,7 +25,7 @@ import { formatPrice, translations, translateProduct, translateColorName } from 
 import { subscribeToProductReviews } from '../../lib/reviewPersistence';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
-import { getSafeProductImageUrl, handleProductImageError } from '../../utils/productImage';
+import { ProductPhoto } from './ProductPhoto';
 import { triggerFlyToCart } from './FlyToCartOverlay';
 
 const WriteReviewModal = React.lazy(() =>
@@ -209,11 +208,16 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
     >
       <div 
         className="bg-white w-full h-full sm:h-auto sm:max-h-[90vh] sm:rounded-3xl rounded-none sm:max-w-4xl overflow-y-auto shadow-2xl border-0 sm:border border-slate-200 flex flex-col relative cursor-default select-text"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-detail-title"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
         <button
           id="close-product-detail-modal-btn"
+          type="button"
+          aria-label={lang === 'en' ? 'Close product details' : lang === 'ja' ? '商品詳細を閉じる' : '關閉商品詳情'}
           onClick={onClose}
           className="absolute top-3.5 right-3.5 sm:top-4 sm:right-4 z-20 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
         >
@@ -224,18 +228,8 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
           {/* Left Column: Image & Spool preview */}
           <div className="bg-slate-50 p-4 sm:p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200">
             <div className="relative aspect-square rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-inner flex items-center justify-center p-4">
-              {displayProduct.imageUrl && displayProduct.imageUrl.trim() !== '' ? (
-                <img
-                  src={getSafeProductImageUrl(displayProduct.imageUrl, displayProduct.material, displayProduct.name)}
-                  alt={displayProduct.name}
-                  className="w-full h-full object-cover rounded-xl"
-                  onError={(e) => handleProductImageError(e, displayProduct.material, displayProduct.name)}
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-slate-400">
-                  <Package className="w-16 h-16" />
-                </div>
-              )}
+              <ProductPhoto url={displayProduct.imageUrl} name={displayProduct.name} material={displayProduct.material} lang={lang}
+                priority showFallbackNote className="h-full w-full overflow-hidden rounded-xl" imageClassName="object-contain" />
               
               <div className="absolute top-3 left-3 flex flex-col gap-1">
                 {displayProduct.badge && (
@@ -291,7 +285,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 <span className="text-slate-500 font-mono whitespace-nowrap">SKU: {displayProduct.sku}</span>
               </div>
 
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight pr-10 text-balance">
+              <h2 id="product-detail-title" className="text-xl sm:text-2xl font-black text-slate-900 leading-tight pr-10 text-balance">
                 {(displayProduct.name || '').replace(/莫蘭迪\s*/g, '')}
               </h2>
 
