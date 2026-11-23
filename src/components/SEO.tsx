@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { FilamentProduct, LanguageCode } from '../types';
+import { checkoutShippingFee } from '../utils/checkoutDetails';
 import { buildProductSEOKeywords } from '../utils/productSearch';
 
 interface SEOProps {
@@ -25,6 +26,37 @@ function productImageUrl(image: string | undefined, origin: string, fallback: st
   } catch {
     return fallback;
   }
+}
+
+function buildShippingDetails(product: FilamentProduct) {
+  const freeShipping = product.customShippingFee === 0;
+  const days = (minValue: number, maxValue: number) => ({
+    '@type': 'QuantitativeValue', minValue, maxValue, unitCode: 'DAY',
+  });
+
+  return ([
+    { method: 'UNIMARTC2C', name: '超商取貨', transit: days(2, 3) },
+    { method: 'HOME', name: '宅配', transit: days(1, 2) },
+  ] as const).map(({ method, name, transit }) => {
+    const mainlandRate = checkoutShippingFee(method, product.price, freeShipping);
+    const maxRate = checkoutShippingFee(method, product.price, freeShipping, true);
+    return {
+      '@type': 'OfferShippingDetails',
+      name,
+      shippingDestination: { '@type': 'DefinedRegion', addressCountry: 'TW' },
+      // Google does not currently support Taiwan subdivisions for offer shipping.
+      shippingRate: {
+        '@type': 'MonetaryAmount',
+        currency: 'TWD',
+        ...(mainlandRate === maxRate ? { value: mainlandRate } : { maxValue: maxRate }),
+      },
+      deliveryTime: {
+        '@type': 'ShippingDeliveryTime',
+        handlingTime: days(0, 1),
+        transitTime: transit,
+      },
+    };
+  });
 }
 
 function buildSingleProductJsonLd(
@@ -104,6 +136,18 @@ function buildSingleProductJsonLd(
       priceCurrency: 'TWD',
       price: String(prod.price),
       itemCondition: 'https://schema.org/NewCondition',
+      shippingDetails: buildShippingDetails(prod),
+      hasMerchantReturnPolicy: {
+        '@type': 'MerchantReturnPolicy',
+        applicableCountry: 'TW',
+        returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+        merchantReturnDays: 7,
+        merchantReturnLink: `${originUrl}/refund-policy`,
+        // The published policy only specifies free returns for sealed filament.
+        ...(!['Accessories', 'Resin'].includes(prod.material) ? {
+          returnFees: 'https://schema.org/FreeReturn',
+        } : {}),
+      },
       availability:
         prod.stock > 0
           ? 'https://schema.org/InStock'
