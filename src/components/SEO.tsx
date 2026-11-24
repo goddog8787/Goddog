@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { FilamentProduct, LanguageCode } from '../types';
+import { isProductInStock } from '../utils/cartStock';
 import { checkoutShippingFee } from '../utils/checkoutDetails';
 import { buildProductSEOKeywords } from '../utils/productSearch';
 
@@ -149,7 +150,7 @@ function buildSingleProductJsonLd(
         } : {}),
       },
       availability:
-        prod.stock > 0
+        isProductInStock(prod)
           ? 'https://schema.org/InStock'
           : 'https://schema.org/OutOfStock',
       seller: {
@@ -262,14 +263,7 @@ export const SEO: React.FC<SEOProps> = React.memo(({
             name: '神狗勾 3D 列印耗材商城',
             url: origin,
             description: finalDesc,
-            priceRange: 'NT$350 - NT$6880',
             currenciesAccepted: 'TWD',
-            paymentAccepted: 'Credit Card, LINE Pay, Apple Pay, ATM, 7-ELEVEN, FamilyMart',
-            hasOfferCatalog: {
-              '@type': 'OfferCatalog',
-              name: '神狗勾 3D 列印耗材與設備全系列目錄',
-              itemListElement: topProducts.map((p) => buildSingleProductJsonLd(p, origin)),
-            },
           },
           {
             '@type': 'ItemList',
@@ -279,7 +273,7 @@ export const SEO: React.FC<SEOProps> = React.memo(({
             itemListElement: topProducts.map((p, index) => ({
               '@type': 'ListItem',
               position: index + 1,
-              item: { '@id': `${origin}/?product=${encodeURIComponent(p.id)}#product` },
+              url: `${origin}/?product=${encodeURIComponent(p.id)}`,
             })),
           },
         ],

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, Suspense } from 'react';
 import { createPortal } from 'react-dom';
+import { isProductInStock } from '../../utils/cartStock';
 import { ShoppingCart, Check, Eye, Heart, Scale, X, Plus, Minus } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview } from '../../types';
 import { formatPrice, translations, translateProduct, translateColorName, useCatalogI18nVersion } from '../../utils/i18n';
@@ -141,15 +142,16 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
     return getSafeProductImageUrl(liveProduct.imageUrl, product.material, product.name);
   }, [liveProduct.imageUrl, product.material, product.name]);
 
+  const inStock = isProductInStock(product);
   const stockLabel = useMemo(() => {
-    if (liveProduct.stock <= 0) {
+    if (!inStock) {
       return lang === 'en' ? 'Restocking' : lang === 'ja' ? '入荷待ち' : '補貨中';
     }
     if (liveProduct.stock < 15) {
       return lang === 'en' ? 'Low Stock' : lang === 'ja' ? '残りわずか' : '少量';
     }
     return lang === 'en' ? 'In Stock' : lang === 'ja' ? '在庫あり' : '現貨';
-  }, [liveProduct.stock, lang]);
+  }, [inStock, liveProduct.stock, lang]);
 
   return (
     <div
@@ -252,9 +254,9 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
       <div className="p-3 sm:p-4 flex-1 flex flex-col justify-between space-y-2.5">
         <div className="space-y-1.5">
           {/* 第 1 列：品牌標籤（絕不截斷成 ...）與 線徑規格 */}
-          <div className="flex items-center justify-between gap-1 text-[10px] sm:text-xs">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded whitespace-nowrap shrink-0">
+          <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] sm:text-xs">
+            <div className="flex flex-wrap items-center gap-1 min-w-0">
+              <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded [overflow-wrap:anywhere]">
                 {cleanBrand}
               </span>
               {showDiameter && (
@@ -263,7 +265,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                 </span>
               )}
             </div>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 shrink-0 font-semibold whitespace-nowrap">
+            <span className={`text-[10px] shrink-0 font-semibold whitespace-nowrap ${inStock ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}`}>
               {stockLabel}
             </span>
           </div>
@@ -280,7 +282,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
         </div>
 
         {/* 第 4 列：價格與快速加入購物車（固定按鈕與價格不折行，確保桌機 4 欄排版下互不擠壓） */}
-        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2 mt-auto">
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2 mt-auto">
           <div className="flex items-baseline gap-1 min-w-0 shrink-0 whitespace-nowrap">
             <span className="text-sm sm:text-base lg:text-lg font-extrabold text-slate-900 dark:text-white font-mono tracking-tight tabular-nums whitespace-nowrap">
               {formatPrice(liveProduct.price, currency)}
@@ -291,15 +293,15 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
             id={`add-to-cart-btn-${liveProduct.id}`}
             type="button"
             onClick={handleOpenColorSheet}
-            disabled={liveProduct.stock <= 0}
+            disabled={!inStock}
             className={`btn-tactile-primary store-action group/cart h-8 sm:h-9 min-w-[36px] xs:min-w-[68px] sm:min-w-[78px] px-2.5 sm:px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-all duration-150 cursor-pointer whitespace-nowrap shrink-0 ${
-              liveProduct.stock <= 0
+              !inStock
                 ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                 : isAddedAnimation
                 ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/20'
                 : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-md hover:shadow-indigo-600/20 text-white shadow-xs'
             }`}
-            title={liveProduct.stock <= 0 ? t.outOfStock : t.addToCart}
+            title={!inStock ? t.outOfStock : t.addToCart}
           >
             {isAddedAnimation ? (
               <>
@@ -308,7 +310,7 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
                   {lang === 'en' ? 'Added' : lang === 'ja' ? '追加済' : '已加'}
                 </span>
               </>
-            ) : liveProduct.stock <= 0 ? (
+            ) : !inStock ? (
               <span>{t.outOfStock}</span>
             ) : (
               <>

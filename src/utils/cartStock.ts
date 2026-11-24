@@ -1,6 +1,11 @@
 import type { CartItem, ColorOption, FilamentProduct } from '../types';
 import { translateColorName } from './i18n';
 
+export function isProductInStock(product: FilamentProduct): boolean {
+  return Number.isFinite(product.stock) && product.stock >= 1 &&
+    Boolean(product.colors?.some(color => Number.isFinite(color.stock) && color.stock >= 1));
+}
+
 export function resolveCartColor(product: FilamentProduct, name: string): ColorOption | undefined {
   const exact = product.colors?.find(color => color.name === name);
   if (exact) return exact;

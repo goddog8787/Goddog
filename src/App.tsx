@@ -47,7 +47,7 @@ import {
   recordRealAddToCart, 
   recordRealCheckoutStart 
 } from './lib/realAnalytics';
-import { cartStockRemaining, isCartLineAvailable, refreshCartItems, resolveCartColor } from './utils/cartStock';
+import { cartStockRemaining, isCartLineAvailable, isProductInStock, refreshCartItems, resolveCartColor } from './utils/cartStock';
 import { getStoreApiBase } from './lib/backendUrl';
 import { isMockOrder } from './lib/orderVerification';
 import { 
@@ -705,7 +705,14 @@ export default function App() {
   // Product Filter and Search in Storefront
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMaterial, setSelectedMaterial] = useState('All');
-  const [sortBy, setSortBy] = useState<'popular' | 'price_low' | 'price_high' | 'rating'>('popular');
+  const [inStockOnly, setInStockOnly] = useState(false);
+  const [sortBy, setSortBy] = useState('relevance');
+  const resetCatalogFilters = () => {
+    setSearchQuery('');
+    setSelectedMaterial('All');
+    setInStockOnly(false);
+    setSortBy('relevance');
+  };
 
   // Modals Visibility
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -1732,62 +1739,42 @@ export default function App() {
     });
   };
 
-  // Filter and sort products using unified base resin families (PLA unified, PA6-CF/Nylon distinct)
-  const materialCounts = useMemo(() => {
-    const counts: Record<string, number> = { All: products.length };
-    for (const fam of STOREFRONT_MATERIAL_FAMILIES) {
-      if (fam.id !== 'All') counts[fam.id] = 0;
-    }
-    for (const p of products) {
-      const mat = p.material || '';
-      for (const fam of STOREFRONT_MATERIAL_FAMILIES) {
-        if (fam.id !== 'All' && fam.match(mat)) {
-          counts[fam.id] += 1;
-          break;
-        }
-      }
-    }
-    return counts;
-  }, [products]);
-
   const wishlistSet = useMemo(() => new Set(wishlistIds), [wishlistIds]);
   const comparisonSet = useMemo(() => new Set(comparisonIds), [comparisonIds]);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
-  const scoredProducts = useMemo(() => {
-    const query = prepareProductSearch(deferredSearchQuery);
-    const activeFamily = STOREFRONT_MATERIAL_FAMILIES.find((f) => f.id === selectedMaterial);
-    return products
-      .map((p) => {
-        const matchesMat =
-          selectedMaterial === 'All'
-            ? true
-            : activeFamily
-            ? activeFamily.match(p.material || '')
-            : p.material === selectedMaterial;
-        if (!matchesMat) return null;
-        const evalRes = evaluateProductDeepSearch(p, query);
-        if (!evalRes.matched) return null;
-        return { product: p, score: evalRes.score };
-      })
-      .filter((item): item is { product: FilamentProduct; score: number } => item !== null);
+  const searchableProducts = useMemo(
+    () => inStockOnly ? products.filter(isProductInStock) : products,
+    [products, inStockOnly],
+  );
 
-  }, [products, selectedMaterial, deferredSearchQuery]);
+  const matchingProducts = useMemo(() => {
+    const query = prepareProductSearch(deferredSearchQuery);
+    return searchableProducts.flatMap(product => {
+      const { matched, score } = evaluateProductDeepSearch(product, query);
+      return matched ? [{ product, score, family: resolveMaterialFamilyId(product.material || '') }] : [];
+    });
+  }, [searchableProducts, deferredSearchQuery]);
+
+  const materialCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: matchingProducts.length };
+    for (const { family } of matchingProducts) {
+      if (family !== 'All') counts[family] = (counts[family] ?? 0) + 1;
+    }
+    return counts;
+  }, [matchingProducts]);
 
   const filteredAndSortedProducts = useMemo(() => {
-    const scored = [...scoredProducts].sort((a, b) => {
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
+    const filtered = matchingProducts.filter(({ family }) => selectedMaterial === 'All' || family === selectedMaterial);
+    return filtered.sort((a, b) => {
       if (sortBy === 'price_low') return a.product.price - b.product.price;
       if (sortBy === 'price_high') return b.product.price - a.product.price;
-      if (sortBy === 'rating') return b.product.rating - a.product.rating;
-      return b.product.reviewsCount - a.product.reviewsCount; // popular
-    });
-
-    return scored.map((item) => item.product);
-  }, [scoredProducts, sortBy]);
+      if (sortBy === 'rating') return b.product.rating - a.product.rating || b.product.reviewsCount - a.product.reviewsCount;
+      if (sortBy === 'relevance' && b.score !== a.score) return b.score - a.score;
+      return b.product.reviewsCount - a.product.reviewsCount;
+    }).map(({ product }) => product);
+  }, [matchingProducts, selectedMaterial, sortBy]);
 
   const cartCount = useMemo(() => cartItems.reduce((acc, item) => acc + item.quantity, 0), [cartItems]);
 
@@ -1892,7 +1879,7 @@ export default function App() {
           <Route path="/faq" element={<FAQPage lang={lang} />} />
           <Route path="/blog" element={<BlogList adSenseConfig={adSenseConfig} lang={lang} />} />
           <Route path="/blog/:slug" element={<BlogPostPage adSenseConfig={adSenseConfig} lang={lang} />} />
-          <Route path="/guide" element={<MaterialGuidePage products={products} onSelectProduct={handleOpenProductDetail} onFilterCategory={(mat) => { setSelectedMaterial(resolveMaterialFamilyId(mat)); navigate('/'); }} lang={lang} />} />
+          <Route path="/guide" element={<MaterialGuidePage products={products} onSelectProduct={handleOpenProductDetail} onFilterCategory={(mat) => { setSearchQuery(''); setSelectedMaterial(resolveMaterialFamilyId(mat)); navigate({ pathname: '/', hash: '#storefront-product-grid' }); }} lang={lang} />} />
           <Route path="/store" element={<Navigate to="/" replace />} />
           <Route path="/r/:code" element={<ReferralHandler />} />
           <Route path="/profile" element={<><SEO title={t.personalProfile} noIndex description={lang === 'en' ? 'GodDog 3D Maker Member Center' : lang === 'ja' ? '神狗勾3Dフィラメント公式 会員マイページ' : '神狗勾耗材商城會員中心'} url="/profile" /><ProfilePage
@@ -2183,7 +2170,8 @@ export default function App() {
                     id="storefront-product-search"
                     searchQuery={searchQuery}
                     setSearchQuery={setSearchQuery}
-                    products={products}
+                    products={searchableProducts}
+                    keepQueryOnProductSelect
                     placeholder={t.searchPlaceholderInput || (lang === 'en' ? 'Search PLA+, CF, PETG or brand...' : lang === 'ja' ? 'PLA+・カーボン・PETG 等を検索' : '搜尋 PLA+、碳纖維、PETG 或品牌型號')}
                     onSelectProduct={handleOpenProductDetail}
                     onSelectMaterial={(m) => setSelectedMaterial(resolveMaterialFamilyId(m))}
@@ -2191,23 +2179,20 @@ export default function App() {
                 </div>
 
                 {/* Utility Bar: Unboxed Tabular Result Count + Custom Sort Select */}
-                <div className="flex items-center justify-between md:justify-end gap-3 shrink-0 px-0.5 md:px-0">
+                <div className="flex flex-wrap items-center justify-between md:justify-end gap-2 shrink-0 px-0.5 md:px-0">
                   <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
-                    <span>
+                    <span role="status" aria-atomic="true">
                       {lang === 'en' ? 'Showing' : lang === 'ja' ? '該当' : '共'}{' '}
                       <strong className="font-mono tabular-nums font-bold text-slate-900 dark:text-slate-100">
                         {filteredAndSortedProducts.length}
                       </strong>{' '}
                       {lang === 'en' ? 'items' : lang === 'ja' ? '件' : '款'}
                     </span>
-                    {(searchQuery || selectedMaterial !== 'All') && (
+                    {(searchQuery || selectedMaterial !== 'All' || inStockOnly || sortBy !== 'relevance') && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setSearchQuery('');
-                          setSelectedMaterial('All');
-                        }}
+                        onClick={resetCatalogFilters}
                         className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 underline underline-offset-2 cursor-pointer ml-1"
                       >
                         <span>{lang === 'en' ? 'Reset' : lang === 'ja' ? 'クリア' : '清除條件'}</span>
@@ -2219,9 +2204,10 @@ export default function App() {
                     <select
                       aria-label={lang === 'en' ? 'Sort products' : lang === 'ja' ? '並び替え' : '商品排序方式'}
                       value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value as any)}
-                      className="appearance-none bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-xl pl-3 pr-8 py-1.5 min-h-[36px] text-xs font-semibold text-slate-800 dark:text-slate-100 cursor-pointer outline-hidden focus:border-slate-900 dark:focus:border-indigo-400 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-indigo-500/20 transition-colors"
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="appearance-none bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-xl pl-3 pr-8 py-1.5 min-h-11 text-xs font-semibold text-slate-800 dark:text-slate-100 cursor-pointer outline-hidden focus:border-slate-900 dark:focus:border-indigo-400 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-indigo-500/20 transition-colors"
                     >
+                      <option value="relevance">{lang === 'en' ? 'Recommended' : lang === 'ja' ? 'おすすめ順' : '推薦排序'}</option>
                       <option value="popular">{lang === 'en' ? 'Most Popular' : lang === 'ja' ? '人気順' : '熱銷排行'}</option>
                       <option value="price_low">{lang === 'en' ? 'Price: Low → High' : lang === 'ja' ? '価格が安い順' : '價格：低至高'}</option>
                       <option value="price_high">{lang === 'en' ? 'Price: High → Low' : lang === 'ja' ? '価格が高い順' : '價格：高至低'}</option>
@@ -2234,7 +2220,11 @@ export default function App() {
 
               {/* Lower Rail: Architectural Segmented Base-Material Family Tabs */}
               <div className="relative border-t border-slate-100 dark:border-slate-800/80 px-3.5 py-2.5 sm:px-5 sm:py-3">
-                <div className="flex items-center gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible scrollbar-none pr-6 sm:pr-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 px-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    <input type="checkbox" checked={inStockOnly} onChange={event => setInStockOnly(event.target.checked)} className="size-4 accent-indigo-600" />
+                    {lang === 'en' ? 'In stock only' : lang === 'ja' ? '在庫ありのみ' : '只看有庫存'}
+                  </label>
                   <span className="text-[11px] font-semibold tracking-wider text-slate-400 dark:text-slate-500 shrink-0 mr-1 select-none">
                     {lang === 'en' ? 'Material' : lang === 'ja' ? '材質' : '材質'}
                   </span>
@@ -2247,8 +2237,9 @@ export default function App() {
                         key={fam.id}
                         id={`filter-material-${fam.id}`}
                         type="button"
+                        aria-pressed={isSelected}
                         onClick={() => setSelectedMaterial(fam.id)}
-                        className={`relative px-2.5 sm:px-3 py-1.5 min-h-[34px] rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none flex items-center gap-1.5 active:scale-[0.97] ${
+                        className={`relative px-2.5 sm:px-3 py-1.5 min-h-11 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 select-none flex items-center gap-1.5 active:scale-[0.97] ${
                           isSelected
                             ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-xs'
                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-900 dark:hover:text-slate-100'
@@ -2266,8 +2257,6 @@ export default function App() {
                     );
                   })}
                 </div>
-                {/* Soft mobile right-edge scroll fade affordance */}
-                <div className="pointer-events-none absolute right-0 top-1 bottom-1 w-8 bg-gradient-to-l from-white dark:from-slate-900 to-transparent rounded-r-2xl sm:hidden" />
               </div>
             </div>
 
@@ -2282,7 +2271,7 @@ export default function App() {
                     {lang === 'en' ? 'No matching 3D filaments found' : lang === 'ja' ? '該当する3Dフィラメントが見つかりませんでした' : '找不到符合條件的 3D 列印耗材'}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {lang === 'en' ? 'Try selecting a different material chip or clearing search terms!' : lang === 'ja' ? '別の材質タグを選択するか、検索キーワードを変更してみてください！' : '建議嘗試切換不同材質標籤或清除關鍵字搜尋！'}
+                    {lang === 'en' ? 'Try adjusting the filters or clearing your search.' : lang === 'ja' ? 'フィルターや検索キーワードを変更してください。' : '試著調整篩選條件，或清除搜尋關鍵字。'}
                   </p>
                   <button
                     onClick={() => {
@@ -2486,7 +2475,7 @@ export default function App() {
               persistCartEdit([]);
               setCartItems([]);
             }}
-            onAddQuickItem={(p, color, diameter, qty) => handleAddToCart(p, color, diameter, qty)}
+            onAddQuickItem={handleAddToCart}
             onProceedCheckout={handleProceedCheckout}
             currency={currency}
             lang={lang}
