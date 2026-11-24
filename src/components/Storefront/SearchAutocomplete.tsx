@@ -21,6 +21,7 @@ export interface SearchAutocompleteProps {
   products?: FilamentProduct[];
   placeholder?: string;
   onSubmitQuery?: (query: string) => void;
+  keepQueryOnProductSelect?: boolean;
   onSelectProduct?: (product: FilamentProduct) => void;
   onSelectMaterial?: (material: string) => void;
   className?: string;
@@ -159,6 +160,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   placeholder = '搜尋 PLA+、碳纖維、PETG 或品牌型號',
   onSubmitQuery,
   onSelectProduct,
+  keepQueryOnProductSelect = false,
   onSelectMaterial,
   className = '',
   autoFocus = false,
@@ -169,6 +171,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -292,9 +295,14 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   };
 
   const handleSelectMaterial = (mat: MaterialMeta) => {
-    setSearchQuery(mat.key);
-    onSelectMaterial?.(mat.key);
-    submitQuery(mat.key);
+    if (onSelectMaterial) {
+      setSearchQuery('');
+      onSelectMaterial(mat.key);
+      finishSelection();
+    } else {
+      setSearchQuery(mat.key);
+      submitQuery(mat.key);
+    }
   };
 
   const handleSelectBrand = (brand: BrandMeta) => {
@@ -303,7 +311,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   };
 
   const handleSelectProduct = (prod: FilamentProduct) => {
-    setSearchQuery(prod.name);
+    if (!onSelectProduct || !keepQueryOnProductSelect) setSearchQuery(prod.name);
     if (onSelectProduct) {
       onSelectProduct(prod);
       finishSelection();
@@ -331,7 +339,13 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
   const activeId = isOpen && selectedIndex >= 0 ? `${dropdownId}-option-${selectedIndex}` : undefined;
 
   useEffect(() => {
-    if (activeId) document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' });
+    const panel = dropdownRef.current;
+    const option = activeId && document.getElementById(activeId);
+    if (!panel || !option) return;
+    const panelRect = panel.getBoundingClientRect();
+    const optionRect = option.getBoundingClientRect();
+    if (optionRect.top < panelRect.top) panel.scrollTop += optionRect.top - panelRect.top;
+    else if (optionRect.bottom > panelRect.bottom) panel.scrollTop += optionRect.bottom - panelRect.bottom;
   }, [activeId]);
 
   const optionProps = (key: string) => {
@@ -476,10 +490,11 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
       {/* Autocomplete Suggestions Dropdown Panel */}
       {isOpen && (
         <div 
+          ref={dropdownRef}
           id={dropdownId}
           role="listbox"
           aria-label={placeholder}
-          className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 z-50 overflow-hidden store-search-panel max-h-[75vh] sm:max-h-[480px] overflow-y-auto [&_[aria-selected=true]]:outline-2 [&_[aria-selected=true]]:outline-offset-[-2px] [&_[aria-selected=true]]:outline-indigo-500"
+          className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200/90 dark:border-slate-700/90 z-50 overflow-hidden store-search-panel max-h-[min(55dvh,480px)] sm:max-h-[480px] overflow-y-auto [&_[aria-selected=true]]:outline-2 [&_[aria-selected=true]]:outline-offset-[-2px] [&_[aria-selected=true]]:outline-indigo-500"
         >
           {/* STATE 1: Empty Query - Show Hot Trending Searches */}
           {!trimmedQuery && (

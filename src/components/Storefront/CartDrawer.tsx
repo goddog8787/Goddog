@@ -1,6 +1,6 @@
 import { CHECKOUT_CVS_FREE_THRESHOLD, checkoutPointLimit, checkoutShippingFee } from '../../utils/checkoutDetails';
 import { cartStockRemaining } from '../../utils/cartStock';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
@@ -71,19 +71,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const hasUnavailableItems = unavailableLines.some(Boolean);
   const vipDiscount = isVip ? Math.floor(rawSubtotal * 0.03) : 0;
   const subtotal = rawSubtotal - vipDiscount; // actual subtotal after VIP discount
-  const freeShippingThreshold = CHECKOUT_CVS_FREE_THRESHOLD;
 
   const hasFreeShippingItem = cartItems.length > 0 && cartItems.every(i => i.product.customShippingFee === 0);
-  const isFreeShipping = subtotal >= freeShippingThreshold || hasFreeShippingItem;
-  const needForFreeShipping = isFreeShipping ? 0 : Math.max(0, freeShippingThreshold - subtotal);
-  const freeShippingProgress = isFreeShipping ? 100 : Math.min(100, Math.round((subtotal / freeShippingThreshold) * 100));
+  const shippingFee = checkoutShippingFee('UNIMARTC2C', subtotal, hasFreeShippingItem || Boolean(appliedCoupon?.freeShipping));
+  const needForFreeShipping = shippingFee === 0 ? 0 : Math.max(0, CHECKOUT_CVS_FREE_THRESHOLD - subtotal);
+  const freeShippingProgress = shippingFee === 0 ? 100 : Math.min(99, Math.floor(subtotal / CHECKOUT_CVS_FREE_THRESHOLD * 100));
+  const shippingProgressLabel = lang === 'en' ? 'Free pickup shipping progress' : lang === 'ja' ? 'コンビニ受取の送料無料まで' : '超商取貨免運進度';
 
   // Points redemption logic: 1 point = NT$1 off, up to member's points or 10% of subtotal
   const maxRedeemablePoints = checkoutPointLimit(member?.points, subtotal);
   const [usePoints, setUsePoints] = useState(false);
   const pointsUsed = usePoints ? maxRedeemablePoints : 0;
   const couponDiscount = appliedCoupon ? appliedCoupon.discount : 0;
-  const shippingFee = checkoutShippingFee('UNIMARTC2C', subtotal, isFreeShipping || Boolean(appliedCoupon?.freeShipping));
   const finalTotal = Math.max(0, subtotal + shippingFee - pointsUsed - couponDiscount);
   const totalSavings = vipDiscount + pointsUsed + couponDiscount;
 
@@ -138,14 +137,42 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   }, [subtotal, isVip, cartItems.length, member?.coupons, appliedCoupon]);
 
-  const quickAddOns = Array.from(catalog.values())
-    .filter(product => product.material === 'Accessories' && product.price > 0)
-    .flatMap(product => {
-      const color = product.colors?.find(option => cartStockRemaining(cartItems, product, option) > 0);
-      return color ? [{ product, color }] : [];
-    })
-    .sort((a, b) => Math.abs(a.product.price - needForFreeShipping) - Math.abs(b.product.price - needForFreeShipping))
-    .slice(0, 3);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const colorCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const colorTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previous = document.activeElement;
+    closeButtonRef.current?.focus({ preventScroll: true });
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected && document.activeElement === document.body) {
+        previous.focus({ preventScroll: true });
+      }
+    };
+  }, [isOpen]);
+
+  const closeColorPicker = () => {
+    setEditingColorItemIdx(null);
+    if (colorTriggerRef.current?.isConnected) colorTriggerRef.current.focus({ preventScroll: true });
+    else closeButtonRef.current?.focus({ preventScroll: true });
+  };
+
+  useEffect(() => {
+    if (editingColorItemIdx !== null) colorCloseButtonRef.current?.focus({ preventScroll: true });
+  }, [editingColorItemIdx]);
+
+  const quickAddOns = useMemo(() => {
+    if (!isOpen || !onAddQuickItem || needForFreeShipping === 0 || cartItems.length === 0) return [];
+    return Array.from(catalog.values())
+      .filter(product => product.material === 'Accessories' && product.price > 0)
+      .flatMap(product => {
+        const color = product.colors?.find(option => cartStockRemaining(cartItems, product, option) > 0);
+        return color ? [{ product, color }] : [];
+      })
+      .sort((a, b) => Math.abs(a.product.price - needForFreeShipping) - Math.abs(b.product.price - needForFreeShipping))
+      .slice(0, 3);
+  }, [isOpen, onAddQuickItem, needForFreeShipping, catalog, cartItems]);
 
   if (!isOpen || typeof document === 'undefined') return null;
 
@@ -159,6 +186,27 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="store-cart-heading"
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            if (editingColorItemIdx !== null) closeColorPicker();
+            else onClose();
+          }
+          if (event.key === 'Tab') {
+            const panel = event.currentTarget.querySelector('[data-cart-color-picker]') ?? event.currentTarget;
+            const buttons = [...panel.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href]')]
+              .filter(control => control.getClientRects().length > 0);
+            const first = buttons[0];
+            const last = buttons.at(-1);
+            if (event.shiftKey && event.target === first && last) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && event.target === last && first) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
+        }}
         className="relative w-full max-w-md bg-white h-[100dvh] max-h-screen shadow-2xl flex flex-col justify-between store-cart-panel cursor-default select-text overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -210,9 +258,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               )
             )}
             <button
+              ref={closeButtonRef}
               id="close-cart-drawer-btn"
               onClick={onClose}
-              className="w-9 h-9 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+              className="w-11 h-11 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer shrink-0"
               title={lang === 'en' ? 'Close' : lang === 'ja' ? '閉じる' : '關閉'}
             >
               <X className="w-5 h-5" />
@@ -221,25 +270,25 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         </div>
 
         {/* Free Shipping Progress Indicator (Compact bar) */}
-        <div className="px-3.5 py-2 bg-indigo-50/60 border-b border-indigo-100 shrink-0">
-          <div className="flex items-center justify-between text-[11px] font-semibold mb-1">
-            <div className="flex items-center gap-1.5 text-indigo-950 truncate">
+        {cartItems.length > 0 && <div className="px-3.5 py-2 bg-indigo-50/60 border-b border-indigo-100 shrink-0">
+          <div className="flex items-center justify-between gap-2 text-[11px] font-semibold mb-1">
+            <div className="flex items-center gap-1.5 text-indigo-950">
               <Truck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-              <span className="truncate">
+              <span>
                 {needForFreeShipping === 0
-                  ? (lang === 'en' ? '🎉 Congratulations! You qualify for Free Shipping!' : lang === 'ja' ? '🎉 送料無料対象です！' : '🎉 恭喜！您已達超商/宅配免運門檻！')
-                  : (lang === 'en' ? `Add ${formatPrice(needForFreeShipping, currency)} for Free Shipping` : lang === 'ja' ? `あと ${formatPrice(needForFreeShipping, currency)} で送料無料` : `再加購 ${formatPrice(needForFreeShipping, currency)} 享全台免運`)}
+                  ? (lang === 'en' ? 'Free shipping for store pickup' : lang === 'ja' ? 'コンビニ受取は送料無料' : '超商取貨已享免運')
+                  : (lang === 'en' ? `Add ${formatPrice(needForFreeShipping, currency)} for free store pickup shipping` : lang === 'ja' ? `あと ${formatPrice(needForFreeShipping, currency)} でコンビニ受取送料無料` : `再加購 ${formatPrice(needForFreeShipping, currency)} 享超商取貨免運`)}
               </span>
             </div>
             <span className="text-indigo-600 font-mono font-bold shrink-0">{freeShippingProgress}%</span>
           </div>
-          <div className="w-full bg-indigo-200/50 h-1.5 rounded-full overflow-hidden">
+          <div role="progressbar" aria-label={shippingProgressLabel} aria-valuenow={freeShippingProgress} className="w-full bg-indigo-200/50 h-1.5 rounded-full overflow-hidden">
             <div 
               className="bg-gradient-to-r from-indigo-500 to-cyan-500 h-full rounded-full transition-all duration-500"
               style={{ width: `${freeShippingProgress}%` }}
             />
           </div>
-        </div>
+        </div>}
 
         {/* Scrollable Body: Contains Cart Items + Booster Accessories + Coupons/Discounts */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3.5 touch-pan-y">
@@ -282,7 +331,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           {item.product.colors && item.product.colors.length > 1 && onUpdateColor ? (
                             <button
                               type="button"
-                              onClick={() => setEditingColorItemIdx(idx)}
+                              onClick={event => {
+                                colorTriggerRef.current = event.currentTarget;
+                                setEditingColorItemIdx(idx);
+                              }}
                               className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 text-[11px] font-semibold text-slate-700 hover:text-indigo-700 transition-colors cursor-pointer"
                               title={lang === 'en' ? 'Click to change color' : lang === 'ja' ? 'クリックして色を変更' : '點擊更換此商品顏色'}
                             >
@@ -314,7 +366,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between mt-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1 mt-2">
                         {(() => {
                           const maxStock = unavailableLines[idx] ? item.quantity : cartStockRemaining(cartItems, item.product, item.selectedColor, idx);
                           const atStockCap = item.quantity >= maxStock;
@@ -353,7 +405,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => onRemoveItem(idx)}
-                            className="w-6 h-6 rounded-md hover:bg-rose-50 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
+                            className="w-9 h-10 rounded-md hover:bg-rose-50 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
                             title={lang === 'en' ? 'Remove item' : lang === 'ja' ? '商品を削除' : '移除商品'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -620,16 +672,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         {editingColorItemIdx !== null && cartItems[editingColorItemIdx] && (
           <div
             className="absolute inset-0 z-[90] bg-slate-950/60 flex items-end justify-center animate-fade-in"
-            onClick={() => setEditingColorItemIdx(null)}
+            onClick={closeColorPicker}
           >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="cart-color-heading"
+              data-cart-color-picker
               className="w-full bg-white rounded-t-3xl shadow-2xl border-t border-slate-200 max-h-[65%] flex flex-col overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 shrink-0" />
               <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-xs font-black text-slate-900 truncate">
+                  <div id="cart-color-heading" className="text-xs font-black text-slate-900">
                     {lang === 'en' ? 'Switch Color Option' : lang === 'ja' ? '商品のカラー変更' : '更換商品顏色規格'}
                   </div>
                   <p className="text-[11px] text-slate-500 truncate mt-0.5">
@@ -637,8 +693,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   </p>
                 </div>
                 <button
+                  ref={colorCloseButtonRef}
                   type="button"
-                  onClick={() => setEditingColorItemIdx(null)}
+                  aria-label={lang === 'en' ? 'Close color picker' : lang === 'ja' ? 'カラー選択を閉じる' : '關閉顏色選擇'}
+                  onClick={closeColorPicker}
                   className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer shrink-0"
                 >
                   <X className="w-4 h-4" />
@@ -648,15 +706,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="p-4 overflow-y-auto grid grid-cols-2 gap-2">
                 {(cartItems[editingColorItemIdx].product.colors || []).map((colorOption) => {
                   const isCurrent = cartItems[editingColorItemIdx].selectedColor.name === colorOption.name;
+                  const item = cartItems[editingColorItemIdx];
+                  const available = item.quantity <= cartStockRemaining(cartItems, item.product, colorOption, editingColorItemIdx);
                   const cleanColorLabel = translateColorName(colorOption.name, lang);
                   return (
                     <button
                       key={colorOption.name}
                       type="button"
+                      aria-pressed={isCurrent}
+                      disabled={!available && !isCurrent}
                       onClick={() => {
-                        if (onUpdateColor?.(editingColorItemIdx, colorOption)) setEditingColorItemIdx(null);
+                        if (isCurrent || onUpdateColor?.(editingColorItemIdx, colorOption)) closeColorPicker();
                       }}
-                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-colors cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                         isCurrent
                           ? 'border-indigo-600 bg-indigo-50/80 text-indigo-950 ring-1 ring-indigo-600'
                           : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
@@ -666,8 +728,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         className="w-4 h-4 rounded-full border border-slate-300 shrink-0 shadow-2xs"
                         style={{ backgroundColor: colorOption.hex }}
                       />
-                      <span className="text-xs font-bold truncate flex-1">
+                      <span className="text-xs font-bold min-w-0 flex-1 break-words">
                         {cleanColorLabel}
+                        {!available && !isCurrent && (
+                          <small className="block font-medium">
+                            {lang === 'en' ? 'Not enough stock' : lang === 'ja' ? '在庫不足' : '庫存不足'}
+                          </small>
+                        )}
                       </span>
                       {isCurrent && (
                         <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
