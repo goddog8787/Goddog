@@ -152,8 +152,14 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if isValidId(settingId) && (settingId != 'logistics_config' ||
         (isAdmin() && !resource.data.keys().hasAny(['newebpayLogisticsHashKey', 'newebpayLogisticsHashIV'])));
-      allow create, update: if isValidId(settingId) && isAdmin() && (settingId != 'logistics_config' ||
-        !incoming().keys().hasAny(['newebpayLogisticsHashKey', 'newebpayLogisticsHashIV']));
+      allow create, update: if isValidId(settingId) && isAdmin() &&
+        (settingId != 'logistics_config' ||
+          !incoming().keys().hasAny(['newebpayLogisticsHashKey', 'newebpayLogisticsHashIV'])) &&
+        (settingId != 'catalog_order' || (
+          incoming().keys().hasOnly(['productIds', 'revision']) &&
+          incoming().productIds is list && incoming().productIds.size() <= 2000 &&
+          incoming().revision is int && incoming().revision > 0
+        ));
       allow delete: if isValidId(settingId) && isAdmin();
     }
 

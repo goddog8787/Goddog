@@ -14,6 +14,8 @@
 | 創客專欄 | 18 篇材料教學與互動實驗 | [文章頁](src/pages/Blog)、[動畫共用邏輯](src/data/blogLabRuntime.ts) |
 | 搜尋引擎 | 商品頁價格、庫存、運費與退貨的 JSON-LD | [SEO.tsx](src/components/SEO.tsx) |
 
+管理員可在「後台 → 商品管理 → 調整商城商品位置」預覽、拖曳或指定名次。發布後，設定會存入 Firestore 的 `settings/catalog_order`，由商城的推薦排序讀取。首次加入清單的新商品會排在自訂商品之後。搜尋結果與顧客手動選擇的排序依各自條件運作。
+
 正式商城可透過 `/?product=商品ID` 直接開啟商品。網站健康狀態包含當前 Render 版本，可從 [正式站健康檢查](https://goddog.space/api/health) 查詢。
 
 ## 本機開發

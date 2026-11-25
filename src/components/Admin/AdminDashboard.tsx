@@ -73,6 +73,8 @@ import {
   ALL_MATERIAL_CATEGORIES
 } from '../../types';
 import { formatPrice } from '../../utils/i18n';
+import { CatalogOrderManager } from './CatalogOrderManager';
+import type { CatalogOrder } from '../../utils/catalogOrder';
 import { EditProductModal } from './EditProductModal';
 import { LogisticsManager } from './LogisticsManager';
 import { ExportGuideView } from './ExportGuideView';
@@ -101,6 +103,9 @@ import { auth, saveNewebPayConfigToFirestore, loadNewebPayConfigFromFirestore, p
 
 interface AdminDashboardProps {
   products: FilamentProduct[];
+  catalogOrder: CatalogOrder | null;
+  catalogOrderConnectionFailed: boolean;
+  onCatalogOrderSaved: (order: CatalogOrder) => void;
   setProducts: React.Dispatch<React.SetStateAction<FilamentProduct[]>>;
   orders: Order[];
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
@@ -116,6 +121,9 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   products,
+  catalogOrder,
+  catalogOrderConnectionFailed,
+  onCatalogOrderSaved,
   setProducts,
   orders,
   setOrders,
@@ -1341,6 +1349,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
           </div>
+
+          <details className="rounded-3xl border border-slate-200 bg-white shadow-xs">
+            <summary className="cursor-pointer rounded-3xl p-4 text-sm font-bold text-indigo-700">調整商城商品位置</summary>
+            <div className="p-2 pt-0 sm:p-3 sm:pt-0">
+              <CatalogOrderManager products={products} order={catalogOrder}
+                connectionFailed={catalogOrderConnectionFailed} onSaved={onCatalogOrderSaved} />
+            </div>
+          </details>
 
           {/* Product Inventory Table */}
           <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
