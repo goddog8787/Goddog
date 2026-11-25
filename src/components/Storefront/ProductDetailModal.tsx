@@ -1,5 +1,5 @@
 import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import { 
   X, 
   ShoppingCart, 
@@ -12,11 +12,12 @@ import {
   CheckCheck,
   MessageSquarePlus
 } from 'lucide-react';
-import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview, MemberProfile } from '../../types';
+import { FilamentProduct, CartItem, ColorOption, CurrencyCode, LanguageCode, ProductReview, MemberProfile } from '../../types';
 import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
 import { subscribeToProductReviews } from '../../lib/reviewPersistence';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
+import { cartStockRemaining } from '../../utils/cartStock';
 import { ProductPurchaseInfo } from './ProductPurchaseInfo';
 import { ProductPhoto } from './ProductPhoto';
 import { triggerFlyToCart } from './FlyToCartOverlay';
@@ -31,6 +32,7 @@ interface ProductDetailModalProps {
   lang: LanguageCode;
   member?: MemberProfile;
   relatedProducts: FilamentProduct[];
+  cartItems: CartItem[];
   isWishlisted: boolean;
   onToggleWishlist: () => void;
   onSelectRelated: (product: FilamentProduct) => void;
@@ -47,6 +49,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   lang,
   member,
   relatedProducts,
+  cartItems,
   isWishlisted,
   onToggleWishlist,
   onSelectRelated,
@@ -61,11 +64,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   // Dynamic automatic translation of product details (supports newly added products seamlessly)
   const displayProduct = useMemo(() => product ? translateProduct(product, lang) : null, [product, lang]);
 
-  const defaultColor: ColorOption = { name: lang === 'en' ? 'Classic Black' : lang === 'ja' ? 'クラシックブラック' : '經典黑', hex: '#111827', stock: 10 };
-  const [selectedColor, setSelectedColor] = useState<ColorOption>(() => product?.colors?.find(color => color.stock > 0) ?? product?.colors?.[0] ?? defaultColor);
-  const [quantity, setQuantity] = useState(1);
+  const [colorName, setColorName] = useState<string>();
+  const [requestedQuantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'specs' | 'slicer' | 'calculator' | 'reviews'>('specs');
   const [isAdded, setIsAdded] = useState(false);
+  const addedTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(addedTimer.current), []);
   const [partWeightInput, setPartWeightInput] = useState('45');
   const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback(lang);
   const [isWriteReviewOpen, setIsWriteReviewOpen] = useState(false);
@@ -87,15 +91,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     });
     return () => unsub();
   }, [product?.id]);
-
-  // Sync color & diameter when displayProduct changes
-  useEffect(() => {
-    if (displayProduct) {
-      if (product?.colors?.[0]) setSelectedColor(current => product.colors.find(color => color.name === current.name) ?? product.colors.find(color => color.stock > 0) ?? product.colors[0]);
-      setQuantity(1);
-      setIsAdded(false);
-    }
-  }, [displayProduct, product]);
 
   // Close on Escape key (only when WriteReviewModal sub-modal isn't open)
   useEffect(() => {
@@ -143,18 +138,29 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     void copy([displayProduct.name, ...lines].join('\n'), 'params');
   };
 
-  const colorStock = product.colors?.length
-    ? Math.max(0, Math.floor(Math.min(selectedColor.stock || 0, product.stock || 0)))
-    : 0;
+  const colors = (product.colors ?? []).map(color => ({
+    color,
+    remaining: cartStockRemaining(cartItems, product, color),
+  }));
+  const selection = colors.find(({ color }) => color.name === colorName)
+    ?? colors.find(({ remaining }) => remaining > 0)
+    ?? colors[0];
+  const selectedColor = selection?.color;
+  const colorStock = selection?.remaining ?? 0;
   const isOutOfStock = colorStock <= 0;
+  const quantity = Math.min(colorStock, requestedQuantity);
+  const quantityInCart = cartItems.reduce((count, item) => count + (item.product.id === product.id ? item.quantity : 0), 0);
+  const stockMessage = quantityInCart > 0
+    ? translate('此規格目前可加購 0 件，購物車已計入庫存。', 'No additional units of this option can be added with your current cart.', '現在のカート内容では、この仕様を追加できません。')
+    : translate('此規格目前缺貨，請查看其他顏色或同類商品。', 'This option is out of stock. Check other colors or related products.', 'この仕様は在庫切れです。ほかの色や関連商品をご確認ください。');
   const effectiveReviewsCount = liveReviews.length > 0 ? liveReviews.length : (displayProduct.reviewsCount || 0);
   const effectiveRating = liveReviews.length > 0
     ? Number((liveReviews.reduce((acc, r) => acc + Number(r.rating || 5), 0) / liveReviews.length).toFixed(1))
     : displayProduct.rating;
 
   const handleAdd = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (isOutOfStock) return;
-    if (onAddToCart(product, selectedColor, selectedDiameter, Math.min(colorStock, quantity)) === false) return;
+    if (isOutOfStock || !selectedColor) return;
+    if (onAddToCart(product, selectedColor, selectedDiameter, quantity) === false) return;
     triggerFlyToCart({
       sourceEl: e.currentTarget,
       imageUrl: displayProduct.imageUrl || product.imageUrl,
@@ -162,13 +168,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       productName: displayProduct.name,
       accentColor: selectedColor?.hex,
     });
+    setColorName(selectedColor.name);
     setIsAdded(true);
-    setTimeout(() => setIsAdded(false), 1500);
+    window.clearTimeout(addedTimer.current);
+    addedTimer.current = window.setTimeout(() => setIsAdded(false), 1500);
   };
 
   const handleBuyNow = () => {
-    if (isOutOfStock) return;
-    onQuickCheckout(product, selectedColor, selectedDiameter, Math.min(colorStock, quantity));
+    if (isOutOfStock || !selectedColor) return;
+    onQuickCheckout(product, selectedColor, selectedDiameter, quantity);
   };
 
   return (
@@ -261,25 +269,26 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <label className="text-xs font-bold text-slate-700 block mb-2">
                   {lang === 'en' ? 'Color' : lang === 'ja' ? 'カラー' : '顏色選擇'}
                   <span className="text-indigo-600 font-semibold ml-1">
-                    {translateColorName(selectedColor.name, lang)}
+                    {selectedColor ? translateColorName(selectedColor.name, lang) : '—'}
                   </span>
                   <span className="text-slate-400 font-normal ml-2">
-                    ({lang === 'en' ? `In Stock: ${colorStock}` : lang === 'ja' ? `在庫: ${colorStock} 巻` : `現貨庫存: ${colorStock} 卷`})
+                    ({translate(`可加購 ${colorStock} 件`, `${colorStock} available to add`, `追加可能 ${colorStock} 点`)})
                   </span>
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {(product.colors ?? []).map((c) => (
+                  {colors.map(({ color: c, remaining }) => (
                     <button
                       key={c.name}
                       type="button"
-                      aria-pressed={selectedColor.name === c.name}
-                      disabled={c.stock < 1 || product.stock < 1}
+                      aria-pressed={selectedColor?.name === c.name}
+                      disabled={remaining < 1}
                       onClick={() => {
-                        setSelectedColor(c);
-                        setQuantity((prev) => Math.max(1, Math.min(prev, Math.max(1, c.stock ?? 1))));
+                        setColorName(c.name);
+                        setQuantity(Math.max(1, Math.min(quantity, remaining)));
+                        setIsAdded(false);
                       }}
                       className={`flex items-center gap-2 px-3 min-h-10 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
-                        selectedColor.name === c.name
+                        selectedColor?.name === c.name
                           ? 'border-indigo-600 bg-indigo-50/50 text-indigo-950 ring-2 ring-indigo-500/20 shadow-xs'
                           : 'border-slate-200 hover:border-slate-300 text-slate-700'
                       }`}
@@ -326,8 +335,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               </div>
 
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <span aria-live="polite">
+                  {quantityInCart > 0 && translate(`購物車已有 ${quantityInCart} 件`, `${quantityInCart} in cart`, `カートに ${quantityInCart} 点`)}
+                </span>
+                <span aria-live="polite">
+                  {translate('商品小計', 'Item subtotal', '商品小計')} <strong className="ml-1 tabular-nums">{formatPrice(product.price * quantity, currency)}</strong>
+                </span>
+              </div>
+              {isOutOfStock && <p className="mt-2 text-xs leading-relaxed text-amber-800">{stockMessage}</p>}
               {/* Action Buttons - Equal-width 2-column grid so Add-to-Cart animation never shifts Buy Now button */}
-              <div className="mt-6 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <button
                   id="modal-add-to-cart-btn"
                   type="button"
@@ -341,13 +359,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       : 'bg-slate-100 hover:bg-slate-200 text-slate-900 cursor-pointer'
                   }`}
                 >
-                  {isOutOfStock ? (
-                    <span>{lang === 'en' ? 'Out of Stock' : lang === 'ja' ? '在庫切れ' : '目前補貨中'}</span>
-                  ) : isAdded ? (
+                  {isAdded ? (
                     <>
                       <Check className="w-4 h-4 shrink-0" />
                       <span>{t.addedToCart}</span>
                     </>
+                  ) : isOutOfStock ? (
+                    <span>{translate('暫無可加購數量', 'Unavailable to add', '追加できません')}</span>
                   ) : (
                     <>
                       <ShoppingCart className="w-4 h-4 shrink-0" />
@@ -387,9 +405,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               )}
 
-              <p className="mt-2 text-right text-xs text-slate-700" aria-live="polite">
-                {translate('商品小計', 'Item subtotal', '商品小計')} <strong className="ml-1 tabular-nums">{formatPrice(product.price * (isOutOfStock ? 0 : quantity), currency)}</strong>
-              </p>
               {/* Detail Tabs - Concise 4-character single-line labels */}
               <div className="mt-5 border-t border-slate-100 pt-3">
                 <div className="flex border-b border-slate-200 gap-3 mb-3 flex-wrap">

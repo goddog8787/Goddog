@@ -153,7 +153,9 @@ const SubscriptionPage = React.lazy(() => import('./pages/Subscription/Subscript
 const MaterialGuidePage = React.lazy(() => import('./pages/MaterialGuide/MaterialGuidePage').then(m => ({ default: m.MaterialGuidePage })));
 const Footer = React.lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 import { SEO } from './components/SEO';
-import { prepareProductSearch, evaluateProductDeepSearch } from './utils/productSearch';
+import { subscribeToCatalogOrder } from './lib/catalogOrderPersistence';
+import { orderCatalog, type CatalogOrder } from './utils/catalogOrder';
+import { prepareProductSearch, evaluateProductDeepSearch, normalizeProductSearch } from './utils/productSearch';
 import { getStoreAnnouncementConfig } from './utils/announcementManager';
 import { StoreAnnouncementConfig } from './types';
 
@@ -420,6 +422,13 @@ export default function App() {
   const [products, setProducts] = useState<FilamentProduct[]>(() =>
     loadPersistedProductsSync(INITIAL_PRODUCTS)
   );
+
+  const [catalogOrder, setCatalogOrder] = useState<CatalogOrder | null>(null);
+  const [catalogOrderConnectionFailed, setCatalogOrderConnectionFailed] = useState(false);
+  useEffect(() => subscribeToCatalogOrder(
+    order => setCatalogOrder(order),
+    () => setCatalogOrderConnectionFailed(true),
+  ), []);
 
   const hasMountedProductsRef = useRef(false);
   useEffect(() => {
@@ -1778,6 +1787,9 @@ export default function App() {
 
   const filteredAndSortedProducts = useMemo(() => {
     const filtered = matchingProducts.filter(({ family }) => selectedMaterial === 'All' || family === selectedMaterial);
+    if (sortBy === 'relevance' && !normalizeProductSearch(deferredSearchQuery)) {
+      return orderCatalog(filtered.map(({ product }) => product), catalogOrder?.productIds ?? []);
+    }
     return filtered.sort((a, b) => {
       if (sortBy === 'price_low') return a.product.price - b.product.price;
       if (sortBy === 'price_high') return b.product.price - a.product.price;
@@ -1785,7 +1797,7 @@ export default function App() {
       if (sortBy === 'relevance' && b.score !== a.score) return b.score - a.score;
       return b.product.reviewsCount - a.product.reviewsCount;
     }).map(({ product }) => product);
-  }, [matchingProducts, selectedMaterial, sortBy]);
+  }, [matchingProducts, selectedMaterial, sortBy, deferredSearchQuery, catalogOrder]);
 
   const cartCount = useMemo(() => cartItems.reduce((acc, item) => acc + item.quantity, 0), [cartItems]);
 
@@ -2352,6 +2364,9 @@ export default function App() {
           /* ================================================================= */
           <AdminDashboard
             products={products}
+            catalogOrder={catalogOrder}
+            catalogOrderConnectionFailed={catalogOrderConnectionFailed}
+            onCatalogOrderSaved={setCatalogOrder}
             setProducts={setProducts}
             orders={orders}
             setOrders={setOrders}
@@ -2452,6 +2467,7 @@ export default function App() {
             key={viewingProduct.id}
             product={viewingProduct}
             relatedProducts={relatedProducts}
+            cartItems={cartItems}
             onSelectRelated={handleOpenProductDetail}
             isWishlisted={wishlistSet.has(viewingProduct.id)}
             onToggleWishlist={() => handleToggleWishlist(viewingProduct.id)}
