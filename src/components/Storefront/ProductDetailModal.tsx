@@ -3,28 +3,21 @@ import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import { 
   X, 
   ShoppingCart, 
-  ShieldCheck, 
-  Flame, 
-  Gauge, 
-  Layers, 
-  Wind, 
-  Box, 
   Star, 
   Check, 
-  Zap,
   ArrowRight,
   Bot,
   Calculator,
   Copy,
   CheckCheck,
-  MessageSquarePlus,
-  ExternalLink
+  MessageSquarePlus
 } from 'lucide-react';
 import { FilamentProduct, ColorOption, CurrencyCode, LanguageCode, ProductReview, MemberProfile } from '../../types';
 import { formatPrice, translations, translateProduct, translateColorName } from '../../utils/i18n';
 import { subscribeToProductReviews } from '../../lib/reviewPersistence';
 import { saveCustomerRecentlyViewed } from '../../lib/customerPersistence';
 import { auth } from '../../lib/firebase';
+import { ProductPurchaseInfo } from './ProductPurchaseInfo';
 import { ProductPhoto } from './ProductPhoto';
 import { triggerFlyToCart } from './FlyToCartOverlay';
 
@@ -37,6 +30,10 @@ interface ProductDetailModalProps {
   currency: CurrencyCode;
   lang: LanguageCode;
   member?: MemberProfile;
+  relatedProducts: FilamentProduct[];
+  isWishlisted: boolean;
+  onToggleWishlist: () => void;
+  onSelectRelated: (product: FilamentProduct) => void;
   onClose: () => void;
   onAddToCart: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => boolean | void;
   onQuickCheckout: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
@@ -49,6 +46,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   currency,
   lang,
   member,
+  relatedProducts,
+  isWishlisted,
+  onToggleWishlist,
+  onSelectRelated,
   onClose,
   onAddToCart,
   onQuickCheckout,
@@ -62,11 +63,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   const defaultColor: ColorOption = { name: lang === 'en' ? 'Classic Black' : lang === 'ja' ? 'クラシックブラック' : '經典黑', hex: '#111827', stock: 10 };
   const [selectedColor, setSelectedColor] = useState<ColorOption>(() => product?.colors?.find(color => color.stock > 0) ?? product?.colors?.[0] ?? defaultColor);
-  const [selectedDiameter, setSelectedDiameter] = useState<'1.75mm' | '2.85mm'>(displayProduct?.diameter || '1.75mm');
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState<'specs' | 'slicer' | 'calculator' | 'reviews'>('specs');
   const [isAdded, setIsAdded] = useState(false);
-  const [partWeightGrams, setPartWeightGrams] = useState<number>(45);
+  const [partWeightInput, setPartWeightInput] = useState('45');
   const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback(lang);
   const [isWriteReviewOpen, setIsWriteReviewOpen] = useState(false);
   const [liveReviews, setLiveReviews] = useState<ProductReview[]>([]);
@@ -92,7 +92,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   useEffect(() => {
     if (displayProduct) {
       if (product?.colors?.[0]) setSelectedColor(current => product.colors.find(color => color.name === current.name) ?? product.colors.find(color => color.stock > 0) ?? product.colors[0]);
-      if (displayProduct.diameter) setSelectedDiameter(displayProduct.diameter);
       setQuantity(1);
       setIsAdded(false);
     }
@@ -119,63 +118,35 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   if (!product || !displayProduct) return null;
 
-  // Approximate material densities in g/cm³
-  const materialDensities: Record<string, number> = {
-    'High-Speed PLA': 1.24,
-    'PETG': 1.27,
-    'PETG Matte': 1.27,
-    'ABS': 1.04,
-    'TPU': 1.21,
-    'Carbon Fiber': 1.25,
-    'Resin': 1.15,
-  };
-  const density = materialDensities[displayProduct.material] || 1.24;
-  // Spool weight assumed 1000g net
-  const spoolNetGrams = 1000;
-  // Estimated total meters for 1.75mm
-  const radiusCm = 0.175 / 2;
-  const areaCm2 = Math.PI * radiusCm * radiusCm;
-  const totalLengthMeters = Math.round((spoolNetGrams / (density * areaCm2)) / 100);
-  const costPerGram = displayProduct.price / spoolNetGrams;
-  const partCost = Math.round(costPerGram * partWeightGrams * 10) / 10;
-  const partsPerSpool = Math.floor(spoolNetGrams / Math.max(1, partWeightGrams));
+  const translate = (zh: string, en: string, ja: string) => lang === 'en' ? en : lang === 'ja' ? ja : zh;
+  const isAccessory = product.material === 'Accessories';
+  const isFilamentMaterial = !isAccessory && product.material !== 'Resin';
+  const selectedDiameter = product.diameter || '1.75mm';
+  const mass = /^(\d+(?:\.\d+)?)\s*(kg|g)$/i.exec(displayProduct.weight?.trim() ?? '');
+  const spoolNetGrams = mass ? Number(mass[1]) * (mass[2].toLowerCase() === 'kg' ? 1000 : 1) : 0;
+  const partWeightGrams = Number(partWeightInput);
+  const hasPartEstimate = Number.isFinite(partWeightGrams) && partWeightGrams > 0;
+  const slicingSpecs = [
+    [t.nozzleTemp, displayProduct.nozzleTemp || displayProduct.printTemp],
+    [t.bedTemp, displayProduct.bedTemp],
+    [t.speedMax, displayProduct.maxSpeed],
+  ].filter(([, value]) => value?.trim() && !/^(?:[-—–]+|n\/a|不適用)$/i.test(value.trim()));
+  const overviewSpecs = [
+    [translate('材質', 'Material', '材質'), !isAccessory ? displayProduct.material : null],
+    [translate('線徑', 'Diameter', '直径'), isFilamentMaterial ? selectedDiameter : null],
+    [isAccessory ? translate('商品規格', 'Item specification', '製品仕様') : translate('淨重', 'Net weight', '正味重量'), displayProduct.weight],
+    [translate('線盤形式', 'Spool type', 'スプール形式'), isFilamentMaterial ? displayProduct.spoolType : null],
+  ].filter(([, value]) => value?.trim());
 
   const handleCopyParams = () => {
-    const text = lang === 'en' 
-      ? `【GodDog 3D Filament - ${displayProduct.name} Slicer Config】
-Material: ${displayProduct.material}
-Nozzle Temp: ${displayProduct.printTemp}
-Bed Temp: ${displayProduct.bedTemp}
-Max Speed: ${displayProduct.maxSpeed}
-Diameter: ${selectedDiameter}
-Direct Retraction: 0.8mm (35mm/s)
-Bowden Retraction: 4.5mm (45mm/s)
-Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
-      : lang === 'ja'
-      ? `【GodDog 3Dフィラメント - ${displayProduct.name} スライス設定推奨】
-材料: ${displayProduct.material}
-ノズル温度: ${displayProduct.printTemp}
-ベッド温度: ${displayProduct.bedTemp}
-最大推奨速度: ${displayProduct.maxSpeed}
-径: ${selectedDiameter}
-ダイレクト引戻し: 0.8mm (35mm/s)
-ボーデン引戻し: 4.5mm (45mm/s)
-対応スライサー: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
-      : `【神狗勾 3D 耗材 - ${displayProduct.name} 切片建議】
-材質: ${displayProduct.material}
-噴嘴溫度: ${displayProduct.printTemp}
-熱床溫度: ${displayProduct.bedTemp}
-最大推薦速度: ${displayProduct.maxSpeed}
-線徑: ${selectedDiameter}
-近端回抽: 0.8mm (35mm/s)
-遠端回抽: 4.5mm (45mm/s)
-相容切片軟體: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`;
-    void copy(text, 'params');
+    const lines = [...overviewSpecs, ...slicingSpecs].map(([label, value]) => `${label}: ${value}`);
+    void copy([displayProduct.name, ...lines].join('\n'), 'params');
   };
 
-  const isFilamentMaterial = product.material !== 'Accessories' && product.material !== 'Resin';
-  const colorStock = Math.max(0, Math.min(selectedColor.stock, displayProduct.stock));
-  const isOutOfStock = colorStock <= 0 || (displayProduct.stock ?? 0) <= 0;
+  const colorStock = product.colors?.length
+    ? Math.max(0, Math.floor(Math.min(selectedColor.stock || 0, product.stock || 0)))
+    : 0;
+  const isOutOfStock = colorStock <= 0;
   const effectiveReviewsCount = liveReviews.length > 0 ? liveReviews.length : (displayProduct.reviewsCount || 0);
   const effectiveRating = liveReviews.length > 0
     ? Number((liveReviews.reduce((acc, r) => acc + Number(r.rating || 5), 0) / liveReviews.length).toFixed(1))
@@ -224,10 +195,10 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
           <X className="w-5 h-5" />
         </button>
 
-        <div className="grid grid-cols-1 md:grid-cols-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:grid-rows-[auto_1fr]">
           {/* Left Column: Image & Spool preview */}
-          <div className="bg-slate-50 p-4 sm:p-6 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-200">
-            <div className="relative aspect-square rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-inner flex items-center justify-center p-4">
+          <div className="bg-slate-50 p-4 sm:p-6 min-w-0 border-b border-slate-200 md:col-start-1 md:row-start-1 md:border-b-0 md:border-r">
+            <div className="relative aspect-[4/3] md:aspect-square rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-inner flex items-center justify-center p-4">
               <ProductPhoto url={displayProduct.imageUrl} name={displayProduct.name} material={displayProduct.material} lang={lang}
                 priority showFallbackNote className="h-full w-full overflow-hidden rounded-xl" imageClassName="object-contain" />
               
@@ -237,52 +208,17 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                     {displayProduct.badge}
                   </span>
                 )}
-                <span className="bg-slate-900 text-white text-[11px] font-mono px-2 py-0.5 rounded">
-                  {displayProduct.spoolType}
-                </span>
-              </div>
-            </div>
 
-            {/* Quick Slicer Spec Grid */}
-            <div className="mt-6 grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center gap-2">
-                <Flame className="w-4 h-4 text-amber-500" />
-                <div>
-                  <div className="text-[10px] text-slate-400">{t.nozzleTemp}</div>
-                  <div className="font-mono font-bold text-slate-800">{displayProduct.nozzleTemp || displayProduct.printTemp}</div>
-                </div>
-              </div>
-              <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-orange-500" />
-                <div>
-                  <div className="text-[10px] text-slate-400">{t.bedTemp}</div>
-                  <div className="font-mono font-bold text-slate-800">{displayProduct.bedTemp}</div>
-                </div>
-              </div>
-              <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center gap-2">
-                <Gauge className="w-4 h-4 text-cyan-600" />
-                <div>
-                  <div className="text-[10px] text-slate-400">{t.speedMax}</div>
-                  <div className="font-mono font-bold text-slate-800">{displayProduct.maxSpeed}</div>
-                </div>
-              </div>
-              <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center gap-2">
-                <Box className="w-4 h-4 text-indigo-500" />
-                <div>
-                  <div className="text-[10px] text-slate-400">{lang === 'en' ? 'Net Weight' : lang === 'ja' ? '正味重量' : '耗材淨重'}</div>
-                  <div className="font-mono font-bold text-slate-800">{displayProduct.weight}</div>
-                </div>
               </div>
             </div>
           </div>
 
           {/* Right Column: Configurations & Actions */}
-          <div className="p-4 sm:p-6 flex flex-col justify-between">
+          <div className="p-4 sm:p-6 min-w-0 md:col-start-2 md:row-start-1 md:row-span-2">
             <div>
-              <div className="flex items-center gap-2 text-xs text-indigo-600 font-bold mb-1 pr-10">
-                <span className="whitespace-nowrap">{(displayProduct.brand || '').replace(/\s*pro/gi, '') || '神狗勾'}</span>
-                <span>•</span>
-                <span className="text-slate-500 font-mono whitespace-nowrap">SKU: {displayProduct.sku}</span>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-indigo-600 font-bold mb-1 pr-10">
+                <span className="[overflow-wrap:anywhere]">{(displayProduct.brand || '').replace(/\s*pro/gi, '') || '神狗勾'}</span>
+                <span className="text-slate-500 font-mono [overflow-wrap:anywhere]">{displayProduct.sku && `SKU: ${displayProduct.sku}`}</span>
               </div>
 
               <h2 id="product-detail-title" className="text-xl sm:text-2xl font-black text-slate-900 leading-tight pr-10 text-balance">
@@ -304,10 +240,6 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                     {t.noReviewsYet}
                   </span>
                 )}
-                <span className="text-slate-300 dark:text-slate-700">|</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 whitespace-nowrap">
-                  <ShieldCheck className="w-3.5 h-3.5" /> {lang === 'en' ? 'Authentic & Sealed' : lang === 'ja' ? '正規品・真空防湿' : '原廠防潮包裝'}
-                </span>
               </div>
 
               {/* Price */}
@@ -327,7 +259,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
               {/* Color Picker */}
               <div className="mt-5">
                 <label className="text-xs font-bold text-slate-700 block mb-2">
-                  {lang === 'en' ? '1. Color:' : lang === 'ja' ? '1. カラー選択：' : '1. 顏色選擇：'}
+                  {lang === 'en' ? 'Color' : lang === 'ja' ? 'カラー' : '顏色選擇'}
                   <span className="text-indigo-600 font-semibold ml-1">
                     {translateColorName(selectedColor.name, lang)}
                   </span>
@@ -336,15 +268,17 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                   </span>
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {product.colors.map((c) => (
+                  {(product.colors ?? []).map((c) => (
                     <button
                       key={c.name}
                       type="button"
+                      aria-pressed={selectedColor.name === c.name}
+                      disabled={c.stock < 1 || product.stock < 1}
                       onClick={() => {
                         setSelectedColor(c);
                         setQuantity((prev) => Math.max(1, Math.min(prev, Math.max(1, c.stock ?? 1))));
                       }}
-                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
+                      className={`flex items-center gap-2 px-3 min-h-10 py-1.5 rounded-xl border text-xs font-medium transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
                         selectedColor.name === c.name
                           ? 'border-indigo-600 bg-indigo-50/50 text-indigo-950 ring-2 ring-indigo-500/20 shadow-xs'
                           : 'border-slate-200 hover:border-slate-300 text-slate-700'
@@ -354,50 +288,26 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                         className="w-3.5 h-3.5 rounded-full border border-slate-300 shadow-inner"
                         style={{ backgroundColor: c.hex }}
                       />
-                      <span>{translateColorName(c.name, lang).split(' ')[0]}</span>
+                      <span>{translateColorName(c.name, lang)}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Diameter Picker (Only for filament spools, not Accessories/Resin) */}
-              {isFilamentMaterial && (
-                <div className="mt-4">
-                  <label className="text-xs font-bold text-slate-700 block mb-2">
-                    {lang === 'en' ? '2. Diameter:' : lang === 'ja' ? '2. フィラメント径：' : '2. 線徑規格：'}
-                  </label>
-                  <div className="flex gap-2">
-                    {(['1.75mm', '2.85mm'] as const).map((dia) => (
-                      <button
-                        key={dia}
-                        type="button"
-                        onClick={() => setSelectedDiameter(dia)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold font-mono transition-all cursor-pointer ${
-                          selectedDiameter === dia
-                            ? 'bg-slate-900 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {dia} {dia === '1.75mm' && (lang === 'en' ? '(Standard)' : lang === 'ja' ? '(標準規格)' : '(主流通用)')}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Quantity */}
               <div className="mt-4 flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-700">
                   {isFilamentMaterial
-                    ? (lang === 'en' ? '3. Quantity (Spools):' : lang === 'ja' ? '3. 数量 (巻)：' : '3. 購買數量 (卷)：')
-                    : (lang === 'en' ? '2. Quantity:' : lang === 'ja' ? '2. 数量：' : '2. 購買數量：')}
+                    ? (lang === 'en' ? 'Quantity (spools)' : lang === 'ja' ? '数量（巻）' : '購買數量（卷）')
+                    : (lang === 'en' ? 'Quantity' : lang === 'ja' ? '数量' : '購買數量')}
                 </label>
                 <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
                   <button
                     type="button"
+                    aria-label={translate('減少數量', 'Decrease quantity', '数量を減らす')}
                     disabled={isOutOfStock || quantity <= 1}
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-11 h-11 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     -
                   </button>
@@ -406,20 +316,86 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                   </span>
                   <button
                     type="button"
+                    aria-label={translate('增加數量', 'Increase quantity', '数量を増やす')}
                     disabled={isOutOfStock || quantity >= colorStock}
                     onClick={() => setQuantity(Math.min(colorStock, quantity + 1))}
-                    className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-11 h-11 flex items-center justify-center text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     +
                   </button>
                 </div>
               </div>
 
+              {/* Action Buttons - Equal-width 2-column grid so Add-to-Cart animation never shifts Buy Now button */}
+              <div className="mt-6 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button
+                  id="modal-add-to-cart-btn"
+                  type="button"
+                  disabled={isOutOfStock}
+                  onClick={handleAdd}
+                  className={`btn-tactile-primary store-action w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                    isOutOfStock
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : isAdded
+                      ? 'bg-emerald-600 text-white cursor-pointer'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-900 cursor-pointer'
+                  }`}
+                >
+                  {isOutOfStock ? (
+                    <span>{lang === 'en' ? 'Out of Stock' : lang === 'ja' ? '在庫切れ' : '目前補貨中'}</span>
+                  ) : isAdded ? (
+                    <>
+                      <Check className="w-4 h-4 shrink-0" />
+                      <span>{t.addedToCart}</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="w-4 h-4 shrink-0" />
+                      <span>{t.addToCart}</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  id="modal-buy-now-btn"
+                  type="button"
+                  disabled={isOutOfStock}
+                  onClick={handleBuyNow}
+                  className={`btn-tactile-primary store-action w-full py-3 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
+                    isOutOfStock
+                      ? 'bg-slate-300 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 shadow-md shadow-indigo-500/20 cursor-pointer'
+                  }`}
+                >
+                  <span>{isOutOfStock ? (lang === 'en' ? 'Unavailable' : lang === 'ja' ? '入荷待ち' : '暫時缺貨') : (lang === 'zh-TW' ? '立即結帳付款' : lang === 'ja' ? '今すぐ購入' : 'Buy Now')}</span>
+                  {!isOutOfStock && <ArrowRight className="w-4 h-4 shrink-0" />}
+                </button>
+              </div>
+
+              {/* Quick Ask AI button */}
+              {onAskAI && (
+                <div className="mt-2">
+                  <button
+                    id="modal-ask-ai-btn"
+                    type="button"
+                    onClick={() => onAskAI(displayProduct)}
+                    className="w-full py-2.5 px-3 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    <Bot className="w-4 h-4 text-indigo-600 shrink-0" />
+                    <span>{lang === 'en' ? 'Ask AI for Slicer Settings' : lang === 'ja' ? 'AIにスライス設定を質問' : '詢問 AI 顧問此款切片參數'}</span>
+                  </button>
+                </div>
+              )}
+
+              <p className="mt-2 text-right text-xs text-slate-700" aria-live="polite">
+                {translate('商品小計', 'Item subtotal', '商品小計')} <strong className="ml-1 tabular-nums">{formatPrice(product.price * (isOutOfStock ? 0 : quantity), currency)}</strong>
+              </p>
               {/* Detail Tabs - Concise 4-character single-line labels */}
               <div className="mt-5 border-t border-slate-100 pt-3">
-                <div className="flex border-b border-slate-200 gap-3 mb-3 overflow-x-auto scrollbar-none">
+                <div className="flex border-b border-slate-200 gap-3 mb-3 flex-wrap">
                   <button
                     type="button"
+                    aria-pressed={activeTab === 'specs'}
                     onClick={() => setActiveTab('specs')}
                     className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
                       activeTab === 'specs'
@@ -429,31 +405,38 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                   >
                     {lang === 'en' ? 'Specs' : lang === 'ja' ? '製品特徴' : '物性特點'}
                   </button>
+                  {isFilamentMaterial && slicingSpecs.length > 0 && (
+                    <button
+                      type="button"
+                      aria-pressed={activeTab === 'slicer'}
+                      onClick={() => setActiveTab('slicer')}
+                      className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
+                        activeTab === 'slicer'
+                          ? 'border-b-2 border-indigo-600 text-indigo-600'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      {lang === 'en' ? 'Slicer' : lang === 'ja' ? 'スライス設定' : '切片參數'}
+                    </button>
+                  )}
+                  {isFilamentMaterial && spoolNetGrams > 0 && (
+                    <button
+                      type="button"
+                      aria-pressed={activeTab === 'calculator'}
+                      onClick={() => setActiveTab('calculator')}
+                      className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1 ${
+                        activeTab === 'calculator'
+                          ? 'border-b-2 border-indigo-600 text-indigo-600'
+                          : 'text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Calculator className="w-3.5 h-3.5" />
+                      <span>{lang === 'en' ? 'Calculator' : lang === 'ja' ? 'コスト試算' : '成本試算'}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setActiveTab('slicer')}
-                    className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
-                      activeTab === 'slicer'
-                        ? 'border-b-2 border-indigo-600 text-indigo-600'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    {lang === 'en' ? 'Slicer' : lang === 'ja' ? 'スライス設定' : '切片參數'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('calculator')}
-                    className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1 ${
-                      activeTab === 'calculator'
-                        ? 'border-b-2 border-indigo-600 text-indigo-600'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <Calculator className="w-3.5 h-3.5" />
-                    <span>{lang === 'en' ? 'Calculator' : lang === 'ja' ? 'コスト試算' : '成本試算'}</span>
-                  </button>
-                  <button
-                    type="button"
+                    aria-pressed={activeTab === 'reviews'}
                     onClick={() => setActiveTab('reviews')}
                     className={`pb-2 text-xs font-bold whitespace-nowrap transition-colors cursor-pointer ${
                       activeTab === 'reviews'
@@ -469,7 +452,7 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                   <div className="space-y-2.5 text-xs text-slate-600">
                     <p className="leading-relaxed">{displayProduct.description}</p>
                     <div className="space-y-1.5 pt-1">
-                      {displayProduct.features.map((f, i) => (
+                      {(displayProduct.features ?? []).map((f, i) => (
                         <div key={i} className="flex items-center gap-1.5 text-slate-700">
                           <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           <span>{f}</span>
@@ -481,29 +464,18 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
 
                 {activeTab === 'slicer' && (
                   <div className="space-y-2.5 text-xs">
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
-                        <span className="text-slate-400 block">{lang === 'en' ? 'First Layer Bed Temp:' : lang === 'ja' ? '初期層ベッド温度：' : '第一層熱床溫度：'}</span>
-                        <span className="font-mono font-bold text-slate-800">{displayProduct.bedTemp}</span>
-                      </div>
-                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
-                        <span className="text-slate-400 block">{lang === 'en' ? 'Direct Retraction:' : lang === 'ja' ? 'ダイレクト引戻し：' : '回抽距離 (近端)：'}</span>
-                        <span className="font-mono font-bold text-slate-800">0.8 mm (35mm/s)</span>
-                      </div>
-                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
-                        <span className="text-slate-400 block">{lang === 'en' ? 'Part Cooling Fan:' : lang === 'ja' ? '冷却ファン設定：' : '風扇冷卻轉速：'}</span>
-                        <span className="font-mono font-bold text-slate-800">100% {lang === 'en' ? '(Off first 3 layers)' : lang === 'ja' ? '(最初の3層はOFF)' : '(前 3 層關閉)'}</span>
-                      </div>
-                      <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
-                        <span className="text-slate-400 block">{lang === 'en' ? 'Max Flow Rate (Volumetric):' : lang === 'ja' ? '最大流動レート：' : '最大流速 (Volumetric)：'}</span>
-                        <span className="font-mono font-bold text-indigo-600">22 - 26 mm³/s</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1">
-                      <p className="text-[11px] text-slate-400">
-                        Bambu Studio, OrcaSlicer, PrusaSlicer, Cura
-                      </p>
+                    <dl className="grid grid-cols-2 gap-2 text-xs">
+                      {slicingSpecs.map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <dt className="text-slate-600">{label}</dt>
+                          <dd className="mt-1 font-bold text-slate-900">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <p className="leading-relaxed text-slate-600">
+                      {translate('以商品列出的參數為起點，回抽、風扇和流量請按機型與試印結果調整。', 'Use these listed settings as a starting point and tune retraction, cooling and flow for your printer.', '記載の設定を目安に、引き戻し・冷却・流量は機種と試し刷りに合わせて調整してください。')}
+                    </p>
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
                       <button
                         type="button"
                         onClick={handleCopyParams}
@@ -525,57 +497,25 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                   </div>
                 )}
 
-                {activeTab === 'calculator' && (
-                  <div className="space-y-3 text-xs bg-slate-50 p-3 rounded-2xl border border-slate-200">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">{lang === 'en' ? 'Part Weight Estimate:' : lang === 'ja' ? '造形物の想定重量：' : '預估單件列印重量 (切片軟體估重)：'}</span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="1"
-                          max="1000"
-                          value={partWeightGrams}
-                          onChange={(e) => setPartWeightGrams(Math.max(1, Number(e.target.value) || 1))}
-                          className="w-16 px-2 py-1 bg-white border border-slate-300 rounded-lg text-center font-mono font-bold text-slate-900"
-                        />
-                        <span className="text-slate-500 font-medium">g</span>
+                {activeTab === 'calculator' && spoolNetGrams > 0 && (
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs">
+                    <label className="flex flex-wrap items-center justify-between gap-2 font-semibold text-slate-800">
+                      {translate('每件用料（g）', 'Material per part (g)', '1個の使用量（g）')}
+                      <input type="number" min="0.1" step="0.1" inputMode="decimal"
+                        value={partWeightInput} onChange={event => setPartWeightInput(event.target.value)}
+                        className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-2 text-right font-mono text-slate-900" />
+                    </label>
+                    <dl className="grid grid-cols-2 gap-2">
+                      <div className="rounded-xl bg-white p-3">
+                        <dt className="text-slate-600">{translate('單件線材成本', 'Material cost per part', '1個あたりの材料費')}</dt>
+                        <dd className="mt-1 text-sm font-bold text-indigo-700">{hasPartEstimate ? formatPrice(product.price * partWeightGrams / spoolNetGrams, currency) : '—'}</dd>
                       </div>
-                    </div>
-
-                    <input
-                      type="range"
-                      min="5"
-                      max="300"
-                      step="5"
-                      value={partWeightGrams}
-                      onChange={(e) => setPartWeightGrams(Number(e.target.value))}
-                      className="w-full accent-indigo-600 cursor-pointer"
-                    />
-
-                    <div className="grid grid-cols-3 gap-2 text-center pt-1">
-                      <div className="bg-white p-2 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block">{lang === 'en' ? 'Cost / Part' : lang === 'ja' ? '1個あたりの材料費' : '單件線材成本'}</span>
-                        <span className="text-sm font-bold text-emerald-600 font-mono">
-                          {formatPrice(partCost, currency)}
-                        </span>
+                      <div className="rounded-xl bg-white p-3">
+                        <dt className="text-slate-600">{translate('每卷可印件數', 'Parts per spool', '1巻あたりの造形数')}</dt>
+                        <dd className="mt-1 text-sm font-bold text-indigo-700">{hasPartEstimate ? Math.floor(spoolNetGrams / partWeightGrams) : '—'}</dd>
                       </div>
-                      <div className="bg-white p-2 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block">{lang === 'en' ? 'Parts / Spool' : lang === 'ja' ? '1巻で印刷可能' : '1卷可印件數'}</span>
-                        <span className="text-sm font-bold text-indigo-600 font-mono">
-                          {lang === 'en' ? `~${partsPerSpool} pcs` : lang === 'ja' ? `約 ${partsPerSpool} 個` : `約 ${partsPerSpool} 件`}
-                        </span>
-                      </div>
-                      <div className="bg-white p-2 rounded-xl border border-slate-200">
-                        <span className="text-[10px] text-slate-400 block">
-                          {isFilamentMaterial
-                            ? (lang === 'en' ? 'Spool Length' : lang === 'ja' ? '総フィラメント長' : '整卷線材長度')
-                            : (lang === 'en' ? 'Net Spec' : lang === 'ja' ? '製品容量' : '規格淨重')}
-                        </span>
-                        <span className="text-sm font-bold text-slate-800 font-mono">
-                          {isFilamentMaterial ? `~${totalLengthMeters}m` : displayProduct.weight}
-                        </span>
-                      </div>
-                    </div>
+                    </dl>
+                    <p className="text-slate-600">{translate('依此商品的標示淨重估算。請輸入切片軟體估算的總用料，含支撐與換色耗材。', 'Based on the listed net weight. Enter your slicer’s total material estimate, including supports and purge.', '表示の正味重量を基に算出します。サポートやパージを含む使用量を入力してください。')}</p>
                   </div>
                 )}
 
@@ -667,69 +607,42 @@ Compatible: Bambu Studio / OrcaSlicer / PrusaSlicer / Cura`
                 )}
               </div>
             </div>
-
-            {/* Action Buttons - Equal-width 2-column grid so Add-to-Cart animation never shifts Buy Now button */}
-            <div className="mt-6 pt-4 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                id="modal-add-to-cart-btn"
-                type="button"
-                disabled={isOutOfStock}
-                onClick={handleAdd}
-                className={`btn-tactile-primary store-action w-full py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
-                  isOutOfStock
-                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                    : isAdded
-                    ? 'bg-emerald-600 text-white cursor-pointer'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-900 cursor-pointer'
-                }`}
-              >
-                {isOutOfStock ? (
-                  <span>{lang === 'en' ? 'Out of Stock' : lang === 'ja' ? '在庫切れ' : '目前補貨中'}</span>
-                ) : isAdded ? (
-                  <>
-                    <Check className="w-4 h-4 shrink-0" />
-                    <span>{t.addedToCart}</span>
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCart className="w-4 h-4 shrink-0" />
-                    <span>{t.addToCart}</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                id="modal-buy-now-btn"
-                type="button"
-                disabled={isOutOfStock}
-                onClick={handleBuyNow}
-                className={`btn-tactile-primary store-action w-full py-3 px-4 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 transition-colors duration-200 whitespace-nowrap ${
-                  isOutOfStock
-                    ? 'bg-slate-300 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 shadow-md shadow-indigo-500/20 cursor-pointer'
-                }`}
-              >
-                <span>{isOutOfStock ? (lang === 'en' ? 'Unavailable' : lang === 'ja' ? '入荷待ち' : '暫時缺貨') : (lang === 'zh-TW' ? '立即結帳付款' : lang === 'ja' ? '今すぐ購入' : 'Buy Now')}</span>
-                {!isOutOfStock && <ArrowRight className="w-4 h-4 shrink-0" />}
-              </button>
-            </div>
-
-            {/* Quick Ask AI button */}
-            {onAskAI && (
-              <div className="mt-2">
-                <button
-                  id="modal-ask-ai-btn"
-                  type="button"
-                  onClick={() => onAskAI(displayProduct)}
-                  className="w-full py-2.5 px-3 rounded-xl border border-indigo-200 bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
-                >
-                  <Bot className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span>{lang === 'en' ? 'Ask AI for Slicer Settings' : lang === 'ja' ? 'AIにスライス設定を質問' : '詢問 AI 顧問此款切片參數'}</span>
-                </button>
-              </div>
-            )}
+          </div>
+          <div className="space-y-4 border-t border-slate-200 bg-slate-50 p-4 sm:p-6 md:col-start-1 md:row-start-2 md:border-r md:border-t-0 md:pt-0">
+            <dl className="grid grid-cols-2 gap-2 text-xs" aria-label={translate('商品規格一覽', 'Product at a glance', '製品仕様の概要')}>
+              {overviewSpecs.map(([label, value]) => (
+                <div key={label} className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+                  <dt className="text-slate-600">{label}</dt>
+                  <dd className="mt-1 font-semibold text-slate-900 [overflow-wrap:anywhere]">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <ProductPurchaseInfo product={product} quantity={isOutOfStock ? 0 : quantity}
+              currency={currency} lang={lang} isWishlisted={isWishlisted} onToggleWishlist={onToggleWishlist} />
           </div>
         </div>
+        {relatedProducts.length > 0 && (
+          <section aria-labelledby="product-related-heading" className="border-t border-slate-200 bg-slate-50 p-4 sm:p-6">
+            <h3 id="product-related-heading" className="mb-3 text-sm font-bold text-slate-900">
+              {translate('同類商品', 'Related products', '関連商品')}
+            </h3>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {relatedProducts.map(item => (
+                <a key={item.id} href={`/?product=${encodeURIComponent(item.id)}`} onClick={event => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  onSelectRelated(item);
+                }} className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-left hover:border-indigo-300">
+                  <ProductPhoto url={item.imageUrl} name={item.name} material={item.material} alt="" className="size-12 shrink-0 overflow-hidden rounded-lg" imageClassName="object-contain" />
+                  <span className="min-w-0">
+                    <span className="line-clamp-2 text-xs font-semibold text-slate-900">{translateProduct(item, lang).name}</span>
+                    <span className="mt-1 block text-xs font-bold text-indigo-700">{formatPrice(item.price, currency)}</span>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
       {isWriteReviewOpen && localProduct && (

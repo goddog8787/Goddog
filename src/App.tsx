@@ -726,6 +726,17 @@ export default function App() {
     : overlayProduct;
 
 
+  const relatedProducts = useMemo(() => {
+    if (!viewingProduct) return [];
+    const material = viewingProduct.material;
+    const family = resolveMaterialFamilyId(material);
+    return products
+      .filter(item => item.id !== viewingProduct.id && isProductInStock(item) &&
+        (item.material === material || (family !== 'All' && resolveMaterialFamilyId(item.material) === family)))
+      .sort((a, b) => Number(b.material === material) - Number(a.material === material) || b.reviewsCount - a.reviewsCount)
+      .slice(0, 3);
+  }, [products, viewingProduct]);
+
   const memberIdRef = useRef(member?.id);
   memberIdRef.current = member?.id;
 
@@ -2438,7 +2449,12 @@ export default function App() {
       <Suspense fallback={<ModalLoadingFallback />}>
         {viewingProduct && (
           <ProductDetailModal
+            key={viewingProduct.id}
             product={viewingProduct}
+            relatedProducts={relatedProducts}
+            onSelectRelated={handleOpenProductDetail}
+            isWishlisted={wishlistSet.has(viewingProduct.id)}
+            onToggleWishlist={() => handleToggleWishlist(viewingProduct.id)}
             currency={currency}
             lang={lang}
             member={member}
