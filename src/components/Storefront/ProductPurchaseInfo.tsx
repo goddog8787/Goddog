@@ -1,4 +1,4 @@
-import { Heart, Link2, PackageCheck, Truck } from 'lucide-react';
+import { Heart, Link2, PackageCheck, Scale, Truck } from 'lucide-react';
 import { useClipboardFeedback } from '../../hooks/useClipboardFeedback';
 import type { CurrencyCode, FilamentProduct, LanguageCode } from '../../types';
 import { checkoutShippingFee } from '../../utils/checkoutDetails';
@@ -32,10 +32,17 @@ interface Props {
   currency: CurrencyCode;
   isWishlisted: boolean;
   onToggleWishlist: () => void;
+  isCompared: boolean;
+  compareCount: number;
+  onToggleCompare: () => void;
+  onOpenCompare: () => void;
 }
 
-export function ProductPurchaseInfo({ product, quantity, lang, currency, isWishlisted, onToggleWishlist }: Props) {
+export function ProductPurchaseInfo({ product, quantity, lang, currency, isWishlisted, onToggleWishlist, isCompared, compareCount, onToggleCompare, onOpenCompare }: Props) {
   const t = labels[lang];
+  const compare = lang === 'en' ? 'Add to comparison' : lang === 'ja' ? '比較に追加' : '加入比較';
+  const compared = lang === 'en' ? 'Selected for comparison' : lang === 'ja' ? '比較対象に登録済み' : '已加入比較';
+  const openCompare = lang === 'en' ? 'Open comparison' : lang === 'ja' ? '比較を開く' : '查看比較';
   const { copy, copiedKey, failedKey, errorText } = useClipboardFeedback(lang);
   const itemSubtotal = product.price * quantity;
   const amounts = (['UNIMARTC2C', 'HOME'] as const).map(method =>
@@ -73,6 +80,15 @@ export function ProductPurchaseInfo({ product, quantity, lang, currency, isWishl
           <Heart className={isWishlisted ? 'size-4 fill-current' : 'size-4'} aria-hidden="true" />
           {isWishlisted ? t.saved : t.save}
         </button>
+        <button type="button" onClick={onToggleCompare} aria-label={compare} aria-pressed={isCompared}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-xs font-semibold hover:bg-slate-50 aria-pressed:border-indigo-200 aria-pressed:text-indigo-700">
+          <Scale className="size-4" aria-hidden="true" /> {isCompared ? compared : compare}
+        </button>
+        {compareCount > 0 && (
+          <button type="button" onClick={onOpenCompare} className="min-h-11 rounded-xl px-3 text-xs font-semibold text-indigo-700 hover:bg-indigo-50">
+            {openCompare} ({compareCount}/4)
+          </button>
+        )}
         <button type="button" onClick={() => {
           const url = new URL('/', window.location.origin);
           url.searchParams.set('product', product.id);
