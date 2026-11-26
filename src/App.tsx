@@ -73,6 +73,7 @@ import {
   saveUserProfileToFirestore, 
   processReferralOrderReward,
   subscribeToAuth,
+  finishGoogleRedirect,
   logOut,
   saveMonetizationConfigToFirestore,
   loadMonetizationConfigFromFirestore,
@@ -1034,6 +1035,17 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [toastNotification]);
+
+  useEffect(() => {
+    let active = true;
+    void finishGoogleRedirect().then(error => {
+      if (active && error) {
+        setToastNotification({ type: 'error', message: error });
+        setIsAuthOpen(true);
+      }
+    });
+    return () => { active = false; };
+  }, []);
 
   // Handle return from NewebPay payment gateway (Strict Non-Mock: Only verified payment creates order)
   useEffect(() => {

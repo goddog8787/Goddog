@@ -109,6 +109,16 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
     return title;
   }, [liveProduct.name]);
 
+  const highlight = liveProduct.features?.find(feature => typeof feature === 'string' && feature.trim())?.trim()
+    || liveProduct.description?.trim();
+  const isAccessory = product.material === 'Accessories';
+  const isResin = product.material === 'Resin';
+  const material = isAccessory
+    ? (lang === 'en' ? 'Accessory' : lang === 'ja' ? '周辺機器' : '周邊配件')
+    : isResin ? (lang === 'en' ? 'Resin' : lang === 'ja' ? 'レジン' : '光固化樹脂') : liveProduct.material;
+  const variantsInStock = product.colors?.filter(color => color.stock > 0) ?? [];
+  const colorsLabel = lang === 'en' ? `${variantsInStock.length} options available`
+    : lang === 'ja' ? `${variantsInStock.length} 色在庫あり` : `${variantsInStock.length} 色可選`;
   const showDiameter = useMemo(() => {
     const mat = (product.material || '').toLowerCase();
     return Boolean(liveProduct.diameter) && mat !== 'accessories' && mat !== 'resin';
@@ -279,6 +289,28 @@ const ProductCardInner: React.FC<ProductCardProps> = ({
               onViewDetail(liveProduct);
             }}>{cleanTitle}</a>
           </h3>
+          {highlight && (
+            <p className="line-clamp-2 text-[11px] leading-[1.45] text-slate-600 dark:text-slate-300 sm:text-xs" title={highlight}>
+              {highlight}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-1 pt-1 text-[10px] font-medium text-slate-700 dark:text-slate-200">
+            {[material, liveProduct.weight?.trim()].filter(Boolean).map((value, index) => (
+              <span key={index} className="rounded-md bg-slate-100 px-1.5 py-0.5 [overflow-wrap:anywhere] dark:bg-slate-800">{value}</span>
+            ))}
+          </div>
+          {inStock && variantsInStock.length > 1 && (
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-1 text-[10px] text-slate-600 dark:text-slate-300">
+              <div className="flex items-center gap-0.5" aria-hidden="true">
+                {variantsInStock.slice(0, 4).map(color => (
+                  <span key={color.name} title={translateColorName(color.name, lang)}
+                    style={{ backgroundColor: color.hex }}
+                    className="size-3 rounded-full border border-slate-300 dark:border-slate-500" />
+                ))}
+              </div>
+              <span>{colorsLabel}</span>
+            </div>
+          )}
         </div>
 
         {/* 第 4 列：價格與快速加入購物車（固定按鈕與價格不折行，確保桌機 4 欄排版下互不擠壓） */}

@@ -95,9 +95,13 @@ app.all('/__/auth/*', express.raw({ type: () => true, limit: '64kb' }), async (r
     res.set('Cache-Control', 'no-store');
     const responseType = response.headers.get('content-type');
     if (responseType) res.set('Content-Type', responseType);
+    if (response.ok && upstream.pathname === '/__/auth/handler' && responseType?.includes('text/html')) {
+      const html = await response.text();
+      return res.status(response.status).send(html.replace('</body>', '<script src="/auth-recovery.js" defer></script></body>'));
+    }
     return res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
   } catch {
-    return res.status(502).send('Firebase 登入服務暫時無法連線。');
+    return res.set('Cache-Control', 'no-store').status(502).send('Firebase 登入服務暫時無法連線。');
   }
 });
 

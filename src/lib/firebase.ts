@@ -4,6 +4,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -62,13 +64,11 @@ const FALLBACK_PUBLIC_KEY = (() => {
 // Initialize Firebase App & Services from official firebase-applet-config.json
 // Resolve authDomain: Use goddog.space when on custom domain, otherwise use official firebaseapp.com auth domain
 const getEffectiveAuthDomain = (): string => {
-  const customDomain = (import.meta as any).env?.VITE_CUSTOM_AUTH_DOMAIN;
-  if (customDomain) {
-    return customDomain;
-  }
   if (typeof window !== 'undefined' && window.location.hostname === 'goddog.space') {
     return 'goddog.space';
   }
+  const customDomain = (import.meta as any).env?.VITE_CUSTOM_AUTH_DOMAIN;
+  if (customDomain) return customDomain;
   return firebaseConfig.authDomain || 'goddog-shop.firebaseapp.com';
 };
 
@@ -263,28 +263,102 @@ googleProvider.setCustomParameters({
   prompt: 'select_account',
 });
 
+const googleRedirectKey = 'goddog_google_redirect_pending';
+const retryGoogleMessage = '這次 Google 登入尚未完成。請重新點選 Google 登入；若由 App 內開啟，請改用 Chrome 或 Safari。';
+
+function googleLoginError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  switch (code) {
+    case 'auth/popup-blocked':
+    case 'auth/web-storage-unsupported':
+    case 'auth/operation-not-supported-in-this-environment':
+      return '這個瀏覽器無法保留 Google 登入狀態。請以 Chrome 或 Safari 開啟商城再試，或使用電子信箱登入。';
+    case 'auth/cancelled-popup-request':
+    case 'auth/popup-closed-by-user':
+      return 'Google 登入已取消，可以重新點選登入。';
+    case 'auth/network-request-failed':
+      return 'Google 登入連線失敗，請確認網路後重試。';
+    case 'auth/operation-not-allowed':
+    case 'auth/unauthorized-domain':
+      return '此網域的 Google 登入設定目前無法使用，請先使用電子信箱登入。';
+    default:
+      return retryGoogleMessage;
+  }
+}
+
+function saveGoogleMember(user: User) {
+  // Authentication should not wait for a separate Firestore profile write.
+  void saveUserProfileToFirestore({ id: user.uid, email: user.email, name: user.displayName })
+    .catch(() => console.warn('Unable to save the Google member profile.'));
+}
+
+function canUseSameOriginRedirect() {
+  return window.location.protocol === 'https:' && auth.config.authDomain === window.location.host;
+}
+
+function clearGoogleRedirectMarker() {
+  try {
+    sessionStorage.removeItem(googleRedirectKey);
+  } catch {
+    // Storage can be unavailable in restricted browsers.
+  }
+}
+
+async function startGoogleRedirect() {
+  try {
+    sessionStorage.setItem(googleRedirectKey, '1');
+  } catch {
+    return { user: null, error: googleLoginError({ code: 'auth/web-storage-unsupported' }) };
+  }
+  try {
+    return await signInWithRedirect(auth, googleProvider);
+  } catch (error) {
+    clearGoogleRedirectMarker();
+    return { user: null, error: googleLoginError(error) };
+  }
+}
+
+let pendingGoogleRedirect: Promise<string | undefined> | undefined;
+export function finishGoogleRedirect(): Promise<string | undefined> {
+  if (pendingGoogleRedirect) return pendingGoogleRedirect;
+  try {
+    if (sessionStorage.getItem(googleRedirectKey) !== '1') return Promise.resolve(undefined);
+  } catch {
+    return Promise.resolve(undefined);
+  }
+  pendingGoogleRedirect = (async () => {
+    try {
+      const result = await getRedirectResult(auth);
+      if (result?.user) saveGoogleMember(result.user);
+      else if (!auth.currentUser) return retryGoogleMessage;
+    } catch (error) {
+      return googleLoginError(error);
+    } finally {
+      clearGoogleRedirectMarker();
+      pendingGoogleRedirect = undefined;
+    }
+  })();
+  return pendingGoogleRedirect;
+}
+
 export async function signInWithGoogle(): Promise<{ user: User | null; error?: string }> {
+  const userAgent = navigator.userAgent;
+  if (/; wv\)|FBAN|FBAV|Instagram|Line\//i.test(userAgent)) {
+    return { user: null, error: googleLoginError({ code: 'auth/operation-not-supported-in-this-environment' }) };
+  }
+  const sameOriginRedirect = canUseSameOriginRedirect();
+  if (sameOriginRedirect && /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)) {
+    return startGoogleRedirect();
+  }
   try {
     const { user } = await signInWithPopup(auth, googleProvider);
-    // A slow Firestore write must not keep the sign-in dialog waiting after Firebase Auth has succeeded.
-    void saveUserProfileToFirestore({
-      id: user.uid,
-      email: user.email,
-      name: user.displayName,
-    }).catch(() => console.warn('Unable to save the Google member profile.'));
+    saveGoogleMember(user);
     return { user };
-  } catch (error: any) {
-    console.warn('Firebase Google Sign-In notice / fallback:', error?.code, error?.message);
-
-    let msg = error?.message || 'Google 登入失敗';
-    if (error?.code === 'auth/popup-blocked') {
-      msg = '瀏覽器已封鎖快顯視窗，請允許開啟快顯以進行 Google 帳號授權登入。';
-    } else if (error?.code === 'auth/operation-not-allowed') {
-      msg = '您的 Firebase 專案（goddog-shop）尚未啟用 Google 登入！請至 Firebase 控制台 > Authentication > 登入方法啟用「Google」。';
-    } else if (error?.code === 'auth/unauthorized-domain') {
-      msg = '當前網域尚未加入 Firebase 已授權網域！請至 Firebase 控制台 > Authentication > 設定 > 已授權的網域新增。';
+  } catch (error) {
+    if (sameOriginRedirect && (error as { code?: string } | null)?.code === 'auth/popup-blocked') {
+      return startGoogleRedirect();
     }
-    return { user: null, error: msg };
+    return { user: null, error: googleLoginError(error) };
   }
 }
 
