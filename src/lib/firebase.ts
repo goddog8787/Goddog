@@ -1,7 +1,11 @@
 import { getStoreApiBase } from './backendUrl';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
-  getAuth,
+  initializeAuth,
+  indexedDBLocalPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  browserPopupRedirectResolver,
   GoogleAuthProvider,
   signInWithPopup,
   signInWithRedirect,
@@ -123,7 +127,11 @@ export const db: Firestore = (() => {
 
 export const auth: Auth = (() => {
   try {
-    return getAuth(app);
+    // Keep the usual web session storage without loading the OAuth iframe on mobile startup.
+    // Each Google operation supplies its resolver when it actually needs it.
+    return initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+    });
   } catch (e) {
     console.warn('Firebase Auth initialization fallback:', e);
     return {
@@ -264,7 +272,9 @@ googleProvider.setCustomParameters({
 });
 
 const googleRedirectKey = 'goddog_google_redirect_pending';
+const googleRedirectWaitMs = 12_000;
 const retryGoogleMessage = '這次 Google 登入尚未完成。請重新點選 Google 登入；若由 App 內開啟，請改用 Chrome 或 Safari。';
+type GoogleSignInResult = { user: User | null; error?: string };
 
 function googleLoginError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
@@ -304,18 +314,43 @@ function clearGoogleRedirectMarker() {
   }
 }
 
-async function startGoogleRedirect() {
+let googleRedirectLaunch: Promise<GoogleSignInResult> | undefined;
+let reloadBeforeGoogleRetry = false;
+
+async function startGoogleRedirect(): Promise<GoogleSignInResult> {
+  if (reloadBeforeGoogleRetry) {
+    // Firebase cannot cancel a pending redirect. Reload before starting a new one.
+    clearGoogleRedirectMarker();
+    window.location.reload();
+    return { user: null };
+  }
+  if (googleRedirectLaunch) return googleRedirectLaunch;
   try {
     sessionStorage.setItem(googleRedirectKey, '1');
   } catch {
     return { user: null, error: googleLoginError({ code: 'auth/web-storage-unsupported' }) };
   }
-  try {
-    return await signInWithRedirect(auth, googleProvider);
-  } catch (error) {
+
+  const launch = signInWithRedirect(auth, googleProvider, browserPopupRedirectResolver).catch(error => {
     clearGoogleRedirectMarker();
+    reloadBeforeGoogleRetry = false;
     return { user: null, error: googleLoginError(error) };
-  }
+  });
+  let timeoutId: number | undefined;
+  const deadline = new Promise<GoogleSignInResult>(resolve => {
+    timeoutId = window.setTimeout(() => {
+      reloadBeforeGoogleRetry = true;
+      resolve({
+        user: null,
+        error: 'Google 登入連線逾時。再次點選 Google 登入可重新載入此頁，也可使用電子信箱登入。',
+      });
+    }, googleRedirectWaitMs);
+  });
+  googleRedirectLaunch = Promise.race([launch, deadline]).finally(() => {
+    window.clearTimeout(timeoutId);
+    googleRedirectLaunch = undefined;
+  });
+  return googleRedirectLaunch;
 }
 
 let pendingGoogleRedirect: Promise<string | undefined> | undefined;
@@ -328,7 +363,7 @@ export function finishGoogleRedirect(): Promise<string | undefined> {
   }
   pendingGoogleRedirect = (async () => {
     try {
-      const result = await getRedirectResult(auth);
+      const result = await getRedirectResult(auth, browserPopupRedirectResolver);
       if (result?.user) saveGoogleMember(result.user);
       else if (!auth.currentUser) return retryGoogleMessage;
     } catch (error) {
@@ -341,7 +376,7 @@ export function finishGoogleRedirect(): Promise<string | undefined> {
   return pendingGoogleRedirect;
 }
 
-export async function signInWithGoogle(): Promise<{ user: User | null; error?: string }> {
+export async function signInWithGoogle(): Promise<GoogleSignInResult> {
   const userAgent = navigator.userAgent;
   if (/; wv\)|FBAN|FBAV|Instagram|Line\//i.test(userAgent)) {
     return { user: null, error: googleLoginError({ code: 'auth/operation-not-supported-in-this-environment' }) };
@@ -351,7 +386,7 @@ export async function signInWithGoogle(): Promise<{ user: User | null; error?: s
     return startGoogleRedirect();
   }
   try {
-    const { user } = await signInWithPopup(auth, googleProvider);
+    const { user } = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
     saveGoogleMember(user);
     return { user };
   } catch (error) {
