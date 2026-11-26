@@ -70,8 +70,35 @@ const parsedPort = Number(cliPort || resolvedEnvPort);
 const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
 const HOST = resolveCliArg('--host') || process.env.HOST || '0.0.0.0';
 
+const firebaseConfigPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+
+// Firebase's OAuth helper reads Hosting's public web configuration on this origin.
+app.all('/__/firebase/init.json', (req, res) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return res.set('Allow', 'GET, HEAD').sendStatus(405);
+  }
+  try {
+    const { apiKey, projectId, appId, authDomain, storageBucket, messagingSenderId, measurementId } =
+      JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
+    if (typeof apiKey === 'string' && apiKey && projectId) {
+      return res.set('Cache-Control', 'public, max-age=300').json({
+        apiKey, projectId, appId, authDomain, storageBucket, messagingSenderId, measurementId,
+      });
+    }
+  } catch {
+    // Keep configuration errors visible to the helper as errors instead of storefront HTML.
+  }
+  return res.set('Cache-Control', 'no-store').status(503).json({ error: 'Firebase web configuration unavailable' });
+});
+
 // Serve Firebase Auth's popup and iframe on the same origin as the Render storefront.
 const firebaseAuthOrigin = 'https://goddog-shop.firebaseapp.com';
+const firebasePublicScripts = new Set([
+  '/__/auth/experiments.js',
+  '/__/auth/handler.js',
+  '/__/auth/iframe.js',
+  '/__/auth/links.js',
+]);
 app.all('/__/auth/*', express.raw({ type: () => true, limit: '64kb' }), async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
     return res.set('Allow', 'GET, HEAD, POST').sendStatus(405);
@@ -92,12 +119,16 @@ app.all('/__/auth/*', express.raw({ type: () => true, limit: '64kb' }), async (r
       const redirect = new URL(location, upstream);
       res.set('Location', redirect.origin === firebaseAuthOrigin ? redirect.pathname + redirect.search + redirect.hash : redirect.href);
     }
-    res.set('Cache-Control', 'no-store');
     const responseType = response.headers.get('content-type');
+    const isPublicScript = response.ok && (req.method === 'GET' || req.method === 'HEAD') &&
+      !upstream.search && firebasePublicScripts.has(upstream.pathname) && responseType?.includes('javascript');
+    res.set('Cache-Control', (isPublicScript && response.headers.get('cache-control')) || 'no-store');
     if (responseType) res.set('Content-Type', responseType);
     if (response.ok && upstream.pathname === '/__/auth/handler' && responseType?.includes('text/html')) {
       const html = await response.text();
-      return res.status(response.status).send(html.replace('</body>', '<script src="/auth-recovery.js" defer></script></body>'));
+      return res.status(response.status).send(html
+        .replace('</head>', '<link rel="preconnect" href="https://www.googleapis.com"><link rel="preconnect" href="https://accounts.google.com"></head>')
+        .replace('</body>', '<script src="/auth-recovery.js" defer></script></body>'));
     }
     return res.status(response.status).send(Buffer.from(await response.arrayBuffer()));
   } catch {
@@ -156,9 +187,8 @@ app.get('/api/health', (_req, res) => {
 // Secure Server-Side Firebase Config endpoint (Key Isolation)
 app.get('/api/firebase/config', (_req, res) => {
   try {
-    const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
-    if (fs.existsSync(configPath)) {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    if (fs.existsSync(firebaseConfigPath)) {
+      const config = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf8'));
       return res.json({ success: true, config });
     }
   } catch (e) {
