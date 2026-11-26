@@ -272,11 +272,12 @@ googleProvider.setCustomParameters({
 });
 
 const googleRedirectKey = 'goddog_google_redirect_pending';
-const googleRedirectWaitMs = 12_000;
+const googleLoginPage = '/google-login.html';
+const googleReturnPathKey = 'goddog_google_return_path';
 const retryGoogleMessage = '這次 Google 登入尚未完成。請重新點選 Google 登入；若由 App 內開啟，請改用 Chrome 或 Safari。';
 type GoogleSignInResult = { user: User | null; error?: string };
 
-function googleLoginError(error: unknown): string {
+export function googleLoginError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
   switch (code) {
     case 'auth/popup-blocked':
@@ -314,43 +315,43 @@ function clearGoogleRedirectMarker() {
   }
 }
 
-let googleRedirectLaunch: Promise<GoogleSignInResult> | undefined;
-let reloadBeforeGoogleRetry = false;
-
-async function startGoogleRedirect(): Promise<GoogleSignInResult> {
-  if (reloadBeforeGoogleRetry) {
-    // Firebase cannot cancel a pending redirect. Reload before starting a new one.
-    clearGoogleRedirectMarker();
-    window.location.reload();
-    return { user: null };
+function openGoogleLoginWindow(sameTab = false): GoogleSignInResult {
+  // Open within the original tap, before the SDK or network can consume user activation.
+  let popup: Window | null = null;
+  if (!sameTab) {
+    try {
+      popup = window.open('about:blank', '_blank');
+    } catch {
+      // Some embedded browsers throw when they block a new tab.
+    }
   }
-  if (googleRedirectLaunch) return googleRedirectLaunch;
   try {
-    sessionStorage.setItem(googleRedirectKey, '1');
+    const target = popup || window;
+    if (popup) popup.opener = null;
+    target.sessionStorage.setItem(googleReturnPathKey, location.pathname + location.search + location.hash);
+    if (popup) popup.location.replace(googleLoginPage);
+    else location.assign(googleLoginPage);
+    return { user: null };
   } catch {
+    popup?.close();
     return { user: null, error: googleLoginError({ code: 'auth/web-storage-unsupported' }) };
   }
+}
 
-  const launch = signInWithRedirect(auth, googleProvider, browserPopupRedirectResolver).catch(error => {
-    clearGoogleRedirectMarker();
-    reloadBeforeGoogleRetry = false;
-    return { user: null, error: googleLoginError(error) };
-  });
-  let timeoutId: number | undefined;
-  const deadline = new Promise<GoogleSignInResult>(resolve => {
-    timeoutId = window.setTimeout(() => {
-      reloadBeforeGoogleRetry = true;
-      resolve({
-        user: null,
-        error: 'Google 登入連線逾時。再次點選 Google 登入可重新載入此頁，也可使用電子信箱登入。',
-      });
-    }, googleRedirectWaitMs);
-  });
-  googleRedirectLaunch = Promise.race([launch, deadline]).finally(() => {
-    window.clearTimeout(timeoutId);
-    googleRedirectLaunch = undefined;
-  });
-  return googleRedirectLaunch;
+export async function runGoogleLoginPage(): Promise<void> {
+  if (!new URLSearchParams(location.search).has('return')) {
+    history.replaceState(null, '', googleLoginPage + '?return');
+    await signInWithRedirect(auth, googleProvider, browserPopupRedirectResolver);
+    return;
+  }
+  const result = await getRedirectResult(auth, browserPopupRedirectResolver);
+  if (!result?.user) throw new Error(retryGoogleMessage);
+  saveGoogleMember(result.user);
+  const returnPath = sessionStorage.getItem(googleReturnPathKey) || '/profile';
+  sessionStorage.removeItem(googleReturnPathKey);
+  const destination = new URL(returnPath, location.origin);
+  location.replace(destination.origin === location.origin && destination.pathname !== googleLoginPage
+    ? destination.href : '/profile');
 }
 
 let pendingGoogleRedirect: Promise<string | undefined> | undefined;
@@ -383,7 +384,7 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
   }
   const sameOriginRedirect = canUseSameOriginRedirect();
   if (sameOriginRedirect && /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)) {
-    return startGoogleRedirect();
+    return openGoogleLoginWindow();
   }
   try {
     const { user } = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
@@ -391,7 +392,7 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
     return { user };
   } catch (error) {
     if (sameOriginRedirect && (error as { code?: string } | null)?.code === 'auth/popup-blocked') {
-      return startGoogleRedirect();
+      return openGoogleLoginWindow(true);
     }
     return { user: null, error: googleLoginError(error) };
   }

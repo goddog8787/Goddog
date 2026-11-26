@@ -18,6 +18,7 @@ export default defineConfig(() => {
       cssCodeSplit: true,
       chunkSizeWarningLimit: 1200,
       rollupOptions: {
+        input: { storefront: path.resolve('index.html'), googleLogin: path.resolve('google-login.html') },
         output: {
           manualChunks(id) {
             if (!id.includes('node_modules')) return;
