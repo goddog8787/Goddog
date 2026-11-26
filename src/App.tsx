@@ -1537,6 +1537,7 @@ export default function App() {
     const unsubscribe = subscribeToAuth((firebaseUser) => {
       const cleanUid = normalizeCustomerId(firebaseUser?.uid);
       if (firebaseUser && cleanUid) {
+        setIsAuthOpen(false);
         setIsLoggedIn(true);
         const existingProfile = getStoredCustomerProfileSync(cleanUid);
         const fallbackProfile = {
