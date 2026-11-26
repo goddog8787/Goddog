@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   X, 
+  Heart,
   Trash2, 
   Plus, 
   Minus, 
@@ -33,6 +34,8 @@ interface CartDrawerProps {
   unavailableLines: boolean[];
   onUpdateColor?: (index: number, newColor: ColorOption) => boolean;
   onRemoveItem: (index: number) => void;
+  wishlistedIds: ReadonlySet<string>;
+  onSaveToWishlist: (id: string) => void;
   onProceedCheckout: (pointsUsed: number, couponCode?: string) => void;
   onClearCart?: () => void;
   onAddQuickItem?: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => void;
@@ -50,6 +53,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   catalog,
   unavailableLines,
   onRemoveItem,
+  wishlistedIds,
+  onSaveToWishlist,
   onProceedCheckout,
   onClearCart,
   onAddQuickItem,
@@ -404,6 +409,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           </span>
                           <button
                             type="button"
+                            disabled={wishlistedIds.has(item.product.id)}
+                            onClick={() => onSaveToWishlist(item.product.id)}
+                            aria-label={lang === 'en' ? 'Save to wishlist' : lang === 'ja' ? 'お気に入りに追加' : '加入收藏'}
+                            title={wishlistedIds.has(item.product.id) ? (lang === 'en' ? 'Saved' : lang === 'ja' ? '登録済み' : '已收藏') : (lang === 'en' ? 'Save to wishlist' : lang === 'ja' ? 'お気に入りに追加' : '加入收藏')}
+                            className="flex h-10 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:text-rose-600"
+                          >
+                            <Heart className={`size-4 ${wishlistedIds.has(item.product.id) ? 'fill-current' : ''}`} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => onRemoveItem(idx)}
                             className="w-9 h-10 rounded-md hover:bg-rose-50 text-slate-400 hover:text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
                             title={lang === 'en' ? 'Remove item' : lang === 'ja' ? '商品を削除' : '移除商品'}
@@ -469,8 +484,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       type="text"
                       placeholder={lang === 'en' ? 'Enter promo code (e.g. GODDOG)' : lang === 'ja' ? 'クーポンコードを入力 (例: GODDOG)' : '輸入折扣碼 (例 GODDOG / MAKER100)'}
                       value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value)}
-                      className="flex-1 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg outline-none font-mono uppercase focus:border-indigo-500"
+                      onChange={event => setCouponCode(event.target.value)}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                          event.preventDefault();
+                          handleApplyCoupon();
+                        }
+                      }}
+                      className="min-w-0 flex-1 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-lg outline-none font-mono uppercase focus:border-indigo-500"
                     />
                     <button
                       type="button"

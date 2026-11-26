@@ -35,6 +35,10 @@ interface ProductDetailModalProps {
   cartItems: CartItem[];
   isWishlisted: boolean;
   onToggleWishlist: () => void;
+  isCompared: boolean;
+  compareCount: number;
+  onToggleCompare: () => void;
+  onOpenCompare: () => void;
   onSelectRelated: (product: FilamentProduct) => void;
   onClose: () => void;
   onAddToCart: (product: FilamentProduct, color: ColorOption, diameter: '1.75mm' | '2.85mm', quantity: number) => boolean | void;
@@ -52,6 +56,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   cartItems,
   isWishlisted,
   onToggleWishlist,
+  isCompared,
+  compareCount,
+  onToggleCompare,
+  onOpenCompare,
   onSelectRelated,
   onClose,
   onAddToCart,
@@ -633,7 +641,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               ))}
             </dl>
             <ProductPurchaseInfo product={product} quantity={isOutOfStock ? 0 : quantity}
-              currency={currency} lang={lang} isWishlisted={isWishlisted} onToggleWishlist={onToggleWishlist} />
+              currency={currency} lang={lang} isWishlisted={isWishlisted} onToggleWishlist={onToggleWishlist}
+              isCompared={isCompared} compareCount={compareCount} onToggleCompare={onToggleCompare} onOpenCompare={onOpenCompare} />
           </div>
         </div>
         {relatedProducts.length > 0 && (

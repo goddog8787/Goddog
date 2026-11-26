@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowDownToLine, ArrowUp, ArrowUpToLine, GripVertical, ListOrdered } from 'lucide-react';
 import type { FilamentProduct } from '../../types';
 import { CatalogOrderConflict, saveCatalogOrder } from '../../lib/catalogOrderPersistence';
-import { MAX_CATALOG_ORDER_IDS, moveCatalogProduct, orderCatalog, type CatalogOrder } from '../../utils/catalogOrder';
+import { MAX_CATALOG_ORDER_IDS, moveCatalogProduct, normalizeCatalogOrder, orderCatalog, type CatalogOrder } from '../../utils/catalogOrder';
 import { isProductInStock } from '../../utils/cartStock';
 import { normalizeProductSearch } from '../../utils/productSearch';
 
@@ -15,8 +15,33 @@ interface Props {
 
 const smallButton = 'inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-slate-200 px-2 text-slate-700 hover:bg-slate-100 disabled:opacity-35';
 
+const draftKey = 'goddog_catalog_order_draft';
+
+function readDraft(): CatalogOrder | null {
+  try {
+    const saved = sessionStorage.getItem(draftKey);
+    if (!saved) return null;
+    const value = JSON.parse(saved);
+    return Array.isArray(value?.productIds) && Number.isSafeInteger(value?.revision)
+      ? normalizeCatalogOrder(value)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function CatalogOrderManager({ products, order, connectionFailed, onSaved }: Props) {
-  const [draft, setDraft] = useState<CatalogOrder | null>(null);
+  const [draft, setDraft] = useState<CatalogOrder | null>(readDraft);
+  const [undoStack, setUndoStack] = useState<(CatalogOrder | null)[]>([]);
+  const [stockOnly, setStockOnly] = useState(false);
+  useEffect(() => {
+    try {
+      if (draft) sessionStorage.setItem(draftKey, JSON.stringify(draft));
+      else sessionStorage.removeItem(draftKey);
+    } catch {
+      // The draft still works in memory when browser storage is unavailable.
+    }
+  }, [draft]);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [position, setPosition] = useState('');
@@ -27,20 +52,34 @@ export function CatalogOrderManager({ products, order, connectionFailed, onSaved
   const ordered = useMemo(() => orderCatalog(products, draft?.productIds ?? order?.productIds ?? []), [products, draft, order]);
   const positions = useMemo(() => new Map(ordered.map((product, index) => [product.id, index])), [ordered]);
   const query = normalizeProductSearch(search);
-  const rows = ordered.filter(product => !query || normalizeProductSearch(
+  const rows = ordered.filter(product => (!stockOnly || isProductInStock(product)) && (!query || normalizeProductSearch(
     [product.name, product.brand, product.material, product.sku, product.id].join(' '),
-  ).includes(query));
+  ).includes(query)));
   const stale = draft !== null && order !== null && draft.revision !== order.revision;
   const tooLarge = ordered.length > MAX_CATALOG_ORDER_IDS;
   const canEdit = order !== null && !connectionFailed && !saving && !stale && !tooLarge;
 
-  function move(id: string, index: number) {
-    if (!order || !canEdit || positions.get(id) === index || !positions.has(id)) return;
-    setDraft({ revision: draft?.revision ?? order.revision, productIds: moveCatalogProduct(ordered.map(product => product.id), id, index) });
-    setSelectedId(id);
-    setPosition(String(index + 1));
+  function editDraft(next: CatalogOrder) {
+    setUndoStack(stack => [...stack.slice(-19), draft]);
+    setDraft(next);
     setFailed(false);
     setMessage('');
+  }
+
+  function undoDraft() {
+    if (!undoStack.length) return;
+    setDraft(undoStack[undoStack.length - 1]);
+    setUndoStack(undoStack.slice(0, -1));
+    setPosition('');
+    setMessage('已復原上一步。');
+    setFailed(false);
+  }
+
+  function move(id: string, index: number) {
+    if (!order || !canEdit || positions.get(id) === index || !positions.has(id)) return;
+    editDraft({ revision: draft?.revision ?? order.revision, productIds: moveCatalogProduct(ordered.map(product => product.id), id, index) });
+    setSelectedId(id);
+    setPosition(String(index + 1));
   }
 
   async function publish() {
@@ -52,6 +91,7 @@ export function CatalogOrderManager({ products, order, connectionFailed, onSaved
       const result = await saveCatalogOrder(draft.productIds.length ? ordered.map(product => product.id) : [], draft.revision);
       onSaved(result);
       setDraft(null);
+      setUndoStack([]);
       setMessage('商城排序已儲存，訪客的推薦商品列表會更新。');
     } catch (error) {
       setFailed(true);
@@ -110,6 +150,13 @@ export function CatalogOrderManager({ products, order, connectionFailed, onSaved
           <button type="submit" className={smallButton} disabled={!canEdit || selectedIndex === undefined || !Number.isInteger(targetPosition) || targetPosition < 1 || targetPosition > ordered.length}>移動</button>
         </form>
       </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+        <label className="inline-flex min-h-9 items-center gap-2">
+          <input type="checkbox" checked={stockOnly} onChange={event => setStockOnly(event.target.checked)} className="size-4 accent-indigo-600" />
+          只顯示有庫存
+        </label>
+        <span role="status">顯示 {rows.length} / {ordered.length} 件</span>
+      </div>
       <p className="text-xs text-slate-600">{selectedIndex === undefined ? '點選清單中的商品可指定位置。' : `已選：${ordered[selectedIndex].name}（第 ${selectedIndex + 1} 個）`}</p>
       <div className="max-h-[28rem] overflow-y-auto overscroll-contain rounded-xl border border-slate-200">
         <ol aria-label="排序預覽" className="divide-y divide-slate-100">
@@ -158,10 +205,11 @@ export function CatalogOrderManager({ products, order, connectionFailed, onSaved
           className="min-h-11 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-45">
           {saving ? '儲存中…' : '儲存並發布排序'}
         </button>
+        <button type="button" className={smallButton} disabled={!canEdit || !undoStack.length} onClick={undoDraft}>復原上一步</button>
         <button type="button" className={smallButton} disabled={saving || !draft}
-          onClick={() => { setDraft(null); setPosition(''); setSelectedId(''); setMessage('已載入已發布順序。'); setFailed(false); }}>載入已發布順序</button>
+          onClick={() => { setDraft(null); setUndoStack([]); setPosition(''); setSelectedId(''); setMessage('已載入已發布順序。'); setFailed(false); }}>載入已發布順序</button>
         <button type="button" className={smallButton} disabled={!canEdit || !order || !(draft?.productIds.length ?? order.productIds.length)}
-          onClick={() => { if (order) setDraft({ productIds: [], revision: order.revision }); setMessage('已預覽預設順序，儲存後才會套用。'); setFailed(false); }}>預覽恢復預設</button>
+          onClick={() => { if (order) editDraft({ productIds: [], revision: order.revision }); setMessage('已預覽預設順序，儲存後才會套用。'); setFailed(false); }}>預覽恢復預設</button>
       </div>
       {message && <p role={failed ? 'alert' : 'status'} className={failed ? 'text-sm text-rose-700' : 'text-sm text-slate-700'}>{message}</p>}
     </section>

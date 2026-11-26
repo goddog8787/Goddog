@@ -153,6 +153,8 @@ const SubscriptionPage = React.lazy(() => import('./pages/Subscription/Subscript
 const MaterialGuidePage = React.lazy(() => import('./pages/MaterialGuide/MaterialGuidePage').then(m => ({ default: m.MaterialGuidePage })));
 const Footer = React.lazy(() => import('./components/Footer').then(m => ({ default: m.Footer })));
 import { SEO } from './components/SEO';
+import { useClipboardFeedback } from './hooks/useClipboardFeedback';
+import { clearCatalogFilterParams, extractCatalogFilterParams, readCatalogFilters, writeCatalogFilters, type CatalogFilters } from './utils/catalogFilters';
 import { subscribeToCatalogOrder } from './lib/catalogOrderPersistence';
 import { orderCatalog, type CatalogOrder } from './utils/catalogOrder';
 import { prepareProductSearch, evaluateProductDeepSearch, normalizeProductSearch } from './utils/productSearch';
@@ -228,6 +230,8 @@ const STOREFRONT_MATERIAL_FAMILIES: readonly StorefrontMaterialFamily[] = [
     match: (m: string) => m.toUpperCase() === 'ACCESSORIES',
   },
 ];
+
+const catalogMaterialIds = STOREFRONT_MATERIAL_FAMILIES.map(family => family.id);
 
 function resolveMaterialFamilyId(rawMaterial: string): string {
   if (!rawMaterial || rawMaterial === 'All') return 'All';
@@ -711,16 +715,41 @@ export default function App() {
     !isCartLineAvailable(cartItems, index, catalogById)
   ), [cartItems, catalogById]);
 
-  // Product Filter and Search in Storefront
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMaterial, setSelectedMaterial] = useState('All');
-  const [inStockOnly, setInStockOnly] = useState(false);
-  const [sortBy, setSortBy] = useState('relevance');
+  // A shared URL supplies the initial catalog filters. Product and tracking parameters are independent.
+  const sharedCatalogParams = location.pathname === '/' ? extractCatalogFilterParams(location.search) : '';
+  const initialCatalogFilters = useMemo(() => readCatalogFilters(new URLSearchParams(sharedCatalogParams), catalogMaterialIds), [sharedCatalogParams]);
+  const [searchQuery, setSearchQuery] = useState(initialCatalogFilters.query);
+  const [selectedMaterial, setSelectedMaterial] = useState(initialCatalogFilters.material);
+  const [inStockOnly, setInStockOnly] = useState(initialCatalogFilters.inStockOnly);
+  const [sortBy, setSortBy] = useState<CatalogFilters['sort']>(initialCatalogFilters.sort);
+  const previousSharedParams = useRef(sharedCatalogParams);
+  const { copy: copyCatalogLink, copiedKey: catalogCopied, failedKey: catalogCopyFailed } = useClipboardFeedback(lang);
+
+  useEffect(() => {
+    if (location.pathname !== '/' || (previousSharedParams.current === sharedCatalogParams && !sharedCatalogParams)) return;
+    previousSharedParams.current = sharedCatalogParams;
+    setSearchQuery(initialCatalogFilters.query);
+    setSelectedMaterial(initialCatalogFilters.material);
+    setInStockOnly(initialCatalogFilters.inStockOnly);
+    setSortBy(initialCatalogFilters.sort);
+  }, [location.pathname, sharedCatalogParams, initialCatalogFilters]);
+
   const resetCatalogFilters = () => {
     setSearchQuery('');
     setSelectedMaterial('All');
     setInStockOnly(false);
     setSortBy('relevance');
+    if (sharedCatalogParams) navigate({
+      pathname: '/', search: clearCatalogFilterParams(location.search).toString(), hash: location.hash,
+    }, { replace: true, preventScrollReset: true, state: location.state });
+  };
+
+  const activeCatalogParams = writeCatalogFilters({ query: searchQuery, material: selectedMaterial, inStockOnly, sort: sortBy });
+  const shareCatalogFilters = () => {
+    const url = new URL('/', window.location.origin);
+    url.search = activeCatalogParams.toString();
+    url.hash = 'storefront-catalog-heading';
+    void copyCatalogLink(url.href, 'catalog');
   };
 
   // Modals Visibility
@@ -1822,13 +1851,14 @@ export default function App() {
   const handleSearchCatalog = useCallback((query: string) => {
     setSearchQuery(query);
     setSelectedMaterial('All');
+    previousSharedParams.current = '';
     const hash = '#storefront-product-grid';
-    if (location.pathname === '/' && location.hash === hash) {
+    if (location.pathname === '/' && location.hash === hash && !sharedCatalogParams) {
       document.getElementById('storefront-product-grid')?.scrollIntoView({ block: 'start', behavior: 'instant' });
     } else {
       navigate({ pathname: '/', hash });
     }
-  }, [location.pathname, location.hash, navigate]);
+  }, [location.pathname, location.hash, navigate, sharedCatalogParams]);
   const handleHeaderProduct = useCallback((product: FilamentProduct) => {
     if (location.pathname === '/') handleOpenProductDetail(product);
     else navigate({ pathname: '/', search: new URLSearchParams({ product: product.id }).toString() }, {
@@ -1902,7 +1932,7 @@ export default function App() {
           <Route path="/faq" element={<FAQPage lang={lang} />} />
           <Route path="/blog" element={<BlogList adSenseConfig={adSenseConfig} lang={lang} />} />
           <Route path="/blog/:slug" element={<BlogPostPage adSenseConfig={adSenseConfig} lang={lang} />} />
-          <Route path="/guide" element={<MaterialGuidePage products={products} onSelectProduct={handleOpenProductDetail} onFilterCategory={(mat) => { setSearchQuery(''); setSelectedMaterial(resolveMaterialFamilyId(mat)); navigate({ pathname: '/', hash: '#storefront-product-grid' }); }} lang={lang} />} />
+          <Route path="/guide" element={<MaterialGuidePage products={products} onSelectProduct={handleOpenProductDetail} onFilterCategory={(mat) => { previousSharedParams.current = ''; setSearchQuery(''); setSelectedMaterial(resolveMaterialFamilyId(mat)); navigate({ pathname: '/', hash: '#storefront-product-grid' }); }} lang={lang} />} />
           <Route path="/store" element={<Navigate to="/" replace />} />
           <Route path="/r/:code" element={<ReferralHandler />} />
           <Route path="/profile" element={<><SEO title={t.personalProfile} noIndex description={lang === 'en' ? 'GodDog 3D Maker Member Center' : lang === 'ja' ? '神狗勾3Dフィラメント公式 会員マイページ' : '神狗勾耗材商城會員中心'} url="/profile" /><ProfilePage
@@ -2212,7 +2242,7 @@ export default function App() {
                       </strong>{' '}
                       {lang === 'en' ? 'items' : lang === 'ja' ? '件' : '款'}
                     </span>
-                    {(searchQuery || selectedMaterial !== 'All' || inStockOnly || sortBy !== 'relevance') && (
+                    {Boolean(activeCatalogParams.size) && (
                       <button
                         type="button"
                         onClick={resetCatalogFilters}
@@ -2227,7 +2257,7 @@ export default function App() {
                     <select
                       aria-label={lang === 'en' ? 'Sort products' : lang === 'ja' ? '並び替え' : '商品排序方式'}
                       value={sortBy}
-                      onChange={(e) => setSortBy(e.target.value)}
+                      onChange={event => setSortBy(readCatalogFilters(new URLSearchParams({ sort: event.target.value }), catalogMaterialIds).sort)}
                       className="appearance-none bg-slate-100/80 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-xl pl-3 pr-8 py-1.5 min-h-11 text-xs font-semibold text-slate-800 dark:text-slate-100 cursor-pointer outline-hidden focus:border-slate-900 dark:focus:border-indigo-400 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-indigo-500/20 transition-colors"
                     >
                       <option value="relevance">{lang === 'en' ? 'Recommended' : lang === 'ja' ? 'おすすめ順' : '推薦排序'}</option>
@@ -2240,6 +2270,19 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {activeCatalogParams.size > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-3.5 pb-2 sm:px-5">
+                  <button type="button" onClick={shareCatalogFilters}
+                    className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 px-3 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-slate-700 dark:text-indigo-300 dark:hover:bg-slate-800">
+                    {lang === 'en' ? 'Copy filtered link' : lang === 'ja' ? '絞り込みリンクをコピー' : '複製篩選連結'}
+                  </button>
+                  <span role="status" className="text-xs text-slate-600 dark:text-slate-300">
+                    {catalogCopied === 'catalog' ? (lang === 'en' ? 'Link copied' : lang === 'ja' ? 'コピーしました' : '已複製篩選連結')
+                      : catalogCopyFailed === 'catalog' ? (lang === 'en' ? 'Copy failed' : lang === 'ja' ? 'コピー失敗' : '複製失敗') : ''}
+                  </span>
+                </div>
+              )}
 
               {/* Lower Rail: Architectural Segmented Base-Material Family Tabs */}
               <div className="relative border-t border-slate-100 dark:border-slate-800/80 px-3.5 py-2.5 sm:px-5 sm:py-3">
@@ -2471,6 +2514,16 @@ export default function App() {
             onSelectRelated={handleOpenProductDetail}
             isWishlisted={wishlistSet.has(viewingProduct.id)}
             onToggleWishlist={() => handleToggleWishlist(viewingProduct.id)}
+            isCompared={comparisonSet.has(viewingProduct.id)}
+            compareCount={comparisonIds.length}
+            onToggleCompare={() => {
+              if (!comparisonSet.has(viewingProduct.id) && comparisonIds.length >= 4) closeProductDetail();
+              handleToggleCompare(viewingProduct.id);
+            }}
+            onOpenCompare={() => {
+              closeProductDetail();
+              setIsCompareModalOpen(true);
+            }}
             currency={currency}
             lang={lang}
             member={member}
@@ -2502,6 +2555,10 @@ export default function App() {
             onUpdateQuantity={handleUpdateCartQuantity}
             onUpdateColor={handleUpdateCartColor}
             onRemoveItem={handleRemoveCartItem}
+            wishlistedIds={wishlistSet}
+            onSaveToWishlist={productId => {
+              if (!wishlistItemsRef.current.includes(productId)) handleToggleWishlist(productId);
+            }}
             onClearCart={() => {
               cartItemsRef.current = [];
               persistCartEdit([]);
