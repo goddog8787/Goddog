@@ -211,6 +211,30 @@ test('a storefront without payment configuration serves its pages and reports ch
   });
 });
 
+test('Firebase Auth receives public web configuration instead of storefront HTML', async () => {
+  await withServer(false, async base => {
+    const url = base + '/__/firebase/init.json';
+    const response = await fetch(url);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type') || '', /application\/json/);
+    const config = await response.json();
+    assert.equal(config.apiKey, 'public-test-firebase-key');
+    assert.equal(config.projectId, 'goddog-shop');
+    assert.equal(config.authDomain, 'goddog-shop.firebaseapp.com');
+    assert.deepEqual(Object.keys(config).sort(), [
+      'apiKey', 'appId', 'authDomain', 'measurementId', 'messagingSenderId', 'projectId', 'storageBucket',
+    ]);
+    assert.equal((await fetch(url, { method: 'HEAD' })).status, 200);
+    const post = await fetch(url, { method: 'POST' });
+    assert.equal(post.status, 405);
+    assert.equal(post.headers.get('allow'), 'GET, HEAD');
+  }, {
+    VITE_FIREBASE_API_KEY: 'public-test-firebase-key',
+    VITE_FIREBASE_PROJECT_ID: 'goddog-shop',
+    VITE_FIREBASE_AUTH_DOMAIN: 'goddog-shop.firebaseapp.com',
+  });
+});
+
 test('the canonical Render deployment keeps the production gateway and uses its own callback origin', async () => {
   await withServer(true, async (base, [key, iv]) => {
     const response = await sampleCheckout(base);
