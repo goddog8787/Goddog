@@ -121,13 +121,14 @@ export function expandAssociativeKeywords(token: string): string[] {
 }
 
 export function normalizeProductSearch(query: string): string {
-  return (query || '').normalize('NFKC').trim().toLowerCase();
+  return (query || '').normalize('NFKC').trim().toLowerCase()
+    .replace(/(\d+(?:\.\d+)?)\s*(kg|mm)\b/g, (_, amount, unit) => Number(amount) + unit);
 }
 
 export function prepareProductSearch(rawQuery: string) {
   const query = normalizeProductSearch(rawQuery);
   if (!query) return [];
-  return query.split(/\s+/).map(token => ({ token, associativeTerms: expandAssociativeKeywords(token) }));
+  return Array.from(new Set(query.split(/\s+/))).map(token => ({ token, associativeTerms: expandAssociativeKeywords(token) }));
 }
 
 export interface ProductSearchMatchResult {
@@ -159,20 +160,22 @@ export function evaluateProductDeepSearch(
     };
   }
 
-  const nameLower = (product.name || '').toLowerCase();
-  const brandLower = (product.brand || '').toLowerCase();
-  const materialLower = (product.material || '').toLowerCase();
-  const badgeLower = (product.badge || '').toLowerCase();
-  const skuLower = (product.sku || '').toLowerCase();
-  const descLower = (product.description || '').toLowerCase();
-  const spoolLower = (product.spoolType || '').toLowerCase();
-  const speedLower = (product.maxSpeed || '').toLowerCase();
-  const nozzleLower = (product.nozzleTemp || product.printTemp || '').toLowerCase();
-  const bedLower = (product.bedTemp || '').toLowerCase();
-  const packagingLower = (product.packagingNote || '').toLowerCase();
+  const nameLower = normalizeProductSearch(product.name || '');
+  const brandLower = normalizeProductSearch(product.brand || '');
+  const materialLower = normalizeProductSearch(product.material || '');
+  const badgeLower = normalizeProductSearch(product.badge || '');
+  const skuLower = normalizeProductSearch(product.sku || '');
+  const descLower = normalizeProductSearch(product.description || '');
+  const spoolLower = normalizeProductSearch(product.spoolType || '');
+  const speedLower = normalizeProductSearch(product.maxSpeed || '');
+  const nozzleLower = normalizeProductSearch(product.nozzleTemp || product.printTemp || '');
+  const bedLower = normalizeProductSearch(product.bedTemp || '');
+  const packagingLower = normalizeProductSearch(product.packagingNote || '');
+  const weight = normalizeProductSearch(product.weight);
+  const diameter = materialLower === 'accessories' || materialLower === 'resin' ? '' : normalizeProductSearch(product.diameter);
   const featuresList = Array.isArray(product.features) ? product.features : [];
-  const features = featuresList.filter(Boolean).map(text => ({ text, lower: text.toLowerCase() }));
-  const colorsList = Array.isArray(product.colors) ? product.colors : [];
+  const features = featuresList.filter(Boolean).map(text => ({ text, lower: normalizeProductSearch(text) }));
+  const colorNames = Array.isArray(product.colors) ? product.colors.map(color => normalizeProductSearch(color?.name || '')) : [];
 
   let totalScore = 0;
   const matchedFeaturesSet = new Set<string>();
@@ -197,12 +200,13 @@ export function evaluateProductDeepSearch(
     }
 
     // 3. Direct match in secondary specs & description
+    if (weight === token || diameter === token) tokenScore += 40;
     if (descLower.includes(token)) tokenScore += 22;
     if (spoolLower.includes(token)) tokenScore += 18;
     if (speedLower.includes(token)) tokenScore += 15;
     if (nozzleLower.includes(token) || bedLower.includes(token)) tokenScore += 12;
     if (packagingLower.includes(token)) tokenScore += 12;
-    if (colorsList.some((c) => c?.name?.toLowerCase().includes(token))) {
+    if (colorNames.some(color => color.includes(token))) {
       tokenScore += 20;
     }
 
