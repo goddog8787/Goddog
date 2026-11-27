@@ -63,6 +63,22 @@ class GlobalErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 }
 
+// Migrate callbacks from the previous mobile login page before the router mounts.
+if (location.pathname === '/google-login.html') {
+  let destination = '/profile';
+  try {
+    if (new URLSearchParams(location.search).has('return')) {
+      sessionStorage.setItem('goddog_google_redirect_pending', '1');
+      const saved = new URL(sessionStorage.getItem('goddog_google_return_path') || destination, location.origin);
+      if (saved.origin === location.origin && saved.pathname !== location.pathname) {
+        destination = saved.href;
+      }
+    }
+    sessionStorage.removeItem('goddog_google_return_path');
+  } catch { /* Use the profile page when storage is unavailable. */ }
+  history.replaceState(null, '', destination);
+}
+
 clearLegacyLogisticsCredentials();
 clearLegacyLocalAccounts();
 const rootElement = document.getElementById('root');

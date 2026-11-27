@@ -98,8 +98,8 @@ import {
   waitForLastCatalogCloudSync,
 } from '../../lib/productPersistence';
 import { evaluateProductDeepSearch, prepareProductSearch } from '../../utils/productSearch';
-import { EmailAuthProvider, GoogleAuthProvider, reauthenticateWithCredential, reauthenticateWithPopup } from 'firebase/auth';
-import { auth, saveNewebPayConfigToFirestore, loadNewebPayConfigFromFirestore, publicLogisticsSettings } from '../../lib/firebase';
+import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { auth, verifyAdminGoogleAccount, finishAdminGoogleRedirect, googleLoginError, saveNewebPayConfigToFirestore, loadNewebPayConfigFromFirestore, publicLogisticsSettings } from '../../lib/firebase';
 
 interface AdminDashboardProps {
   products: FilamentProduct[];
@@ -228,7 +228,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   };
 
-  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [verifiedAdminUid, setVerifiedAdminUid] = useState<string | null>(null);
+  const currentUid = auth.currentUser?.uid;
+  const isAdminUnlocked = Boolean(currentUid && verifiedAdminUid === currentUid);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState<string | null>(null);
   const [showAdminPassword, setShowAdminPassword] = useState(false);
@@ -239,6 +241,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     sessionStorage.removeItem('printcore_admin_unlocked');
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    setVerifiedAdminUid(null);
+    void finishAdminGoogleRedirect().then(user => {
+      if (active && user?.emailVerified && user.uid === auth.currentUser?.uid) setVerifiedAdminUid(user.uid);
+    }).catch(error => {
+      if (active) setAdminPasswordError(googleLoginError(error));
+    });
+    return () => { active = false; };
+  }, [currentUid]);
+
   const handleUnlockAdmin = async (event: React.FormEvent) => {
     event.preventDefault();
     const user = auth.currentUser;
@@ -247,21 +260,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setAdminPasswordError(null);
     try {
       if (usesGoogle) {
-        await reauthenticateWithPopup(user, new GoogleAuthProvider());
+        await verifyAdminGoogleAccount(user);
       } else {
         await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, adminPasswordInput));
       }
-      setIsAdminUnlocked(true);
+      if (auth.currentUser?.uid !== user.uid || !auth.currentUser.emailVerified) return;
+      setVerifiedAdminUid(user.uid);
       setAdminPasswordInput('');
-    } catch {
-      setAdminPasswordError('身分驗證未完成，請重試。');
+    } catch (error) {
+      setAdminPasswordError(usesGoogle ? googleLoginError(error) : '密碼驗證未完成，請重新輸入。');
     } finally {
       setIsUnlocking(false);
     }
   };
 
   const handleLockAdmin = () => {
-    setIsAdminUnlocked(false);
+    setVerifiedAdminUid(null);
     setAdminPasswordInput('');
   };
 

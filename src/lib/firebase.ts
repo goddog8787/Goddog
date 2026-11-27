@@ -1,10 +1,9 @@
 import { getStoreApiBase } from './backendUrl';
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import {
-  initializeAuth,
-  indexedDBLocalPersistence,
-  browserLocalPersistence,
-  browserSessionPersistence,
+  getAuth,
+  reauthenticateWithPopup,
+  reauthenticateWithRedirect,
   browserPopupRedirectResolver,
   GoogleAuthProvider,
   signInWithPopup,
@@ -127,11 +126,7 @@ export const db: Firestore = (() => {
 
 export const auth: Auth = (() => {
   try {
-    // Keep the usual web session storage without loading the OAuth iframe on mobile startup.
-    // Each Google operation supplies its resolver when it actually needs it.
-    return initializeAuth(app, {
-      persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
-    });
+    return getAuth(app);
   } catch (e) {
     console.warn('Firebase Auth initialization fallback:', e);
     return {
@@ -272,14 +267,15 @@ googleProvider.setCustomParameters({
 });
 
 const googleRedirectKey = 'goddog_google_redirect_pending';
-const googleLoginPage = '/google-login.html';
-const googleReturnPathKey = 'goddog_google_return_path';
+const adminRedirectKey = 'goddog_admin_reauth_pending';
 const retryGoogleMessage = '這次 Google 登入尚未完成。請重新點選 Google 登入；若由 App 內開啟，請改用 Chrome 或 Safari。';
 type GoogleSignInResult = { user: User | null; error?: string };
 
 export function googleLoginError(error: unknown): string {
   const code = (error as { code?: string } | null)?.code;
   switch (code) {
+    case 'auth/user-mismatch':
+      return '請選擇目前登入商城的同一個 Google 帳號，再次驗證。';
     case 'auth/popup-blocked':
     case 'auth/web-storage-unsupported':
     case 'auth/operation-not-supported-in-this-environment':
@@ -315,43 +311,42 @@ function clearGoogleRedirectMarker() {
   }
 }
 
-function openGoogleLoginWindow(sameTab = false): GoogleSignInResult {
-  // Open within the original tap, before the SDK or network can consume user activation.
-  let popup: Window | null = null;
-  if (!sameTab) {
-    try {
-      popup = window.open('about:blank', '_blank');
-    } catch {
-      // Some embedded browsers throw when they block a new tab.
-    }
-  }
+export async function verifyAdminGoogleAccount(user: User): Promise<User> {
   try {
-    const target = popup || window;
-    if (popup) popup.opener = null;
-    target.sessionStorage.setItem(googleReturnPathKey, location.pathname + location.search + location.hash);
-    if (popup) popup.location.replace(googleLoginPage);
-    else location.assign(googleLoginPage);
-    return { user: null };
-  } catch {
-    popup?.close();
-    return { user: null, error: googleLoginError({ code: 'auth/web-storage-unsupported' }) };
+    const credential = await reauthenticateWithPopup(user, googleProvider, browserPopupRedirectResolver);
+    return credential.user;
+  } catch (error) {
+    if ((error as { code?: string })?.code !== 'auth/popup-blocked' || !canUseSameOriginRedirect()) throw error;
+  }
+
+  sessionStorage.setItem(adminRedirectKey, user.uid);
+  try {
+    return await reauthenticateWithRedirect(user, googleProvider, browserPopupRedirectResolver);
+  } catch (error) {
+    sessionStorage.removeItem(adminRedirectKey);
+    throw error;
   }
 }
 
-export async function runGoogleLoginPage(): Promise<void> {
-  if (!new URLSearchParams(location.search).has('return')) {
-    history.replaceState(null, '', googleLoginPage + '?return');
-    await signInWithRedirect(auth, googleProvider, browserPopupRedirectResolver);
-    return;
+let adminRedirectResult: Promise<User | null> | undefined;
+export function finishAdminGoogleRedirect(): Promise<User | null> {
+  if (adminRedirectResult) return adminRedirectResult;
+  let expectedUid: string | null;
+  try {
+    expectedUid = sessionStorage.getItem(adminRedirectKey);
+    if (!expectedUid) return Promise.resolve(null);
+    sessionStorage.removeItem(adminRedirectKey);
+  } catch {
+    return Promise.resolve(null);
   }
-  const result = await getRedirectResult(auth, browserPopupRedirectResolver);
-  if (!result?.user) throw new Error(retryGoogleMessage);
-  saveGoogleMember(result.user);
-  const returnPath = sessionStorage.getItem(googleReturnPathKey) || '/profile';
-  sessionStorage.removeItem(googleReturnPathKey);
-  const destination = new URL(returnPath, location.origin);
-  location.replace(destination.origin === location.origin && destination.pathname !== googleLoginPage
-    ? destination.href : '/profile');
+  adminRedirectResult = getRedirectResult(auth, browserPopupRedirectResolver).then(credential => {
+    if (credential?.operationType !== 'reauthenticate' || credential.providerId !== 'google.com' ||
+        credential.user.uid !== expectedUid || auth.currentUser?.uid !== expectedUid) {
+      throw new Error('Google reauthentication did not complete for this user');
+    }
+    return credential.user;
+  }).finally(() => { adminRedirectResult = undefined; });
+  return adminRedirectResult;
 }
 
 let pendingGoogleRedirect: Promise<string | undefined> | undefined;
@@ -383,16 +378,19 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
     return { user: null, error: googleLoginError({ code: 'auth/operation-not-supported-in-this-environment' }) };
   }
   const sameOriginRedirect = canUseSameOriginRedirect();
-  if (sameOriginRedirect && /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent)) {
-    return openGoogleLoginWindow();
-  }
   try {
     const { user } = await signInWithPopup(auth, googleProvider, browserPopupRedirectResolver);
     saveGoogleMember(user);
     return { user };
   } catch (error) {
     if (sameOriginRedirect && (error as { code?: string } | null)?.code === 'auth/popup-blocked') {
-      return openGoogleLoginWindow(true);
+      try {
+        sessionStorage.setItem(googleRedirectKey, '1');
+        return await signInWithRedirect(auth, googleProvider, browserPopupRedirectResolver);
+      } catch (redirectError) {
+        clearGoogleRedirectMarker();
+        return { user: null, error: googleLoginError(redirectError) };
+      }
     }
     return { user: null, error: googleLoginError(error) };
   }
