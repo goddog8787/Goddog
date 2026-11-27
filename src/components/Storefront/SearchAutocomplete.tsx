@@ -439,6 +439,7 @@ export const SearchAutocomplete: React.FC<SearchAutocompleteProps> = ({
           ref={inputRef}
           id={id}
           type="text"
+          enterKeyHint="search"
           role="combobox"
           aria-label={placeholder}
           aria-expanded={isOpen}

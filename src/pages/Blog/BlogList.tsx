@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { 
   BookOpen, 
   Calendar, 
@@ -22,30 +22,42 @@ interface BlogListProps {
   lang?: LanguageCode;
 }
 
+const rawCategories = ['全部', '新手入門', '進階技巧', '耗材評測', '硬體改裝', '切片參數'];
+const normalizeText = (text: string) => text.normalize('NFKC').toLowerCase();
+
 export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLang = 'zh-TW' }) => {
   const lang: LanguageCode = (propLang as LanguageCode) || 'zh-TW';
-  const [selectedCategory, setSelectedCategory] = useState<string>('全部');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [params, setParams] = useSearchParams();
+  const topic = params.get('topic') || '';
+  const selectedCategory = rawCategories.includes(topic) ? topic : '全部';
+  const searchQuery = params.get('articleQ') || '';
+  const shortOnly = params.get('short') === '1';
+  const filtered = selectedCategory !== '全部' || Boolean(searchQuery) || shortOnly;
 
-  const rawCategories = ['全部', '新手入門', '進階技巧', '耗材評測', '硬體改裝', '切片參數'];
+  function updateFilters(values: Record<string, string>) {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(values)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    setParams(next, { replace: true, preventScrollReset: true });
+  }
 
-  const translatedArticles = useMemo(() => {
-    return BLOG_ARTICLES.map((a) => translateBlogArticle(a, lang));
-  }, [lang]);
-
+  const resetFilters = () => updateFilters({ topic: '', articleQ: '', short: '' });
+  const translatedArticles = useMemo(() => BLOG_ARTICLES.map(a => translateBlogArticle(a, lang)), [lang]);
   const filteredArticles = useMemo(() => {
-    const query = searchQuery.toLowerCase().trim();
+    const words = normalizeText(searchQuery).split(/\s+/).filter(Boolean);
     const category = translateBlogCategory(selectedCategory, lang);
     return translatedArticles.filter(article => {
-      const matchesCat = selectedCategory === '全部' || article.category === category;
-      if (!query) return matchesCat;
-      const matchesSearch = 
-        article.title.toLowerCase().includes(query) ||
-        article.excerpt.toLowerCase().includes(query) ||
-        (article.tags || []).some((t: string) => t.toLowerCase().includes(query));
-      return matchesCat && matchesSearch;
+      if (selectedCategory !== '全部' && article.category !== category) return false;
+      if (shortOnly && !(Number.parseInt(article.readTime, 10) <= 7)) return false;
+      const text = normalizeText([article.title, article.excerpt, article.author, article.category, ...article.tags].join(' '));
+      return words.every(word => text.includes(word));
     });
-  }, [translatedArticles, selectedCategory, searchQuery, lang]);
+  }, [translatedArticles, selectedCategory, shortOnly, searchQuery, lang]);
+  const featured = filtered ? undefined : filteredArticles[0];
+  const gridArticles = featured ? filteredArticles.slice(1) : filteredArticles;
+  const resetLabel = lang === 'en' ? 'Reset filters' : lang === 'ja' ? '条件をリセット' : '重設篩選條件';
 
   const seoTitle = lang === 'en'
     ? 'Maker Knowledge Hub - 3D Printing Technical Guides & Filament Reviews'
@@ -92,17 +104,18 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
       </div>
 
       {/* Controls: Search & Category Filter */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-3 mb-3">
         {/* Category Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-2 sm:pb-0 scrollbar-none">
+        <div className="flex flex-wrap items-center gap-1.5 w-full lg:w-auto">
           {rawCategories.map((cat) => {
             const isSelected = selectedCategory === cat;
             const label = translateBlogCategory(cat, lang);
             return (
               <button
                 key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                aria-pressed={isSelected}
+                onClick={() => updateFilters({ topic: cat === '全部' ? '' : cat })}
+                className={`min-h-10 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                   isSelected
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
@@ -115,20 +128,35 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
         </div>
 
         {/* Search Bar */}
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full lg:w-72">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
-            type="text"
+            type="search"
+            aria-label={lang === 'en' ? 'Search articles' : lang === 'ja' ? '記事を検索' : '搜尋文章'}
+            enterKeyHint="search"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => updateFilters({ articleQ: e.target.value })}
             placeholder={lang === 'en' ? 'Search technical articles...' : lang === 'ja' ? '記事をキーワードで検索...' : '搜尋知識庫文章...'}
             className="w-full pl-10 pr-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
           />
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-6 text-sm text-slate-700 dark:text-slate-300">
+        <label className="inline-flex min-h-10 items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={shortOnly} onChange={e => updateFilters({ short: e.target.checked ? '1' : '' })} />
+          {lang === 'en' ? '7 minutes or less' : lang === 'ja' ? '7分以内で読める記事' : '7 分鐘內讀完'}
+        </label>
+        <span role="status" className="tabular-nums">
+          {filteredArticles.length} {lang === 'en' ? 'articles' : lang === 'ja' ? '件の記事' : '篇文章'}
+        </span>
+        {filtered && filteredArticles.length > 0 && (
+          <button type="button" onClick={resetFilters} className="min-h-10 font-bold text-indigo-700 dark:text-indigo-300">{resetLabel}</button>
+        )}
+      </div>
+
       {/* Featured / Lead Article Banner (first article) */}
-      {selectedCategory === '全部' && !searchQuery && filteredArticles.length > 0 && (
+      {featured && (
         <div className="mb-10 bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-10 shadow-lg border border-indigo-800/40 relative overflow-hidden">
           <div className="relative z-10 max-w-3xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 text-xs font-bold mb-4">
@@ -136,32 +164,32 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
             </div>
             <h2 className="text-2xl sm:text-3xl font-black mb-3 leading-tight text-balance">
               <Link 
-                to={`/blog/${filteredArticles[0].slug}`}
+                to={`/blog/${featured.slug}`}
                 className="hover:text-indigo-300 transition-colors"
               >
-                {filteredArticles[0].title}
+                {featured.title}
               </Link>
             </h2>
             <p className="text-xs sm:text-sm text-indigo-200 text-pretty line-clamp-3 leading-relaxed mb-6">
-              {filteredArticles[0].excerpt}
+              {featured.excerpt}
             </p>
             <div className="flex flex-wrap items-center gap-4 text-xs text-indigo-300">
               <span className="flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5" />
-                {filteredArticles[0].date}
+                {featured.date}
               </span>
               <span className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" />
-                {lang === 'en' ? `Read time ~ ${filteredArticles[0].readTime}` : lang === 'ja' ? `所要時間 約 ${filteredArticles[0].readTime}` : `閱讀時間約 ${filteredArticles[0].readTime}`}
+                {lang === 'en' ? `Read time ~ ${featured.readTime}` : lang === 'ja' ? `所要時間 約 ${featured.readTime}` : `閱讀時間約 ${featured.readTime}`}
               </span>
               <span className="flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5" />
-                {filteredArticles[0].author}
+                {featured.author}
               </span>
             </div>
             <div className="mt-6">
               <Link
-                to={`/blog/${filteredArticles[0].slug}`}
+                to={`/blog/${featured.slug}`}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs shadow-sm transition-all"
               >
                 <span>{lang === 'en' ? 'Read Full Article' : lang === 'ja' ? '記事を読む' : '閱讀專題文章'}</span>
@@ -181,7 +209,7 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
 
       {/* Articles Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredArticles.map((article) => (
+        {gridArticles.map((article) => (
           <Link
             key={article.id}
             to={`/blog/${article.slug}`}
@@ -265,10 +293,10 @@ export const BlogList: React.FC<BlogListProps> = ({ adSenseConfig, lang: propLan
             {lang === 'en' ? 'Try adjusting your search query or selecting a different category.' : lang === 'ja' ? '検索キーワードを変更するか、別のカテゴリーを選択してください。' : '請嘗試清除搜尋關鍵字，或切換至其他主題分類。'}
           </p>
           <button
-            onClick={() => { setSelectedCategory('全部'); setSearchQuery(''); }}
+            onClick={resetFilters}
             className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold cursor-pointer"
           >
-            {lang === 'en' ? 'Reset Filters' : lang === 'ja' ? '条件をリセット' : '重設篩選條件'}
+            {resetLabel}
           </button>
         </div>
       )}

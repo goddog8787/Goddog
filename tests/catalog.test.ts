@@ -29,3 +29,14 @@ test('every advertised interactive article resolves to its own simulation', asyn
     assert.equal(await loadBlogArticleAnimation(id), null);
   }
 });
+
+test('catalog search combines spool weight and diameter across keyboard formats', () => {
+  const product = ALL_MARKET_PRODUCTS[0];
+  const lookup = (text: string) => evaluateProductDeepSearch(product, text);
+  assert.ok(lookup('１．７５ ｍｍ １ ＫＧ').matched);
+  assert.deepEqual(lookup('1.0kg 1.75mm 1kg'), lookup('1kg 1.75mm'));
+  assert.equal(lookup('2.85mm 1kg').matched, false);
+  for (const material of ['Accessories', 'Resin']) {
+    assert.equal(evaluateProductDeepSearch({ ...product, material }, '1.75mm').matched, false);
+  }
+});
